@@ -878,7 +878,7 @@ export async function processPptBatch(pptFile, options) {
                             bgSolidFill.appendChild(bgSrgbClr);
                             tcPr.appendChild(bgSolidFill);
                             
-                            // 2. 첫 행의 텍스트 스타일링: 흰색, 11pt, KoPub동음체Bold (런속성 rPr 누락 대응형 강제 바인딩)
+                            // 2. 첫 행의 텍스트 스타일링: 흰색, 11pt, KoPub돋음체Bold (런속성 rPr 누락 대응형 강제 바인딩)
                             const textRuns = [];
                             const tcNodes = tc.getElementsByTagName('*');
                             for (let k = 0; k < tcNodes.length; k++) {
@@ -951,16 +951,16 @@ export async function processPptBatch(pptFile, options) {
                                                 if (child.nodeType === 1 && (child.localName === fType || child.tagName.split(':').pop() === fType)) {
                                                     fontEl = child;
                                                     break;
-                                                }
-                                            }
-                                            if (fontEl) {
-                                                fontEl.setAttribute('typeface', 'KoPub동음체Bold');
-                                            } else {
-                                                fontEl = xmlDoc.createElementNS(nsA, `a:${fType}`);
-                                                fontEl.setAttribute('typeface', 'KoPub동음체Bold');
-                                                rPr.appendChild(fontEl);
-                                            }
-                                        });
+                                                  }
+                                              }
+                                              if (fontEl) {
+                                                  fontEl.setAttribute('typeface', 'KoPub돋음체Bold');
+                                              } else {
+                                                  fontEl = xmlDoc.createElementNS(nsA, `a:${fType}`);
+                                                  fontEl.setAttribute('typeface', 'KoPub돋음체Bold');
+                                                  rPr.appendChild(fontEl);
+                                              }
+                                          });
                                     }
                                 }
                             }

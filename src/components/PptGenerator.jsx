@@ -916,7 +916,7 @@ export default function PptGenerator() {
                                         첫 번째 행(헤더) 특별 포맷팅 적용
                                     </label>
                                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
-                                        (첫 행 배경 RGB(0,114,186), 글자 흰색 11pt KoPub동음체Bold, 첫 행 내부 실선만 흰색 적용)
+                                        (첫 행 배경 RGB(0,114,186), 글자 흰색 11pt KoPub돋음체Bold, 첫 행 내부 실선만 흰색 적용)
                                     </div>
                                 </div>
                             </div>
