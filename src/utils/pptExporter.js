@@ -915,7 +915,7 @@ export async function processPptBatch(pptFile, options) {
                                 
                                 if (rPr) {
                                     rPr.setAttribute('sz', '1100'); // 11pt
-                                    rPr.setAttribute('b', '1'); // Bold
+                                    rPr.removeAttribute('b'); // Bold 해제
                                     
                                     // 💡 endParaRPr 또는 defRPr 인 속성 전용 노드는 자식 엘리먼트(solidFill, font) 삽입 시 DOMException이 발생하므로 속성값만 세팅하고 자식 삽입은 안전하게 우회!
                                     const isAttrOnlyNode = (localName === 'endParaRPr' || localName === 'defRPr');
