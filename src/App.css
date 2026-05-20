@@ -1,0 +1,5 @@
+/* Vite Default Styles Removed to prevent layout conflicts */
+#root {
+  width: 100%;
+  height: 100%;
+}

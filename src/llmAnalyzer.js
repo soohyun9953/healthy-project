@@ -1,0 +1,473 @@
+import { FALLBACK_MODELS } from './utils/geminiModels.js';
+
+function splitTextAtNewline(text) {
+    if (!text || text.length <= 1) return [text, ""];
+    const mid = Math.floor(text.length / 2);
+    
+    let nextNL = text.indexOf('\n', mid);
+    let prevNL = text.lastIndexOf('\n', mid);
+    
+    let splitIndex = -1;
+    if (nextNL !== -1 && prevNL !== -1) {
+        if ((nextNL - mid) < (mid - prevNL)) {
+            splitIndex = nextNL;
+        } else {
+            splitIndex = prevNL;
+        }
+    } else if (nextNL !== -1) {
+        splitIndex = nextNL;
+    } else if (prevNL !== -1) {
+        splitIndex = prevNL;
+    } else {
+        splitIndex = mid;
+    }
+
+    const part1 = String(text || "").substring(0, splitIndex).trim();
+    const part2 = String(text || "").substring(splitIndex).trim();
+    return [part1, part2];
+}
+
+function mergeResults(res1, res2, isTypoMode) {
+    const merged = {
+        score: Math.round((res1.score + res2.score) / 2),
+        inspectionScope: res1.inspectionScope || res2.inspectionScope,
+        summary: `[1부 분석 요약]\n${res1.summary}\n\n[2부 분석 요약]\n${res2.summary}`,
+        requirementMapping: [],
+        typos: []
+    };
+
+    if (isTypoMode) {
+        const uniqueTypos = [];
+        const seen = new Set();
+        const addTypos = (typos) => {
+            if (!typos) return;
+            typos.forEach(typo => {
+                const sig = `${typo.page}_${typo.originalText}_${typo.correction}`;
+                if (!seen.has(sig)) {
+                    seen.add(sig);
+                    uniqueTypos.push(typo);
+                }
+            });
+        };
+        addTypos(res1.typos);
+        addTypos(res2.typos);
+        merged.typos = uniqueTypos;
+    } else {
+        let combinedMapping = [];
+        if (res1.requirementMapping) combinedMapping = combinedMapping.concat(res1.requirementMapping);
+        if (res2.requirementMapping) combinedMapping = combinedMapping.concat(res2.requirementMapping);
+        
+        combinedMapping.forEach((req, index) => {
+            req.id = `REQ-${String(index + 1).padStart(3, '0')}`;
+        });
+        merged.requirementMapping = combinedMapping;
+
+        merged.rtm = combinedMapping.map(req => ({
+            type: req.type || '필수',
+            requirement: req.requirement || '-',
+            status: req.status || '미이행(X)',
+            location: req.artifactSection || '해당 없음',
+            category: req.category || '-',
+            levelLabel: req.levelLabel || '개별문장'
+        }));
+
+        merged.omissions = combinedMapping
+            .filter(req => req.status !== '이행(O)')
+            .map(req => ({
+                title: `[ID: ${req.id}] ${String(req.requirement || '').substring(0, 30)}...`,
+                evidence: req.requirement || '-',
+                reason: req.gap || '구체적인 수행/설계 방안이 누락되었습니다.',
+                recommendation: '해당 요건을 만족하기 위한 구체적인 명세와 실행계획을 산출물에 추가해야 합니다.'
+            }));
+
+        const uniqueTypos = [];
+        const seen = new Set();
+        const addTypos = (typos) => {
+            if (!typos) return;
+            typos.forEach(typo => {
+                const sig = `${typo.location}_${typo.originalText}_${typo.correction}`;
+                if (!seen.has(sig)) {
+                    seen.add(sig);
+                    uniqueTypos.push(typo);
+                }
+            });
+        };
+        addTypos(res1.typos);
+        addTypos(res2.typos);
+        merged.typos = uniqueTypos;
+    }
+
+    return merged;
+}
+
+export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "") {
+    const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+    if (keys.length === 0) {
+        throw new Error("유효한 API 키가 제공되지 않았습니다.");
+    }
+
+    let currentKeyIndex = 0;
+    const isOnlyTypoCheck = !guidelineText || guidelineText.trim() === '';
+
+    if (!isSubCall) {
+        if (isOnlyTypoCheck && artifactText && artifactText.length > 20000) {
+            if (onProgress) onProgress("산출물 용량이 커서 2회로 나누어 분석을 진행합니다. (1/2부 시작)");
+            const [part1, part2] = splitTextAtNewline(artifactText);
+            
+            const res1 = await analyzeDocumentsWithLLM(guidelineText, part1, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
+            
+            if (onProgress) onProgress("1부 분석 완료. 2부 분석을 진행합니다. (2/2부 시작)");
+            const res2 = await analyzeDocumentsWithLLM(guidelineText, part2, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
+            
+            if (onProgress) onProgress("분석 결과 병합 중...");
+            return mergeResults(res1, res2, true);
+        }
+        
+        if (!isOnlyTypoCheck && guidelineText && guidelineText.length > 15000) {
+            if (onProgress) onProgress("기준 문서 용량이 커서 2회로 나누어 분석을 진행합니다. (1/2부 시작)");
+            const [part1, part2] = splitTextAtNewline(guidelineText);
+            
+            const res1 = await analyzeDocumentsWithLLM(part1, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
+            
+            if (onProgress) onProgress("1부 분석 완료. 2부 분석을 진행합니다. (2/2부 시작)");
+            const res2 = await analyzeDocumentsWithLLM(part2, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
+            
+            if (onProgress) onProgress("분석 결과 병합 중...");
+            return mergeResults(res1, res2, false);
+        }
+    }
+    
+    // 사용량 기록 유틸리티
+    const recordUsage = (modelName) => {
+        try {
+            const usage = JSON.parse(localStorage.getItem('gemini_model_usage') || '{}');
+            usage[modelName] = (usage[modelName] || 0) + 1;
+            localStorage.setItem('gemini_model_usage', JSON.stringify(usage));
+            window.dispatchEvent(new CustomEvent('gemini_usage_updated'));
+        } catch (e) {
+            console.error("Usage recording failed:", e);
+        }
+    };
+
+    let systemPrompt = '';
+    if (onProgress) onProgress("분석 프롬프트 구성 중...");
+    if (isOnlyTypoCheck) {
+        systemPrompt = `[시스템 역할]
+당신은 최고의 섬세함과 엄격함을 지닌 **'ISMP 산출물 하이브리드 품질 감사 에이전트'**입니다. 
+당신의 임무는 단순한 오탈자 교정을 넘어, **[품질 5대 차원: 표현, 논리, 완결, 정합, 일관]** 관점에서 문서의 결함을 전수 조사하고 구체적인 교정안을 제시하는 것입니다.
+
+[검토 기준 및 5대 품질 차원 핵심 규칙]
+1. **표현 품질 (Expression)**: 
+   - 오탈자, 띄어쓰기, 비표준 공백(\\xa0 등)을 전수 교정하되, **원문에 오류가 있을 때만** 지적하십시오.
+   - [중요] 문서 내에 **이중 피동 표현**(\`~되어 집니다\`, \`~되어져야 함\`)이 **실제로 존재하는 경우에만** 지적하고 \`~됩니다\`, \`~해야 함\`으로 간결하게 교정하십시오. (원문에 없는 오류를 억지로 만들어내지 마십시오.)
+   - 단위 대소문자 혼용(GB/gb, vCPU/Vcpu 등) 및 동일 개념의 다중 용어 사용이 **실제 발견될 경우에만** 지적하십시오.
+   - '용어 사전' 제공 시 사전 정의된 표준 용어와의 일치 여부를 최우선 검증하십시오.
+2. **논리 구조 (Logical Structure)**:
+   - "Why → What → How → When" 흐름의 논리적 비약 여부, 현황/문제점과 개선 과제 간의 인과관계를 점검하십시오.
+   - MECE(중복/누락 없음) 원칙 준수 여부를 확인하십시오.
+   - **ID 정합성**: 기능 ID나 프로세스 ID의 일련번호 누락(Gap)이나 중복이 **명확히 확인되는 경우에만** 지적하십시오.
+3. **내용 완결성 (Completeness)**:
+   - 필수 섹션 누락, 이해관계자 관점 반영 부족을 도출하고, "다수", "상당수" 등 정량 데이터가 누락된 모호한 표현이 **원문에 쓰인 경우에만** 지적하십시오.
+   - **I-P-O 정의 / 필수 속성**: 기능/프로세스 정의 시 '입력, 처리, 결과' 누락 또는 수행 주체, 선/후행 조건 등이 **실제 공란인 경우에만** 찾아내십시오.
+4. **사업 정합성 (Strategic Alignment)**:
+   - 기술된 제안 내용이 본 사업의 목적, RFP 핵심 요구사항, 최신 IT 트렌드에 비추어 구체적인 실행 방안을 담고 있는지 점검하여 '보완 권고'를 제시하십시오.
+   - 예산 및 기간 측면의 현실성이 부족하거나 리스크 관리가 미흡한 경우 지적하십시오.
+5. **일관성 (Consistency - 문서 내적 정합성)**:
+   - 문서 내 서로 다른 페이지에서 동일 개체에 대해 명칭, 수치, 아키텍처 내역이 상충되거나 다르게 기술된 경우 '논리 상충'으로 지적하십시오.
+   - AS-IS 문제점이 TO-BE에서 제대로 해소되도록 연결되어 있는지 점검하십시오.
+
+[출력 가이드]
+- 찾아낸 모든 결함을 하나도 빠짐없이 JSON 배열의 'typos' 항목에 담으십시오.
+- errorType은 다음 5가지 중 하나를 선택하여 접두어로 명시하십시오: '[1. 표현 품질]', '[2. 논리 구조]', '[3. 내용 완결성]', '[4. 사업 정합성]', '[5. 일관성]'.
+- **원문에 없는 오류를 스스로 지어내는 행위(Hallucination)를 엄격히 금지**하며, 확실한 결함만 도출하십시오. 중복 내역은 하나로 병합하십시오.
+
+[중요 예외 규칙: 띄어쓰기 오류 지적 최소화 원칙]
+다음의 경우는 **절대** 띄어쓰기 오류로 지적하지 마십시오:
+
+① **IT·기술 복합 명사**: '데이터 전송', '데이터 수집', '데이터 처리', '정보 시스템', '업무 프로세스', '시스템 설계', '응용 프로그램', '네트워크 구성', '데이터 레이크', '데이터 파이프라인' 등 두 단어 이상이 결합된 IT 전문 복합 용어는 **띄어 써도 붙여 써도 모두 허용**되는 실무 관행입니다. 이를 오류로 지적하는 행위를 엄격히 금지합니다.
+
+② **숫자+단위 붙여쓰기**: '6가지', '3개', '10명' 등 아라비아 숫자 뒤 단위/의존 명사 붙여쓰기는 절대 띄어쓰기 오류로 지적하지 마십시오.
+
+③ **의심스러운 경우 지적 금지**: 해당 표현이 오류인지 올바른지 100% 확신할 수 없다면 지적하지 마십시오. **명백하고 확실한 오류만** 도출하십시오. (예: '데이터전 송'처럼 단어 중간에 공백이 삽입된 경우만 해당)
+
+④ **원문 그대로 올바른 표현을 오류로 간주 금지**: AI가 스스로 "이렇게 쓰면 더 낫다"고 판단하여 올바른 원문을 오류로 지적하는 할루시네이션을 엄격히 금지합니다.
+
+[출력 형식 및 필수 제약 사항]
+[제약 1] 반드시 프론트엔드 표 렌더링을 위해 아래 JSON 데이터 배열로만 출력하라. (아래 필드명을 엄격히 유지할 것)
+{
+  "score": 100,
+  "inspectionScope": "<점검범위 텍스트 또는 null>",
+  "summary": "<전체 문서의 주요 내용 분석 및 5대 품질 차원에 기반한 종합 검토 의견 (매우 상세하게)>",
+  "requirementMapping": [],
+  "typos": [
+    {
+      "page": "<페이지 번호 또는 섹션/목차명>",
+      "originalText": "<원문 문장 전체 또는 결함 내용 요약>",
+      "correction": "<수정 제안 또는 구체적 보완 권고>",
+      "errorType": "<'[1. 표현 품질] 오탈자', '[2. 논리 구조] 원인-결과 불일치' 등의 상세 사유>"
+    }
+  ]
+}`;
+    } else {
+        systemPrompt = `당신은 최고 수준의 IT 감리 전문가이자 공공 프로젝트 산출물 검증 전문 에이전트입니다.
+당신의 임무는 입력된 **'기준 문서(Base Document)'**와 **'산출물(Artifact)'**의 성격과 특성을 먼저 파악하고, 그 상관관계에 기반하여 이행 여부 및 내용적 충분성(Adequacy)을 지능적으로 검증하는 것입니다.
+
+[검증 전 필수 분석: 문서의 특성 및 컨텍스트 파악]
+- 분석 시작 전, 기준 문서와 산출물의 내용을 대조하여 각 문서가 프로젝트의 어느 단계(예: 요건 정의, 업무 프로세스 분석, 시스템 설계 등)에 해당하는지 파악하십시오.
+- 입력된 문서의 특성을 고려하여 점검하십시오. (예: 기준 문서가 '프로세스 정의서'이고 산출물이 '응용아키텍처'라면, 업무 흐름이 아키텍처 컴포넌트나 인터페이스 설계에 어떻게 논리적으로 투영되었는지 도메인 지식을 활용하여 점검합니다.)
+
+[핵심 검증 원칙 - 지능적 전수 조사]
+1. **문장 단위 전수 추출 및 논리 대조**: 
+   - 기준 문서의 모든 본문 문장을 독립된 요건으로 추출하고, 산출물에서 그 요건이 '문서의 목적과 성격에 맞게' 적절히 반영되었는지 확인하십시오.
+2. **지능적 충분성(Adequacy) 판정 (오탈자 검사 제외)**:
+   - 이 모드에서는 단순 맞춤법보다는 **내용의 실질적 완성도와 논리적 완결성**에 집중합니다. (오탈자 점검은 별도 모드이므로 여기서 수행하지 마십시오.)
+   - **이행(O)**: 산출물의 특성에 맞게 기술 수준이 충분히 구체적이고 전문적으로 작성된 경우.
+   - **부분 이행(△)**: 언급은 있으나 문서의 특성상 기대되는 상세도가 낮거나 실행 방안이 모호한 경우.
+   - **미이행(X)**: 핵심 취지가 누락되었거나 문서 성격상 반드시 포함되어야 할 설계/수행 내용이 없는 경우.
+3. **전문가적 Gap 분석**:
+   - '부분 이행' 또는 '미이행' 시, 어떤 기술적/관리적 내용이 보완되어야 하는지 문서의 특성을 고려하여 구체적인 개선 방향을 'gap' 필드에 제시하십시오.
+4. **구조적 결함 및 정합성 수색 (typos 배열 활용)**:
+   - 오탈자가 아닌, **목차-본문 불일치, 수치 간의 모순, 존재하지 않는 기능 참조** 등 문서 전체의 구조적 결함을 발견 시 'typos' 배열에 전문적으로 기록하십시오.
+   - **원문에 없는 결함을 스스로 지어내는 행위(Hallucination)를 엄격히 금지합니다.** 실제 존재하는 불일치나 모순만 지적하십시오.
+
+[출력 형식 제한]
+반드시 아래 JSON 형식으로만 출력하세요. 모든 항목은 JSON 배열 내의 개별 객체여야 합니다.
+{
+  "score": <총점(0~100 정수, 이행 비중 및 내용 충실도 기반)>,
+  "inspectionScope": "<전달받은 점검범위 또는 null>",
+  "summary": "<입력된 문서들의 특성(예: 프로세스 정의서 vs 설계서) 분석 결과와 이를 바탕으로 한 종합 검증 의견 (매우 상세하게)>",
+  "requirementMapping": [
+    {
+      "id": "<REQ-001 부터 순차 부여>",
+      "category": "<요구사항 카테고리>",
+      "type": "<'필수' 또는 '선택'>",
+      "levelLabel": "<'개별문장'>",
+      "path": "<기준 문서 내 위치>",
+      "requirement": "<기준 문서에서 추출된 개별 문장 원문 그대로>",
+      "artifactSection": "<대응되는 산출물 위치 (없으면 '해당 없음')>",
+      "artifactContent": "<산출물의 문서 특성에 맞춰 재구성된 설계/반영 내용 요약 (없으면 '관련 내용 없음')>",
+      "status": "<'이행(O)', '부분 이행(△)', '미이행(X)' 중 택 1>",
+      "gap": "<부족 사유 및 문서 특성을 고려한 구체적 보완 권고 (이행 시 null)>"
+    }
+  ],
+  "typos": [
+    {
+      "location": "<위치>",
+      "originalText": "<원문>",
+      "correction": "<구조적 수정안>",
+      "reason": "<[구조 결함], [논리 상충] 등 머리말을 포함한 분석 사유>"
+    }
+  ]
+} `;
+    }
+
+    const userInput = isOnlyTypoCheck ? `
+[시스템 지시사항]
+${systemPrompt}
+
+[입력 데이터]${glossaryText ? `\n--- 용어 사전 ---\n${String(glossaryText).substring(0, 50000)}` : ''}
+
+--- 산출물 ---
+${String(artifactText || '').substring(0, 2000000)}
+
+--- 점검 범위 ---
+${inspectionScope || '없음'}
+` : `
+[시스템 지시사항]
+${systemPrompt}
+
+[입력 데이터]${glossaryText ? `\n--- 용어 사전 ---\n${String(glossaryText).substring(0, 50000)}` : ''}
+
+--- 기준 문서 ---
+${String(guidelineText || '').substring(0, 500000)}
+
+--- 산출물 ---
+${String(artifactText || '').substring(0, 2000000)}
+
+--- 점검 범위 (해당 내용이 있으면 위주로 더 엄격히 볼 것) ---
+${inspectionScope || '없음'}
+${ragContext ? `\n${ragContext}` : ''}
+`;
+
+    try {
+
+        let initialModel = selectedModel && selectedModel !== 'auto' ? selectedModel : FALLBACK_MODELS[0];
+        if (!initialModel.startsWith('models/')) initialModel = `models/${initialModel}`;
+        
+        let currentModelIndex = FALLBACK_MODELS.indexOf(initialModel);
+        if (currentModelIndex === -1) currentModelIndex = 0;
+
+        const fetchWithRetry = async (maxModelRetries = FALLBACK_MODELS.length) => {
+            let modelRetries = 0;
+            
+            while (modelRetries < maxModelRetries) {
+                const activeKey = keys[currentKeyIndex];
+                const modelId = FALLBACK_MODELS[currentModelIndex];
+                const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent?key=${activeKey}`;
+                
+                const fetchOptions = {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{ role: "user", parts: [{ text: userInput }] }],
+                        generationConfig: { temperature: 0.1 }
+                    })
+                };
+
+                if (onProgress) {
+                    const keyInfo = keys.length > 1 ? ` (키 ${currentKeyIndex + 1}/${keys.length} 사용 중)` : '';
+                    onProgress(`${modelId.split('/').pop()} 모델로 분석 요청 중...${keyInfo}`);
+                }
+
+                const response = await fetch(fetchUrl, fetchOptions);
+                
+                if (response.ok) {
+                    recordUsage(modelId); // 사용량 기록
+                    return response;
+                }
+
+                const errData = await response.json().catch(() => ({}));
+                const errMsg = errData.error?.message || response.statusText || '';
+                const isModelUnavailable = response.status === 404
+                    || response.status === 400
+                    || errMsg.toLowerCase().includes('not found')
+                    || errMsg.toLowerCase().includes('not supported')
+                    || errMsg.toLowerCase().includes('deprecated');
+
+                if (keys.length > 1 && (currentKeyIndex + 1) < keys.length) {
+                    currentKeyIndex++;
+                    continue;
+                }
+
+                if (response.status === 429 || response.status >= 500 || isModelUnavailable) {
+                    modelRetries++;
+                    if (modelRetries < maxModelRetries) {
+                        currentKeyIndex = 0;
+                        currentModelIndex = (currentModelIndex + 1) % FALLBACK_MODELS.length;
+                        await new Promise(resolve => setTimeout(resolve, 5000));
+                        continue;
+                    }
+                    
+                    throw new Error("모든 API 키와 모델의 사용 한도가 소진되었습니다.");
+                }
+                
+                throw new Error(errMsg || response.statusText);
+            }
+            throw new Error("모든 모델을 시도했으나 응답을 받지 못했습니다.");
+        };
+
+        const response = await fetchWithRetry();
+        const data = await response.json();
+        let content = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+
+        if (content.includes("```")) {
+            const match = content.match(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/i);
+            if (match && match[1]) {
+                content = match[1];
+            } else {
+                content = content.replace(/```(?:json)?/gi, '').replace(/```/g, '');
+            }
+        }
+        
+        content = content.trim();
+        const parsed = JSON.parse(content);
+
+        if (parsed.requirementMapping && Array.isArray(parsed.requirementMapping)) {
+            if (!parsed.rtm) {
+                parsed.rtm = parsed.requirementMapping.map(req => ({
+                    type: req.type || '필수',
+                    requirement: req.requirement || '-',
+                    status: req.status || '미이행(X)',
+                    location: req.artifactSection || '해당 없음',
+                    category: req.category || '-',
+                    levelLabel: req.levelLabel || '개별문장'
+                }));
+            }
+            if (!parsed.omissions) {
+                parsed.omissions = parsed.requirementMapping
+                    .filter(req => req.status !== '이행(O)')
+                    .map(req => ({
+                        title: `[ID: ${req.id || 'N/A'}] ${String(req.requirement || '').substring(0, 30)}...`,
+                        evidence: req.requirement || '-',
+                        reason: req.gap || '구체적인 수행/설계 방안이 누락되었습니다.',
+                        recommendation: '해당 요건을 만족하기 위한 구체적인 명세와 실행계획을 산출물에 추가해야 합니다.'
+                    }));
+            }
+        } else {
+            parsed.requirementMapping = [];
+            parsed.rtm = [];
+            parsed.omissions = [];
+        }
+        
+        if (!parsed.typos) {
+            parsed.typos = [];
+        } else {
+            const uniqueTypos = [];
+            const seen = new Set();
+            parsed.typos.forEach(typo => {
+                const signature = `${typo.page}_${typo.originalText}_${typo.correction}`;
+                if (!seen.has(signature)) {
+                    seen.add(signature);
+                    uniqueTypos.push(typo);
+                }
+            });
+            parsed.typos = uniqueTypos;
+        }
+
+        return parsed;
+    } catch (e) {
+        throw new Error(`Gemini 검증 실패: ${e.message}`);
+    }
+}
+
+export async function askRagQuestion(docTitle, docContent, question, apiKey, onProgress) {
+    const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+    if (keys.length === 0) throw new Error("유효한 Gemini API Key가 없습니다.");
+
+    const recordUsage = (modelName) => {
+        try {
+            const usage = JSON.parse(localStorage.getItem('gemini_model_usage') || '{}');
+            usage[modelName] = (usage[modelName] || 0) + 1;
+            localStorage.setItem('gemini_model_usage', JSON.stringify(usage));
+            window.dispatchEvent(new CustomEvent('gemini_usage_updated'));
+        } catch (e) {
+            console.error("Usage recording failed:", e);
+        }
+    };
+
+    const systemPrompt = `당신은 ISMP 산출물 전문 Q&A 어시스턴트입니다. 
+제공된 문서 [${docTitle}]의 내용을 바탕으로 사용자의 질문에 전문적이고 친절하게 답변하십시오.`;
+
+    const userInput = `
+[문서 제목]: ${docTitle}
+[사용자 질문]: ${question}
+`;
+
+
+    let currentKeyIndex = 0;
+    let currentModelIndex = 0;
+
+    const fetchWithRetry = async () => {
+        const activeKey = keys[currentKeyIndex];
+        const modelId = FALLBACK_MODELS[currentModelIndex];
+        const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent?key=${activeKey}`;
+        
+        const response = await fetch(fetchUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ role: "user", parts: [{ text: userInput }] }]
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const answer = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            recordUsage(modelId);
+            return answer;
+        }
+        throw new Error("Failed to fetch");
+    };
+
+    return await fetchWithRetry();
+}
