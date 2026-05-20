@@ -878,7 +878,7 @@ export async function processPptBatch(pptFile, options) {
                             bgSolidFill.appendChild(bgSrgbClr);
                             tcPr.appendChild(bgSolidFill);
                             
-                            // 2. 첫 행의 텍스트 스타일링: 흰색, 11pt, KoPub돋음체Bold (런속성 rPr 누락 대응형 강제 바인딩)
+                            // 2. 첫 행의 텍스트 스타일링: 흰색, 11pt, KoPub돋움체 Bold (런속성 rPr 누락 대응형 강제 바인딩)
                             const textRuns = [];
                             const tcNodes = tc.getElementsByTagName('*');
                             for (let k = 0; k < tcNodes.length; k++) {
@@ -954,10 +954,10 @@ export async function processPptBatch(pptFile, options) {
                                                   }
                                               }
                                               if (fontEl) {
-                                                  fontEl.setAttribute('typeface', 'KoPub돋음체Bold');
+                                                  fontEl.setAttribute('typeface', 'KoPub돋움체 Bold');
                                               } else {
                                                   fontEl = xmlDoc.createElementNS(nsA, `a:${fType}`);
-                                                  fontEl.setAttribute('typeface', 'KoPub돋음체Bold');
+                                                  fontEl.setAttribute('typeface', 'KoPub돋움체 Bold');
                                                   rPr.appendChild(fontEl);
                                               }
                                           });
