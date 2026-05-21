@@ -90,12 +90,22 @@ function duplicateSlides(zip, count, chunkSize) {
         return;
     }
 
-    // 1. 원본 소스 획득
+    // 1. 원본 소스 획득 및 1번 외 기존 슬라이드 파일 물리 삭제
     const presXml = zip.file('ppt/presentation.xml').asText();
     const ctXml = zip.file('[Content_Types].xml').asText();
     const presRelsXml = zip.file('ppt/_rels/presentation.xml.rels').asText();
     const sld1Xml = zip.file('ppt/slides/slide1.xml').asText();
     const sld1RelsXml = zip.file('ppt/slides/_rels/slide1.xml.rels')?.asText();
+
+    const allFiles = Object.keys(zip.files);
+    allFiles.forEach(fileName => {
+        if (fileName.startsWith('ppt/slides/slide') && !fileName.includes('slide1.xml')) {
+            zip.remove(fileName);
+        }
+        if (fileName.startsWith('ppt/slides/_rels/slide') && !fileName.includes('slide1.xml.rels')) {
+            zip.remove(fileName);
+        }
+    });
 
     // 2. ID 분석 (문자열 기반)
     let maxRidNum = 0;
@@ -110,6 +120,25 @@ function duplicateSlides(zip, count, chunkSize) {
     for (const m of sldIdMatches) {
         const n = parseInt(m[1]);
         if (n > maxSldIdNum && n < 1000000) maxSldIdNum = n;
+    }
+
+    // 2-2. 원래 slide1.xml을 가리키는 Relationship의 rId와 Target 추출
+    const slide1RelMatch = presRelsXml.match(/<Relationship [^>]*Id="([^"]+)"[^>]*Target="([^"]*slide1\.xml)"[^>]*\/>/i);
+    const slide1RId = slide1RelMatch ? slide1RelMatch[1] : "rId2"; // 폴백 기본값 rId2
+    const slide1Target = slide1RelMatch ? slide1RelMatch[2] : "slides/slide1.xml";
+
+    // 2-3. 원래 slide1.xml의 sldIdLst 내 p:sldId 엘리먼트 추출
+    let slide1SldIdTag = "";
+    const sldIdLstMatch = presXml.match(/<p:sldIdLst>([\s\S]*?)<\/p:sldIdLst>/);
+    if (slide1RId && sldIdLstMatch) {
+        const sldIdRegex = new RegExp(`<p:sldId [^>]*r:id="${slide1RId}"[^>]*\\/>`, 'i');
+        const sldIdMatch = sldIdLstMatch[1].match(sldIdRegex);
+        if (sldIdMatch) {
+            slide1SldIdTag = sldIdMatch[0];
+        }
+    }
+    if (!slide1SldIdTag && sldIdLstMatch) {
+        slide1SldIdTag = sldIdLstMatch[1].match(/<p:sldId[^>]+>/)?.[0] || `<p:sldId id="256" r:id="${slide1RId}"/>`;
     }
 
     // 3. 1번 슬라이드 태그 정규화
@@ -141,48 +170,59 @@ function duplicateSlides(zip, count, chunkSize) {
             const globalRowIdx = (i - 1) * chunkSize + rowIdxInRange;
             return `{${key}_${globalRowIdx}}`;
         });
-        // Shape ID 충돌 방지
-        slideNStr = slideNStr.replace(/ id="(\d+)"/g, (match, idStr) => ` id="${parseInt(idStr) + ((i-1) * 1000)}"`);
+        
+        // Shape ID 충돌 방지: cNvPr 내부의 id만 정교하게 타겟팅
+        slideNStr = slideNStr.replace(/(<[^>]*[cC]NvPr[^>]* id=")(\d+)(")/g, (match, prefix, idStr, suffix) => {
+            return `${prefix}${parseInt(idStr) + ((i - 1) * 1000)}${suffix}`;
+        });
         
         zip.file(slidePath, slideNStr);
         if (sld1RelsXml) zip.file(`ppt/slides/_rels/${slideFileName}.rels`, sld1RelsXml);
     }
 
-    // 5. 문자열 패치 적용 - 원본 구조의 네임스페이스를 해치지 않음
+    // 5. 메타데이터 정교한 청소 후 신규 조립
     
     // [Presentation.xml] - 기존 슬라이드 삭제(1번 제외) 후 새 슬라이드 삽입
-    // 1번 슬라이드 정보(첫번째 p:sldId)만 남깁니다.
-    const sldIdLstMatch = presXml.match(/<p:sldIdLst>([\s\S]*?)<\/p:sldIdLst>/);
-    if (sldIdLstMatch) {
-        const firstSldId = sldIdLstMatch[1].match(/<p:sldId[^>]+>/)?.[0] || "";
-        const updatedSldIdLst = `<p:sldIdLst>${firstSldId}${newSldIdEntries}</p:sldIdLst>`;
+    if (sldIdLstMatch && slide1SldIdTag) {
+        const updatedSldIdLst = `<p:sldIdLst>${slide1SldIdTag}${newSldIdEntries}</p:sldIdLst>`;
         const newPresXml = presXml.replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>/, updatedSldIdLst);
         zip.file('ppt/presentation.xml', newPresXml);
     }
 
-    // [[Content_Types].xml] - Override 추가
-    const newCtXml = ctXml.replace('</Types>', `${newContentTypeEntries}</Types>`);
+    // [[Content_Types].xml] - 기존 모든 슬라이드 Override 청소 후 재생성하여 주입
+    let cleanCtXml = ctXml.replace(/<Override PartName="\/ppt\/slides\/slide\d+\.xml"[^>]*>\s*/g, '');
+    const slide1ContentTypeEntry = `<Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`;
+    const newCtXml = cleanCtXml.replace('</Types>', `${slide1ContentTypeEntry}${newContentTypeEntries}</Types>`);
     zip.file('[Content_Types].xml', newCtXml);
 
-    // [presentation.xml.rels] - Relationship 추가
-    const newPresRelsXml = presRelsXml.replace('</Relationships>', `${newRelEntries}</Relationships>`);
+    // [presentation.xml.rels] - 기존 모든 슬라이드 Relationship 청소 후 재생성하여 주입
+    let cleanPresRelsXml = presRelsXml.replace(/<Relationship [^>]*Target="[^"]*slide\d+\.xml"[^>]*\/>\s*/g, '');
+    const slide1RelEntry = `<Relationship Id="${slide1RId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="${slide1Target}"/>`;
+    const newPresRelsXml = cleanPresRelsXml.replace('</Relationships>', `${slide1RelEntry}${newRelEntries}</Relationships>`);
     zip.file('ppt/_rels/presentation.xml.rels', newPresRelsXml);
 
-    // [app.xml] - 슬라이드 개수 업데이트
+    // [app.xml] - 슬라이드 개수 업데이트 및 TitlesOfParts 내 벡터 안전 업데이트
     const appXml = zip.file('docProps/app.xml')?.asText();
     if (appXml) {
         let newAppXml = appXml.replace(/<Slides>\d+<\/Slides>/, `<Slides>${count}</Slides>`);
-        // vt:vector size 업데이트 및 추가 lpstr 삽입
-        const vtMatch = newAppXml.match(/<vt:vector[^>]+size="(\d+)"[^>]+baseType="lpstr">([\s\S]*?)<\/vt:vector>/);
-        if (vtMatch) {
-            const firstLpstr = vtMatch[2].match(/<vt:lpstr>[\s\S]*?<\/vt:lpstr>/)?.[0] || "<vt:lpstr>Slide 1</vt:lpstr>";
-            let newLpstrs = firstLpstr;
-            for (let i = 2; i <= count; i++) newLpstrs += `<vt:lpstr>Slide ${i}</vt:lpstr>`;
-            
-            const updatedVector = vtMatch[0]
-                .replace(/size="\d+"/, `size="${count}"`)
-                .replace(vtMatch[2], newLpstrs);
-            newAppXml = newAppXml.replace(vtMatch[0], updatedVector);
+        
+        const titlesOfPartsRegex = /<TitlesOfParts>([\s\S]*?)<\/TitlesOfParts>/;
+        const titlesMatch = newAppXml.match(titlesOfPartsRegex);
+        if (titlesMatch) {
+            const vectorRegex = /<vt:vector[^>]+size="(\d+)"[^>]+baseType="lpstr">([\s\S]*?)<\/vt:vector>/;
+            const vtMatch = titlesMatch[1].match(vectorRegex);
+            if (vtMatch) {
+                const firstLpstr = vtMatch[2].match(/<vt:lpstr>[\s\S]*?<\/vt:lpstr>/)?.[0] || "<vt:lpstr>Slide 1</vt:lpstr>";
+                let newLpstrs = firstLpstr;
+                for (let i = 2; i <= count; i++) newLpstrs += `<vt:lpstr>Slide ${i}</vt:lpstr>`;
+                
+                const updatedVector = vtMatch[0]
+                    .replace(/size="\d+"/, `size="${count}"`)
+                    .replace(vtMatch[2], newLpstrs);
+                    
+                const updatedTitlesOfParts = titlesMatch[0].replace(vtMatch[0], updatedVector);
+                newAppXml = newAppXml.replace(titlesMatch[0], updatedTitlesOfParts);
+            }
         }
         zip.file('docProps/app.xml', newAppXml);
     }
