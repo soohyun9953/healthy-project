@@ -673,6 +673,7 @@ export async function processPptBatch(pptFile, options) {
         fontSizeRules = [],
         applyDesign = false, 
         applyTableDesign = false, 
+        applyFirstRowHeaderStyle = true,
         targetText = '' 
     } = options;
     
@@ -860,7 +861,7 @@ export async function processPptBatch(pptFile, options) {
                             const isFirstCol = cIdx === 0;
                             const isLastRow = rIdx === trs.length - 1;
                             const isLastCol = cIdx === tcs.length - 1;
-                            const applyHeader = options.applyFirstRowHeaderStyle !== false;
+                            const applyHeader = applyFirstRowHeaderStyle !== false;
                             
                             if (applyHeader && (isFirstRow || isFirstCol)) {
                                 // 헤더 셀(첫 행 또는 첫 열)의 테두리 색상 결정
@@ -902,7 +903,7 @@ export async function processPptBatch(pptFile, options) {
                         });
                         
                         // [규칙 2]: 첫 번째 행(rIdx === 0) 또는 첫 번째 열(cIdx === 0) 이고 첫 행 특별 포맷팅 옵션이 켜져 있을 때만 특별 포맷팅 적용
-                        const isHeaderCell = (rIdx === 0 || cIdx === 0) && options.applyFirstRowHeaderStyle !== false;
+                        const isHeaderCell = (rIdx === 0 || cIdx === 0) && applyFirstRowHeaderStyle !== false;
                         if (isHeaderCell) {
                             // 1. 셀 배경색 채우기: RGB 0,114,186 (#0072BA)
                             let existingFill = null;
