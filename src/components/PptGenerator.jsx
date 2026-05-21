@@ -311,38 +311,16 @@ export default function PptGenerator() {
         setIsProcessingBatch(true);
 
         try {
-            let directoryHandle = null;
-            let useZipFallback = false;
-
-            if ('showDirectoryPicker' in window) {
-                try {
-                    directoryHandle = await window.showDirectoryPicker({
-                        id: 'ppt-batch-output',
-                        mode: 'readwrite',
-                        startIn: 'downloads'
-                    });
-                } catch (err) {
-                    if (err.name === 'AbortError') {
-                        // 사용자가 단순 취소한 경우 중단
-                        setIsProcessingBatch(false);
-                        return;
-                    } else {
-                        // ❌ 보안 제한 폴더 선택 혹은 브라우저 차단 발생 시 ZIP 폴백 활성화
-                        console.warn('Directory Picker security/permission block detected. Enabling ZIP Fallback.', err);
-                        useZipFallback = true;
-                    }
-                }
-            } else {
-                // showDirectoryPicker를 미지원하는 브라우저도 ZIP 폴백 적용
-                useZipFallback = true;
-            }
-
             let successCount = 0;
-            const zip = new JSZip(); // 💡 직접 쓰기 에러를 대비하여 ZIP 백업 상시 준비!
-            let hasWriteError = false; // 디렉토리 직접 쓰기 중 에러 발생 여부 플래그
             const reports = []; // 📊 실시간 파일별 처리 리포트 축적 배열
 
-            for (const file of batchPptFiles) {
+            // 💡 파일별 showSaveFilePicker 방식으로 전환:
+            // showDirectoryPicker는 다운로드 폴더를 시스템 보호 폴더로 분류하여 브라우저가 차단합니다.
+            // 대신 각 파일을 showSaveFilePicker로 개별 저장하거나, 다중 파일은 ZIP으로 묶어 다운로드합니다.
+
+            if (batchPptFiles.length === 1 && 'showSaveFilePicker' in window) {
+                // 단일 파일: showSaveFilePicker로 다운로드 폴더에서 저장 다이얼로그 열기
+                const file = batchPptFiles[0];
                 try {
                     const options = { 
                         replaceRules: parsedRules, 
@@ -350,99 +328,140 @@ export default function PptGenerator() {
                         fontSizeRules: parsedFontSizeRules,
                         applyDesign: applyDesignChecked, 
                         applyTableDesign: applyTableDesignChecked, 
-                        applyFirstRowHeaderStyle: applyFirstRowHeaderStyle, // 옵션 E 하위 옵션 주입
+                        applyFirstRowHeaderStyle: applyFirstRowHeaderStyle,
                         targetText: designTargetText 
                     };
                     const modifiedBlob = await processPptBatch(file, options);
-
                     const fileName = `수정_${file.name}`;
-                    
-                    // 📥 복구용 ZIP 객체에 무조건 결과물 백업 축적
-                    zip.file(fileName, modifiedBlob);
-                    
-                    let localWriteSuccess = false;
-                    
-                    if (directoryHandle && !useZipFallback && !hasWriteError) {
-                        try {
-                            const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
-                            // 💡 keepExistingData: false 옵션을 명시하여 크롬 디스크 캐시 충돌 오류 원천 방지!
-                            const writable = await fileHandle.createWritable({ keepExistingData: false });
-                            await writable.write(modifiedBlob);
-                            await writable.close();
-                            localWriteSuccess = true;
-                            
-                            // ⏳ 물리 디스크 I/O 동기화를 위해 극소 대기 시간(50ms) 부여하여 캐시 경합 완벽 해소
-                            await new Promise(resolve => setTimeout(resolve, 50));
-                        } catch (writeErr) {
-                            console.warn(`Direct directory write failed for ${file.name}. Activating ZIP fallback.`, writeErr);
-                            hasWriteError = true;
-                            useZipFallback = true;
+
+                    let saved = false;
+                    try {
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName: fileName,
+                            startIn: 'downloads',
+                            types: [{
+                                description: 'PowerPoint Presentation',
+                                accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
+                            }],
+                        });
+                        const writable = await handle.createWritable();
+                        await writable.write(modifiedBlob);
+                        await writable.close();
+                        saved = true;
+                    } catch (pickerErr) {
+                        if (pickerErr.name === 'AbortError') {
+                            setIsProcessingBatch(false);
+                            return;
                         }
-                    } 
-                    
-                    if (!localWriteSuccess && !useZipFallback) {
-                        // 일반 일대일 다운로드 Fallback
+                        // 폴백: file-saver
                         const { saveAs } = await import('file-saver');
                         saveAs(modifiedBlob, fileName);
+                        saved = true;
                     }
 
-                    // 📊 상세 피드백 메시지 동적 조립
-                    let detailMsg = '';
-                    if (applyTableDesignChecked) {
-                        if (modifiedBlob.totalTablesCount > 0) {
-                            detailMsg = `표(Table) ${modifiedBlob.totalTablesCount}개 표준화 및 첫 행 스타일 적용 완료`;
-                        } else {
-                            detailMsg = `⚠️ 표(Table) 요소가 존재하지 않아 표 디자인 변경을 생략하고 원본 그대로 저장했습니다.`;
+                    if (saved) {
+                        let detailMsg = '';
+                        if (applyTableDesignChecked) {
+                            detailMsg = modifiedBlob.totalTablesCount > 0
+                                ? `표(Table) ${modifiedBlob.totalTablesCount}개 표준화 및 첫 행 스타일 적용 완료`
+                                : `⚠️ 표(Table) 요소가 존재하지 않아 표 디자인 변경을 생략하고 원본 그대로 저장했습니다.`;
                         }
-                    }
-                    
-                    if (parsedRules.length > 0 || parsedFontRules.length > 0 || parsedFontSizeRules.length > 0 || applyDesignChecked) {
-                        if (modifiedBlob.hasChanges) {
-                            const textChangesStr = '단어/폰트/크기/외곽선 일괄 수정 적용 완료';
-                            detailMsg = detailMsg ? `${detailMsg} (${textChangesStr})` : textChangesStr;
-                        } else if (!applyTableDesignChecked) {
-                            detailMsg = `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
+                        if (parsedRules.length > 0 || parsedFontRules.length > 0 || parsedFontSizeRules.length > 0 || applyDesignChecked) {
+                            if (modifiedBlob.hasChanges) {
+                                const t = '단어/폰트/크기/외곽선 일괄 수정 적용 완료';
+                                detailMsg = detailMsg ? `${detailMsg} (${t})` : t;
+                            } else if (!applyTableDesignChecked) {
+                                detailMsg = `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
+                            }
                         }
+                        reports.push({ fileName: file.name, status: 'success', detail: detailMsg || '변경 사항 없음 (원본 그대로 저장 완료)' });
+                        successCount++;
                     }
-
-                    // 디스크 쓰기 오류로 ZIP 구출 모드 가동 시 안내 문구 보충
-                    if (hasWriteError && directoryHandle) {
-                        detailMsg = detailMsg ? `${detailMsg} (💡 브라우저 파일 캐시 충돌 방지를 위해 통합 ZIP 파일 내에 안전하게 구출 저장되었습니다)` : `💡 통합 ZIP 압축 파일 내에 안전하게 구출 저장 완료`;
-                    }
-
-                    reports.push({
-                        fileName: file.name,
-                        status: 'success',
-                        detail: detailMsg || '변경 사항 없음 (원본 그대로 저장 완료)'
-                    });
-
-                    successCount++;
                 } catch (fileErr) {
                     console.error(`Error processing ${file.name}:`, fileErr);
-                    reports.push({
-                        fileName: file.name,
-                        status: 'error',
-                        detail: `❌ 처리 실패: ${fileErr.message || 'PPT 내부 구조 파싱 에러'}`
-                    });
+                    reports.push({ fileName: file.name, status: 'error', detail: `❌ 처리 실패: ${fileErr.message || 'PPT 내부 구조 파싱 에러'}` });
+                }
+            } else {
+                // 다중 파일: 모두 처리 후 ZIP으로 일괄 다운로드
+                const zip = new JSZip();
+
+                for (const file of batchPptFiles) {
+                    try {
+                        const options = { 
+                            replaceRules: parsedRules, 
+                            fontRules: parsedFontRules,
+                            fontSizeRules: parsedFontSizeRules,
+                            applyDesign: applyDesignChecked, 
+                            applyTableDesign: applyTableDesignChecked, 
+                            applyFirstRowHeaderStyle: applyFirstRowHeaderStyle,
+                            targetText: designTargetText 
+                        };
+                        const modifiedBlob = await processPptBatch(file, options);
+                        const fileName = `수정_${file.name}`;
+                        zip.file(fileName, modifiedBlob);
+
+                        let detailMsg = '';
+                        if (applyTableDesignChecked) {
+                            detailMsg = modifiedBlob.totalTablesCount > 0
+                                ? `표(Table) ${modifiedBlob.totalTablesCount}개 표준화 및 첫 행 스타일 적용 완료`
+                                : `⚠️ 표(Table) 요소가 존재하지 않아 표 디자인 변경을 생략하고 원본 그대로 저장했습니다.`;
+                        }
+                        if (parsedRules.length > 0 || parsedFontRules.length > 0 || parsedFontSizeRules.length > 0 || applyDesignChecked) {
+                            if (modifiedBlob.hasChanges) {
+                                const t = '단어/폰트/크기/외곽선 일괄 수정 적용 완료';
+                                detailMsg = detailMsg ? `${detailMsg} (${t})` : t;
+                            } else if (!applyTableDesignChecked) {
+                                detailMsg = `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
+                            }
+                        }
+                        reports.push({ fileName: file.name, status: 'success', detail: detailMsg || '변경 사항 없음 (원본 그대로 저장 완료)' });
+                        successCount++;
+                    } catch (fileErr) {
+                        console.error(`Error processing ${file.name}:`, fileErr);
+                        reports.push({ fileName: file.name, status: 'error', detail: `❌ 처리 실패: ${fileErr.message || 'PPT 내부 구조 파싱 에러'}` });
+                    }
+                }
+
+                if (successCount > 0) {
+                    const zipBlob = await zip.generateAsync({ type: 'blob' });
+                    // 다중 파일 ZIP도 다운로드 폴더에 저장 다이얼로그 시도
+                    let zipSaved = false;
+                    if ('showSaveFilePicker' in window) {
+                        try {
+                            const handle = await window.showSaveFilePicker({
+                                suggestedName: '수정_PPT_산출물_일괄다운로드.zip',
+                                startIn: 'downloads',
+                                types: [{
+                                    description: 'ZIP 압축 파일',
+                                    accept: { 'application/zip': ['.zip'] },
+                                }],
+                            });
+                            const writable = await handle.createWritable();
+                            await writable.write(zipBlob);
+                            await writable.close();
+                            zipSaved = true;
+                        } catch (pickerErr) {
+                            if (pickerErr.name !== 'AbortError') {
+                                const { saveAs } = await import('file-saver');
+                                saveAs(zipBlob, '수정_PPT_산출물_일괄다운로드.zip');
+                                zipSaved = true;
+                            }
+                        }
+                    }
+                    if (!zipSaved) {
+                        const { saveAs } = await import('file-saver');
+                        saveAs(zipBlob, '수정_PPT_산출물_일괄다운로드.zip');
+                    }
                 }
             }
 
             setBatchReport(reports);
 
             if (successCount > 0) {
-                if (useZipFallback && zip) {
-                    // 📦 모든 파일 ZIP 압축 후 일괄 다운로드 실행
-                    const zipBlob = await zip.generateAsync({ type: 'blob' });
-                    const { saveAs } = await import('file-saver');
-                    saveAs(zipBlob, '수정_PPT_산출물_일괄다운로드.zip');
-                    
-                    if (hasWriteError) {
-                        setSuccessMsg(`💡 브라우저의 로컬 파일 시스템 캐시 불일치가 감지되었습니다. 데이터 유실을 방지하기 위해 수정된 모든 PPT 산출물(${successCount}개)을 안전하게 하나의 통합 ZIP 압축 파일('수정_PPT_산출물_일괄다운로드.zip')로 자동 복구 및 압축하여 다운로드해 드렸습니다. 하단의 파일별 일괄 편집 상세 결과 리포트를 확인해 주세요.`);
-                    } else {
-                        setSuccessMsg(`🔒 브라우저 보안 정책상 일부 폴더(다운로드, 시스템 루트 등)로의 직접 저장이 제한되어, 수정된 모든 PPT 산출물(${successCount}개)을 안전하게 하나의 통합 ZIP 압축 파일('수정_PPT_산출물_일괄다운로드.zip')로 묶어 다운로드해 드렸습니다. 하단의 파일별 일괄 편집 상세 결과 리포트를 확인해 주세요.`);
-                    }
+                if (batchPptFiles.length > 1) {
+                    setSuccessMsg(`성공적으로 ${successCount}개의 파일을 처리하여 ZIP 압축 파일로 다운로드했습니다. 하단의 파일별 일괄 편집 상세 결과 리포트를 확인해 주세요.`);
                 } else {
-                    setSuccessMsg(`성공적으로 ${successCount}개의 파일이 지정하신 폴더에 직접 일괄 편집·저장되었습니다. 하단의 파일별 일괄 편집 상세 결과 리포트를 확인해 주세요.`);
+                    setSuccessMsg(`성공적으로 파일이 편집·저장되었습니다. 하단의 파일별 일괄 편집 상세 결과 리포트를 확인해 주세요.`);
                 }
                 setBatchPptFiles([]);
                 setReplaceRules('');
@@ -450,7 +469,7 @@ export default function PptGenerator() {
                 setFontSize('');
                 setApplyDesignChecked(false);
                 setApplyTableDesignChecked(false);
-                setApplyFirstRowHeaderStyle(true); // 하위 옵션 상태 리셋
+                setApplyFirstRowHeaderStyle(true);
                 setDesignTargetText('');
             } else {
                 setErrorMsg('처리된 파일이 없습니다. 변경 대상 텍스트나 디자인 요소가 존재하는지 확인해주세요.');

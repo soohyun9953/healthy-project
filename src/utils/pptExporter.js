@@ -13,6 +13,7 @@ export async function saveFileWithLocationPicker(blob, defaultFileName) {
         try {
             const handle = await window.showSaveFilePicker({
                 suggestedName: defaultFileName,
+                startIn: 'downloads',
                 types: [{
                     description: 'PowerPoint Presentation',
                     accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
@@ -99,10 +100,10 @@ function duplicateSlides(zip, count, chunkSize) {
 
     const allFiles = Object.keys(zip.files);
     allFiles.forEach(fileName => {
-        if (fileName.startsWith('ppt/slides/slide') && !fileName.includes('slide1.xml')) {
+        if (fileName.toLowerCase().startsWith('ppt/slides/slide') && !fileName.toLowerCase().includes('slide1.xml')) {
             zip.remove(fileName);
         }
-        if (fileName.startsWith('ppt/slides/_rels/slide') && !fileName.includes('slide1.xml.rels')) {
+        if (fileName.toLowerCase().startsWith('ppt/slides/_rels/slide') && !fileName.toLowerCase().includes('slide1.xml.rels')) {
             zip.remove(fileName);
         }
     });
@@ -116,15 +117,16 @@ function duplicateSlides(zip, count, chunkSize) {
     }
 
     let maxSldIdNum = 255;
-    const sldIdMatches = presXml.matchAll(/id="(\d+)"/g);
+    // 💡 정밀 패치: 다른 무관한 ID 매칭을 피하기 위해 실제 슬라이드 ID 태그(<p:sldId>) 내의 id만 한정 추출
+    const sldIdMatches = presXml.matchAll(/<p:sldId[^>]*\bid="(\d+)"/gi);
     for (const m of sldIdMatches) {
         const n = parseInt(m[1]);
-        if (n > maxSldIdNum && n < 1000000) maxSldIdNum = n;
+        if (n >= 256 && n > maxSldIdNum) maxSldIdNum = n;
     }
 
-    // 2-2. 원래 slide1.xml을 가리키는 Relationship의 rId와 Target 추출
-    const slide1RelMatch = presRelsXml.match(/<Relationship [^>]*Id="([^"]+)"[^>]*Target="([^"]*slide1\.xml)"[^>]*\/>/i);
-    const slide1RId = slide1RelMatch ? slide1RelMatch[1] : "rId2"; // 폴백 기본값 rId2
+    // 2-2. 원래 slide1.xml을 가리키는 Relationship의 rId와 Target 추출 (Type 기준 검색으로 대소문자/경로 스타일 편차 완벽 우회)
+    const slide1RelMatch = presRelsXml.match(/<Relationship [^>]*Id="([^"]+)"[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/slide"[^>]*Target="([^"]*)"[^>]*\/>/i);
+    const slide1RId = slide1RelMatch ? slide1RelMatch[1] : "rId2";
     const slide1Target = slide1RelMatch ? slide1RelMatch[2] : "slides/slide1.xml";
 
     // 2-3. 원래 slide1.xml의 sldIdLst 내 p:sldId 엘리먼트 추출
@@ -171,13 +173,27 @@ function duplicateSlides(zip, count, chunkSize) {
             return `{${key}_${globalRowIdx}}`;
         });
         
-        // Shape ID 충돌 방지: cNvPr 내부의 id만 정교하게 타겟팅
-        slideNStr = slideNStr.replace(/(<[^>]*[cC]NvPr[^>]* id=")(\d+)(")/g, (match, prefix, idStr, suffix) => {
-            return `${prefix}${parseInt(idStr) + ((i - 1) * 1000)}${suffix}`;
+        // 💡 중요: 도형 ID(Shape ID)는 슬라이드 파일 내부에서만 유니크하면 되므로, 
+        // 억지로 id 값을 수정하여 연결선(Connector)이나 애니메이션 대상(spid) 참조를 손상시키는 로직을 제거하여 파워포인트 복구 에러 완벽 해결!
+        
+        // 💡 3차 정밀 패치 추가 보완: 복제 슬라이드 본문 XML 내에서 차트/스마트아트가 가리키는 관계 ID(rId)가 사라짐에 따라 
+        // 발생할 수 있는 '정의되지 않은 관계 참조 오류'를 원천 차단하기 위해, 해당 개체를 감싸는 <p:graphicFrame> 요소를 본문에서 안전하게 통째로 지워줍니다.
+        slideNStr = slideNStr.replace(/<p:graphicFrame>([\s\S]*?)<\/p:graphicFrame>/gi, (match, content) => {
+            if (content.includes('drawingml/2006/chart') || 
+                content.includes('drawingml/2006/diagram') || 
+                content.includes('chartUserShapes')) {
+                return '';
+            }
+            return match;
         });
         
         zip.file(slidePath, slideNStr);
-        if (sld1RelsXml) zip.file(`ppt/slides/_rels/${slideFileName}.rels`, sld1RelsXml);
+        if (sld1RelsXml) {
+            // 💡 정밀 패치: 슬라이드별 고유 관계(슬라이드 노트, 댓글 등, 그리고 특히 차트/스마트아트 공유 락 충돌 방지)의 중복 지정으로 인한 
+            // 파워포인트 엔진 내 '중복 타겟 리소스 참조 충돌'을 방지하기 위해 해당 관계 태그를 안전하게 필터링하여 지워줍니다.
+            const cleanSldRelsXml = sld1RelsXml.replace(/<Relationship [^>]*Type="[^"]*(notesSlide|comments|commentsExtended|chart|diagramDrawing|chartUserShapes)[^"]*"[^>]*\/>\s*/gi, '');
+            zip.file(`ppt/slides/_rels/${slideFileName}.rels`, cleanSldRelsXml);
+        }
     }
 
     // 5. 메타데이터 정교한 청소 후 신규 조립
@@ -189,41 +205,22 @@ function duplicateSlides(zip, count, chunkSize) {
         zip.file('ppt/presentation.xml', newPresXml);
     }
 
-    // [[Content_Types].xml] - 기존 모든 슬라이드 Override 청소 후 재생성하여 주입
-    let cleanCtXml = ctXml.replace(/<Override PartName="\/ppt\/slides\/slide\d+\.xml"[^>]*>\s*/g, '');
-    const slide1ContentTypeEntry = `<Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`;
-    const newCtXml = cleanCtXml.replace('</Types>', `${slide1ContentTypeEntry}${newContentTypeEntries}</Types>`);
+    // [[Content_Types].xml] - 기존 1번 제외한 슬라이드 Override만 청소 후 재생성하여 주입 (대소문자 무시 i 플래그 필수)
+    // 💡 정밀 패치: 1번 슬라이드의 Override는 원본 형태 그대로 보존하고, slide2.xml 등 2번 이상 복제 슬라이드에 해당하는 엘리먼트만 제거합니다.
+    let cleanCtXml = ctXml.replace(/<Override [^>]*PartName="\/ppt\/slides\/slide(?!1\.xml)\d+\.xml"[^>]*ContentType="application\/vnd\.openxmlformats-officedocument\.presentationml\.slide\+xml"[^>]*\/>\s*/gi, '');
+    const newCtXml = cleanCtXml.replace('</Types>', `${newContentTypeEntries}</Types>`);
     zip.file('[Content_Types].xml', newCtXml);
 
-    // [presentation.xml.rels] - 기존 모든 슬라이드 Relationship 청소 후 재생성하여 주입
-    let cleanPresRelsXml = presRelsXml.replace(/<Relationship [^>]*Target="[^"]*slide\d+\.xml"[^>]*\/>\s*/g, '');
-    const slide1RelEntry = `<Relationship Id="${slide1RId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="${slide1Target}"/>`;
-    const newPresRelsXml = cleanPresRelsXml.replace('</Relationships>', `${slide1RelEntry}${newRelEntries}</Relationships>`);
+    // [presentation.xml.rels] - 기존 1번 제외한 슬라이드 Relationship만 청소 후 재생성하여 주입 (대소문자 무시 i 플래그 필수)
+    // 💡 정밀 패치: 1번 슬라이드의 Relationship 정보는 완벽하게 원본 그대로 격리 보존하고, 나머지 slide2.xml 등만 제거합니다.
+    let cleanPresRelsXml = presRelsXml.replace(/<Relationship [^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/slide"[^>]*Target="[^"]*slide(?!1\.xml)\d+\.xml"[^>]*\/>\s*/gi, '');
+    const newPresRelsXml = cleanPresRelsXml.replace('</Relationships>', `${newRelEntries}</Relationships>`);
     zip.file('ppt/_rels/presentation.xml.rels', newPresRelsXml);
 
-    // [app.xml] - 슬라이드 개수 업데이트 및 TitlesOfParts 내 벡터 안전 업데이트
+    // [app.xml] - 슬라이드 개수 업데이트 (불안정한 TitlesOfParts 수동 구조 변경 대신, 가장 안전하고 명확하게 개수 속성만 교체)
     const appXml = zip.file('docProps/app.xml')?.asText();
     if (appXml) {
-        let newAppXml = appXml.replace(/<Slides>\d+<\/Slides>/, `<Slides>${count}</Slides>`);
-        
-        const titlesOfPartsRegex = /<TitlesOfParts>([\s\S]*?)<\/TitlesOfParts>/;
-        const titlesMatch = newAppXml.match(titlesOfPartsRegex);
-        if (titlesMatch) {
-            const vectorRegex = /<vt:vector[^>]+size="(\d+)"[^>]+baseType="lpstr">([\s\S]*?)<\/vt:vector>/;
-            const vtMatch = titlesMatch[1].match(vectorRegex);
-            if (vtMatch) {
-                const firstLpstr = vtMatch[2].match(/<vt:lpstr>[\s\S]*?<\/vt:lpstr>/)?.[0] || "<vt:lpstr>Slide 1</vt:lpstr>";
-                let newLpstrs = firstLpstr;
-                for (let i = 2; i <= count; i++) newLpstrs += `<vt:lpstr>Slide ${i}</vt:lpstr>`;
-                
-                const updatedVector = vtMatch[0]
-                    .replace(/size="\d+"/, `size="${count}"`)
-                    .replace(vtMatch[2], newLpstrs);
-                    
-                const updatedTitlesOfParts = titlesMatch[0].replace(vtMatch[0], updatedVector);
-                newAppXml = newAppXml.replace(titlesMatch[0], updatedTitlesOfParts);
-            }
-        }
+        const newAppXml = appXml.replace(/<Slides>\d+<\/Slides>/, `<Slides>${count}</Slides>`);
         zip.file('docProps/app.xml', newAppXml);
     }
 }
@@ -270,7 +267,9 @@ export async function generatePptFromTemplate(pptTemplateFile, dataRows, generat
                 mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
             });
 
-            await saveFileWithLocationPicker(blob, '통합_데이터_리포트.pptx');
+            // 파일명: PPT 양식 파일명 그대로 사용 (확장자 제거 후 재사용)
+            const templateBaseName = pptTemplateFile.name.replace(/\.pptx$/i, '');
+            await saveFileWithLocationPicker(blob, `${templateBaseName}.pptx`);
         } catch (error) {
             console.error('단일 PPT 생성 오류:', error);
             throw error;
