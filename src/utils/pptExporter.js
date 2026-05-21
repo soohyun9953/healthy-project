@@ -856,24 +856,29 @@ export async function processPptBatch(pptFile, options) {
                         reversedBNames.forEach(bName => {
                             let borderColor = '7F7F7F'; // 기본 회색 (#7F7F7F)
                             
-                            // 첫 번째 행이고, 첫 행 특별 포맷팅 옵션(applyFirstRowHeaderStyle)이 활성화된 경우에만 내부 실선 흰색 적용
-                            if (rIdx === 0 && options.applyFirstRowHeaderStyle !== false) {
-                                if (bName === 'lnB') {
-                                    // 첫 행의 아래선은 첫째 행 and 둘째 행 사이의 내부 수평 실선이므로 흰색 적용
-                                    borderColor = 'FFFFFF';
+                            const isFirstRow = rIdx === 0;
+                            const isFirstCol = cIdx === 0;
+                            const isLastRow = rIdx === trs.length - 1;
+                            const isLastCol = cIdx === tcs.length - 1;
+                            const applyHeader = options.applyFirstRowHeaderStyle !== false;
+                            
+                            if (applyHeader && (isFirstRow || isFirstCol)) {
+                                // 헤더 셀(첫 행 또는 첫 열)의 테두리 색상 결정
+                                if (bName === 'lnT') {
+                                    // 위쪽 선: 맨 위 외곽선이면 회색, 아니면(첫 열 내부 위선) 흰색
+                                    borderColor = isFirstRow ? '7F7F7F' : 'FFFFFF';
+                                } else if (bName === 'lnB') {
+                                    // 아래쪽 선: 맨 아래 외곽선이면 회색, 아니면 흰색
+                                    borderColor = isLastRow ? '7F7F7F' : 'FFFFFF';
                                 } else if (bName === 'lnL') {
-                                    // 첫 행의 왼쪽선은 맨 왼쪽 외곽선(cIdx === 0)이 아니면 내부 수직 실선이므로 흰색 적용
-                                    borderColor = (cIdx === 0) ? '7F7F7F' : 'FFFFFF';
+                                    // 왼쪽 선: 맨 왼쪽 외곽선이면 회색, 아니면 흰색
+                                    borderColor = isFirstCol ? '7F7F7F' : 'FFFFFF';
                                 } else if (bName === 'lnR') {
-                                    // 첫 행의 오른쪽선은 맨 오른쪽 외곽선(cIdx === tcs.length - 1)이 아니면 내부 수직 실선이므로 흰색 적용
-                                    const isLastCol = (cIdx === tcs.length - 1);
+                                    // 오른쪽 선: 맨 오른쪽 외곽선이면 회색, 아니면 흰색
                                     borderColor = isLastCol ? '7F7F7F' : 'FFFFFF';
-                                } else if (bName === 'lnT') {
-                                    // 첫 행의 위선은 표 전체의 맨 위 외곽선이므로 회색 고정
-                                    borderColor = '7F7F7F';
                                 }
                             } else {
-                                // 일반 셀 또는 첫 행 특별 포맷팅 옵션이 꺼진 경우: 외곽선 및 내부선 모두 0.5pt 회색 고정
+                                // 일반 셀: 외곽선 및 내부선 모두 0.5pt 회색 고정
                                 borderColor = '7F7F7F';
                             }
                             
@@ -896,9 +901,10 @@ export async function processPptBatch(pptFile, options) {
                             tcPr.insertBefore(ln, tcPr.firstChild);
                         });
                         
-                        // [규칙 2]: 첫 번째 행 (rIdx === 0) 이고 첫 행 특별 포맷팅 옵션이 켜져 있을 때만 특별 포맷팅 적용
-                        if (rIdx === 0 && options.applyFirstRowHeaderStyle !== false) {
-                            // 1. 셀 배경색 채우기: RGB 0,112,192 (#0070C0)
+                        // [규칙 2]: 첫 번째 행(rIdx === 0) 또는 첫 번째 열(cIdx === 0) 이고 첫 행 특별 포맷팅 옵션이 켜져 있을 때만 특별 포맷팅 적용
+                        const isHeaderCell = (rIdx === 0 || cIdx === 0) && options.applyFirstRowHeaderStyle !== false;
+                        if (isHeaderCell) {
+                            // 1. 셀 배경색 채우기: RGB 0,114,186 (#0072BA)
                             let existingFill = null;
                             for (let k = 0; k < tcPr.childNodes.length; k++) {
                                 const child = tcPr.childNodes[k];
@@ -913,11 +919,11 @@ export async function processPptBatch(pptFile, options) {
                             
                             const bgSolidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
                             const bgSrgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                            bgSrgbClr.setAttribute('val', '0072BA'); // 첫행 채우기색 0,114,186 (RGB 0,114,186)
+                            bgSrgbClr.setAttribute('val', '0072BA'); // 첫행/첫열 채우기색 0,114,186 (RGB 0,114,186)
                             bgSolidFill.appendChild(bgSrgbClr);
                             tcPr.appendChild(bgSolidFill);
                             
-                            // 2. 첫 행의 텍스트 스타일링: 흰색, 11pt, KoPub돋움체 Bold (런속성 rPr 누락 대응형 강제 바인딩)
+                            // 2. 헤더 셀 텍스트 스타일링: 흰색, 11pt, KoPub돋움체 Bold, Bold 해제
                             const textRuns = [];
                             const tcNodes = tc.getElementsByTagName('*');
                             for (let k = 0; k < tcNodes.length; k++) {
