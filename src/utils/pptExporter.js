@@ -855,33 +855,8 @@ export async function processPptBatch(pptFile, options) {
                         const reversedBNames = ['lnB', 'lnT', 'lnR', 'lnL'];
                         
                         reversedBNames.forEach(bName => {
-                            let borderColor = '7F7F7F'; // 기본 회색 (#7F7F7F)
-                            
-                            const isFirstRow = rIdx === 0;
-                            const isFirstCol = cIdx === 0;
-                            const isLastRow = rIdx === trs.length - 1;
-                            const isLastCol = cIdx === tcs.length - 1;
-                            const applyHeader = applyFirstRowHeaderStyle !== false;
-                            
-                            if (applyHeader && (isFirstRow || isFirstCol)) {
-                                // 헤더 셀(첫 행 또는 첫 열)의 테두리 색상 결정
-                                if (bName === 'lnT') {
-                                    // 위쪽 선: 맨 위 외곽선이면 회색, 아니면(첫 열 내부 위선) 흰색
-                                    borderColor = isFirstRow ? '7F7F7F' : 'FFFFFF';
-                                } else if (bName === 'lnB') {
-                                    // 아래쪽 선: 맨 아래 외곽선이면 회색, 아니면 흰색
-                                    borderColor = isLastRow ? '7F7F7F' : 'FFFFFF';
-                                } else if (bName === 'lnL') {
-                                    // 왼쪽 선: 맨 왼쪽 외곽선이면 회색, 아니면 흰색
-                                    borderColor = isFirstCol ? '7F7F7F' : 'FFFFFF';
-                                } else if (bName === 'lnR') {
-                                    // 오른쪽 선: 맨 오른쪽 외곽선이면 회색, 아니면 흰색
-                                    borderColor = isLastCol ? '7F7F7F' : 'FFFFFF';
-                                }
-                            } else {
-                                // 일반 셀: 외곽선 및 내부선 모두 0.5pt 회색 고정
-                                borderColor = '7F7F7F';
-                            }
+                            // 모든 테두리는 기본 회색(#7F7F7F)으로 통일 (첫행의 내부 실선을 흰색으로 하는 것 중지)
+                            const borderColor = '7F7F7F';
                             
                             const ln = xmlDoc.createElementNS(nsA, `a:${bName}`);
                             ln.setAttribute('w', '6350'); // 0.5pt (1 pt = 12700 EMU -> 0.5 pt = 6350 EMU)
@@ -903,28 +878,51 @@ export async function processPptBatch(pptFile, options) {
                         });
                         
                         // [규칙 2]: 첫 번째 행(rIdx === 0) 또는 첫 번째 열(cIdx === 0) 이고 첫 행 특별 포맷팅 옵션이 켜져 있을 때만 특별 포맷팅 적용
-                        const isHeaderCell = (rIdx === 0 || cIdx === 0) && applyFirstRowHeaderStyle !== false;
-                        if (isHeaderCell) {
-                            // 1. 셀 배경색 채우기: RGB 0,114,186 (#0072BA)
-                            let existingFill = null;
-                            for (let k = 0; k < tcPr.childNodes.length; k++) {
-                                const child = tcPr.childNodes[k];
-                                if (child.nodeType === 1 && (child.localName === 'solidFill' || child.tagName.split(':').pop() === 'solidFill')) {
-                                    existingFill = child;
-                                    break;
+                        const applyHeader = applyFirstRowHeaderStyle !== false;
+                        const isFirstRow = rIdx === 0;
+                        const isFirstCol = cIdx === 0;
+                        
+                        if (applyHeader && (isFirstRow || isFirstCol)) {
+                            // 1. 셀 배경색 채우기: 첫 번째 행(rIdx === 0)일 때만 RGB 0,114,186 (#0072BA) 적용
+                            if (isFirstRow) {
+                                let existingFill = null;
+                                for (let k = 0; k < tcPr.childNodes.length; k++) {
+                                    const child = tcPr.childNodes[k];
+                                    if (child.nodeType === 1 && (child.localName === 'solidFill' || child.tagName.split(':').pop() === 'solidFill')) {
+                                        existingFill = child;
+                                        break;
+                                    }
+                                }
+                                if (existingFill) {
+                                    tcPr.removeChild(existingFill);
+                                }
+                                
+                                const bgSolidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                                const bgSrgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                                bgSrgbClr.setAttribute('val', '0072BA'); // 첫행 채우기색 0,114,186
+                                bgSolidFill.appendChild(bgSrgbClr);
+                                
+                                // tcPr 내부에서 테두리 요소(lnL, lnR 등) 다음에 위치하도록 안전하게 삽입하여 스키마 정합성 보장
+                                let tcInsertBeforeNode = null;
+                                const borderTypes = ['lnL', 'lnR', 'lnT', 'lnB', 'lnTlToBr', 'lnBlToTr'];
+                                for (let k = 0; k < tcPr.childNodes.length; k++) {
+                                    const child = tcPr.childNodes[k];
+                                    if (child.nodeType === 1) {
+                                        const cName = child.localName || child.tagName.split(':').pop();
+                                        if (!borderTypes.includes(cName)) {
+                                            tcInsertBeforeNode = child;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (tcInsertBeforeNode) {
+                                    tcPr.insertBefore(bgSolidFill, tcInsertBeforeNode);
+                                } else {
+                                    tcPr.appendChild(bgSolidFill);
                                 }
                             }
-                            if (existingFill) {
-                                tcPr.removeChild(existingFill);
-                            }
                             
-                            const bgSolidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                            const bgSrgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                            bgSrgbClr.setAttribute('val', '0072BA'); // 첫행/첫열 채우기색 0,114,186 (RGB 0,114,186)
-                            bgSolidFill.appendChild(bgSrgbClr);
-                            tcPr.appendChild(bgSolidFill);
-                            
-                            // 2. 헤더 셀 텍스트 스타일링: 흰색, 11pt, KoPub돋움체 Bold, Bold 해제
+                            // 2. 텍스트 스타일링: 11pt, KoPub돋움체 Bold, Bold 해제 공통 적용. 단, 글씨색 흰색 변경은 첫 번째 행(rIdx === 0)일 때만 적용!
                             const textRuns = [];
                             const tcNodes = tc.getElementsByTagName('*');
                             for (let k = 0; k < tcNodes.length; k++) {
@@ -963,33 +961,53 @@ export async function processPptBatch(pptFile, options) {
                                     rPr.setAttribute('sz', '1100'); // 11pt
                                     rPr.removeAttribute('b'); // Bold 해제
                                     
-                                    // 💡 endParaRPr 또는 defRPr 인 속성 전용 노드는 자식 엘리먼트(solidFill, font) 삽입 시 DOMException이 발생하므로 속성값만 세팅하고 자식 삽입은 안전하게 우회!
+                                    // endParaRPr 또는 defRPr 인 속성 전용 노드는 자식 엘리먼트 삽입 시 에러가 나므로 안전하게 우회
                                     const isAttrOnlyNode = (localName === 'endParaRPr' || localName === 'defRPr');
                                     
                                     if (!isAttrOnlyNode) {
-                                        // 글씨색 흰색으로 변경
-                                        let textFill = null;
-                                        for (let k = 0; k < rPr.childNodes.length; k++) {
-                                            const child = rPr.childNodes[k];
-                                            if (child.nodeType === 1 && (child.localName === 'solidFill' || child.tagName.split(':').pop() === 'solidFill')) {
-                                                textFill = child;
-                                                break;
+                                        // 글씨색 흰색으로 변경: 첫 번째 행(rIdx === 0)일 때만 적용!
+                                        if (isFirstRow) {
+                                            let textFill = null;
+                                            for (let k = 0; k < rPr.childNodes.length; k++) {
+                                                const child = rPr.childNodes[k];
+                                                if (child.nodeType === 1 && (child.localName === 'solidFill' || child.tagName.split(':').pop() === 'solidFill')) {
+                                                    textFill = child;
+                                                    break;
+                                                }
+                                            }
+                                            if (textFill) {
+                                                rPr.removeChild(textFill);
+                                            }
+                                            
+                                            const textSolidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                                            const textSrgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                                            textSrgbClr.setAttribute('val', 'FFFFFF'); // 흰색
+                                            textSolidFill.appendChild(textSrgbClr);
+                                            
+                                            // rPr 스키마 순서: solidFill은 ln, uFill, uLn 뒤, effectLst, highlight, latin 등 앞
+                                            let rPrInsertBeforeNode = null;
+                                            const rPrAfterTypes = ['effectLst', 'effectDag', 'highlight', 'latin', 'ea', 'cs', 'sym', 'hlinkClick', 'hlinkMouseOver', 'rtl', 'extLst'];
+                                            for (let k = 0; k < rPr.childNodes.length; k++) {
+                                                const child = rPr.childNodes[k];
+                                                if (child.nodeType === 1) {
+                                                    const cName = child.localName || child.tagName.split(':').pop();
+                                                    if (rPrAfterTypes.includes(cName)) {
+                                                        rPrInsertBeforeNode = child;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            if (rPrInsertBeforeNode) {
+                                                rPr.insertBefore(textSolidFill, rPrInsertBeforeNode);
+                                            } else {
+                                                rPr.appendChild(textSolidFill);
                                             }
                                         }
-                                        if (textFill) {
-                                            rPr.removeChild(textFill);
-                                        }
                                         
-                                        const textSolidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                                        const textSrgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                                        textSrgbClr.setAttribute('val', 'FFFFFF'); // 흰색
-                                        textSolidFill.appendChild(textSrgbClr);
-                                        
-                                        // 스키마 시퀀스 안정을 위해 rPr의 맨 처음에 삽입
-                                        rPr.insertBefore(textSolidFill, rPr.firstChild);
-                                        
-                                        // 폰트 변경 (latin, ea, cs)
+                                        // 폰트 변경 (latin, ea, cs) 공통 적용
                                         const fontTypes = ['latin', 'ea', 'cs'];
+                                        const fontAfterTypes = ['sym', 'hlinkClick', 'hlinkMouseOver', 'rtl', 'extLst'];
+                                        
                                         fontTypes.forEach(fType => {
                                             let fontEl = null;
                                             for (let k = 0; k < rPr.childNodes.length; k++) {
@@ -997,19 +1015,76 @@ export async function processPptBatch(pptFile, options) {
                                                 if (child.nodeType === 1 && (child.localName === fType || child.tagName.split(':').pop() === fType)) {
                                                     fontEl = child;
                                                     break;
-                                                  }
-                                              }
-                                              if (fontEl) {
-                                                  fontEl.setAttribute('typeface', 'KoPub돋움체 Bold');
-                                              } else {
-                                                  fontEl = xmlDoc.createElementNS(nsA, `a:${fType}`);
-                                                  fontEl.setAttribute('typeface', 'KoPub돋움체 Bold');
-                                                  rPr.appendChild(fontEl);
-                                              }
-                                          });
+                                                }
+                                            }
+                                            
+                                            if (fontEl) {
+                                                fontEl.setAttribute('typeface', 'KoPub돋움체 Bold');
+                                            } else {
+                                                fontEl = xmlDoc.createElementNS(nsA, `a:${fType}`);
+                                                fontEl.setAttribute('typeface', 'KoPub돋움체 Bold');
+                                                
+                                                // 안전한 폰트 삽입 위치 결정
+                                                let fontInsertBefore = null;
+                                                for (let k = 0; k < rPr.childNodes.length; k++) {
+                                                    const child = rPr.childNodes[k];
+                                                    if (child.nodeType === 1) {
+                                                        const cName = child.localName || child.tagName.split(':').pop();
+                                                        if (fontAfterTypes.includes(cName)) {
+                                                            fontInsertBefore = child;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                if (fontInsertBefore) {
+                                                    rPr.insertBefore(fontEl, fontInsertBefore);
+                                                } else {
+                                                    rPr.appendChild(fontEl);
+                                                }
+                                            }
+                                        });
                                     }
                                 }
                             }
+                        }
+                        
+                        // 3. 첫 번째 열(cIdx === 0) 및 첫 번째 행(rIdx === 0) 텍스트 가운데 정렬 추가 (헤더 스타일 옵션과 무관하게 무조건 적용)
+                        if (isFirstCol || isFirstRow) {
+                            const paragraphs = [];
+                            const tcNodesForP = tc.getElementsByTagName('*');
+                            for (let k = 0; k < tcNodesForP.length; k++) {
+                                const node = tcNodesForP[k];
+                                if (node.nodeType === 1) {
+                                    const cName = node.localName || node.tagName.split(':').pop();
+                                    if (cName === 'p') {
+                                        paragraphs.push(node);
+                                    }
+                                }
+                            }
+                            paragraphs.forEach(p => {
+                                let pPr = null;
+                                for (let k = 0; k < p.childNodes.length; k++) {
+                                    const child = p.childNodes[k];
+                                    if (child.nodeType === 1) {
+                                        const cName = child.localName || child.tagName.split(':').pop();
+                                        if (cName === 'pPr') {
+                                            pPr = child;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!pPr) {
+                                    pPr = xmlDoc.createElementNS(nsA, 'a:pPr');
+                                    p.insertBefore(pPr, p.firstChild);
+                                }
+                                pPr.setAttribute('algn', 'ctr'); // 가운데 정렬 추가
+                                
+                                // [규칙 4]: 첫 번째 열(cIdx === 0) 단어 잘림 방지 (Hangul word wrap / Latin line break 해제)
+                                if (isFirstCol) {
+                                    pPr.setAttribute('latinLnBrk', '0');
+                                    pPr.setAttribute('eaLnBrk', '0');
+                                }
+                            });
                         }
                     }
                 }

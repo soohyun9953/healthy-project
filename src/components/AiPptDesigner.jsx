@@ -7,9 +7,12 @@ import { injectSlidesIntoMaster, saveFileWithLocationPicker } from '../utils/ppt
 
 export default function AiPptDesigner({ apiKey }) {
     const [inputText, setInputText] = useState('');
+    const [extractedTexts, setExtractedTexts] = useState([]);
+    const [selectedSlideIndex, setSelectedSlideIndex] = useState(null);
     const [emphasisText, setEmphasisText] = useState('');
     const [inputFile, setInputFile] = useState(null);
     const [inputSlideCount, setInputSlideCount] = useState(0);
+
     const [extractedThemeColor, setExtractedThemeColor] = useState(null);
     const [status, setStatus] = useState('idle'); // idle, analyzing, generating, success, error
     const [progressMsg, setProgressMsg] = useState('');
@@ -36,7 +39,6 @@ export default function AiPptDesigner({ apiKey }) {
             // Extract text from pptx using JSZip
             const arrayBuffer = await file.arrayBuffer();
             const zip = await JSZip.loadAsync(arrayBuffer);
-            let extractedText = '';
             
             const slideFiles = Object.keys(zip.files)
                 .filter(name => name.startsWith('ppt/slides/slide') && name.endsWith('.xml'))
@@ -48,30 +50,34 @@ export default function AiPptDesigner({ apiKey }) {
                 
             setInputSlideCount(slideFiles.length);
             
+            // Extract text per slide and store in array
+            const slideTexts = [];
             for (let i = 0; i < slideFiles.length; i++) {
                 const slideFile = slideFiles[i];
                 const content = await zip.file(slideFile).async('string');
-                
-                extractedText += `\n\n--- [원본 슬라이드 ${i + 1}] ---\n`;
-                
+                let slideText = `\n\n--- [원본 슬라이드 ${i + 1}] ---\n`;
                 // Group text by <a:p> (paragraph) to preserve sentence structure
-                const paragraphs = content.match(/<a:p[\s>][\s\S]*?<\/a:p>/g) || content.match(/<a:p>[\s\S]*?<\/a:p>/g);
+                const paragraphs = content.match(/<a:p[\s\>][\s\S]*?<\/a:p>/g) || content.match(/<a:p>[^]*?<\/a:p>/g);
                 if (paragraphs) {
                     paragraphs.forEach(p => {
                         const texts = p.match(/<a:t[^>]*>(.*?)<\/a:t>/g);
                         if (texts) {
                             const pText = texts.map(m => m.replace(/<[^>]+>/g, '')).join('').trim();
-                            if (pText) extractedText += `- ${pText}\n`;
+                            if (pText) slideText += `- ${pText}\n`;
                         }
                     });
                 } else {
                     const matches = content.match(/<a:t[^>]*>(.*?)<\/a:t>/g);
                     if (matches) {
-                        extractedText += matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ') + '\n';
+                        slideText += matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ') + '\n';
                     }
                 }
+                slideTexts.push(slideText.trim());
             }
-            setInputText(extractedText.trim());
+            setExtractedTexts(slideTexts);
+            // Show first slide by default
+            setSelectedSlideIndex(slideTexts.length > 0 ? 0 : null);
+            setInputText(slideTexts.length > 0 ? slideTexts[0] : '');
 
             // Extract Theme Color
             try {
@@ -108,7 +114,8 @@ export default function AiPptDesigner({ apiKey }) {
     };
 
     const clearInput = () => {
-        setInputText('');
+        setExtractedTexts([]);
+        setSelectedSlideIndex(null);
         setEmphasisText('');
         setInputFile(null);
         setInputSlideCount(0);
@@ -362,24 +369,53 @@ export default function AiPptDesigner({ apiKey }) {
                                 </div>
                             ) : null}
 
-                            <textarea
-                                value={inputText}
-                                onChange={(e) => setInputText(e.target.value)}
-                                placeholder=""
-                                style={{
-                                    width: '100%',
-                                    minHeight: '280px',
-                                    background: 'transparent',
-                                    border: 'none',
-                                    padding: '24px',
-                                    color: 'var(--text-primary)',
-                                    fontSize: '15px',
-                                    lineHeight: 1.6,
-                                    resize: 'vertical',
-                                    outline: 'none',
-                                    boxSizing: 'border-box'
-                                }}
-                            />
+                            {/* Slide List and Textarea */}
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                {/* Slide List */}
+                                <div style={{ flex: '0 0 120px', maxHeight: '400px', overflowY: 'auto', borderRight: '1px solid var(--panel-border)', paddingRight: '8px' }}>
+                                    {extractedTexts.map((_, idx) => (
+                                        <div
+                                            key={idx}
+                                            onClick={() => { setSelectedSlideIndex(idx); setInputText(extractedTexts[idx]); }}
+                                            style={{
+                                                padding: '6px 8px',
+                                                cursor: 'pointer',
+                                                background: selectedSlideIndex === idx ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                                borderRadius: '4px',
+                                                marginBottom: '4px'
+                                            }}
+                                        >{`슬라이드 ${idx + 1}`}</div>
+                                    ))}
+                                </div>
+                                {/* Textarea */}
+                                <textarea
+                                    value={inputText}
+                                    onChange={(e) => {
+    setInputText(e.target.value);
+    if (selectedSlideIndex !== null) {
+        setExtractedTexts(prev => {
+            const updated = [...prev];
+            updated[selectedSlideIndex] = e.target.value;
+            return updated;
+        });
+    }
+}}
+                                    placeholder=""
+                                    style={{
+                                        flex: 1,
+                                        minHeight: '280px',
+                                        background: 'transparent',
+                                        border: 'none',
+                                        padding: '24px',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '15px',
+                                        lineHeight: 1.6,
+                                        resize: 'vertical',
+                                        outline: 'none',
+                                        boxSizing: 'border-box'
+                                    }}
+                                />
+                            </div>
                             
                             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".pptx" style={{ display: 'none' }} />
                             
