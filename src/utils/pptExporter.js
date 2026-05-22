@@ -484,7 +484,7 @@ export async function replaceWordsInPpt(pptFile, replaceRulesStr) {
         if (match) {
             rules.push({ oldWord: match[1].trim(), newWord: match[2].trim() });
         } else {
-            throw new Error(`규칙 형식이 올바르지 않습니다: "${trimmed}" (올바른 형식 예: 애플리케이션(어플리케이션))`);
+            throw new Error(`규칙 형식이 올바르지 않습니다: "${trimmed}" (올바른 형식 예: 어플리케이션(애플리케이션))`);
         }
     }
 

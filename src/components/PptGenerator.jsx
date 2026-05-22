@@ -868,7 +868,7 @@ export default function PptGenerator() {
                                 </div>
                                 <input
                                     type="text"
-                                    placeholder="예: 애플리케이션(어플리케이션), AI(인공지능)"
+                                    placeholder="예: 어플리케이션(애플리케이션), 컬럼(칼럼)"
                                     value={replaceRules}
                                     onChange={(e) => setReplaceRules(e.target.value)}
                                     style={{
