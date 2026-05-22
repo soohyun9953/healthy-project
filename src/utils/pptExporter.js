@@ -674,10 +674,13 @@ export async function processPptBatch(pptFile, options) {
         applyDesign = false, 
         applyTableDesign = false, 
         applyFirstRowHeaderStyle = true,
-        targetText = '' 
+        targetText = '',
+        applySpecialCharClean = false,
+        replaceNbs = false,
+        unifyBullets = false
     } = options;
     
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -1106,13 +1109,32 @@ export async function processPptBatch(pptFile, options) {
             
             const localName = el.localName || el.tagName.split(':').pop();
             
-            // 단어 수정 (t 태그)
-            if (localName === 't' && replaceRules.length > 0) {
+            // 단어 수정 및 특수문자 정제 (t 태그)
+            if (localName === 't' && (replaceRules.length > 0 || applySpecialCharClean)) {
                 let text = el.textContent;
                 let originalText = text;
-                for (const rule of replaceRules) {
-                    text = text.split(rule.oldWord).join(rule.newWord);
+                
+                // [신규] 특수문자 일괄 정제
+                if (applySpecialCharClean) {
+                    if (replaceNbs) {
+                        text = text.split('\xa0').join(' ');
+                        text = text.split('\u00a0').join(' ');
+                    }
+                    if (unifyBullets) {
+                        // 1. 중간점 통일 (· -> •)
+                        text = text.split('·').join('•');
+                        // 2. 글머리기호 느낌의 하이픈 기호 정교하게 치환
+                        text = text.replace(/^-(\s+)?/, '• ');
+                        text = text.replace(/\s+-(\s+)?/g, ' • ');
+                    }
                 }
+                
+                if (replaceRules.length > 0) {
+                    for (const rule of replaceRules) {
+                        text = text.split(rule.oldWord).join(rule.newWord);
+                    }
+                }
+                
                 if (text !== originalText) {
                     el.textContent = text;
                     fileChanged = true;

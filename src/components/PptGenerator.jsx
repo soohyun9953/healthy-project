@@ -36,6 +36,9 @@ export default function PptGenerator() {
     const [applyTableDesignChecked, setApplyTableDesignChecked] = useState(false);
     const [applyFirstRowHeaderStyle, setApplyFirstRowHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 행 특별 포맷팅 적용 여부
     const [designTargetText, setDesignTargetText] = useState('');
+    const [applySpecialCharClean, setApplySpecialCharClean] = useState(false); // 옵션 F 활성화 여부
+    const [replaceNbs, setReplaceNbs] = useState(true); // 하위 옵션 1: NBS 일반 공백 변환
+    const [unifyBullets, setUnifyBullets] = useState(true); // 하위 옵션 2: 중간점 통일
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -301,8 +304,8 @@ export default function PptGenerator() {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked) {
-            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 또는 텍스트 디자인 변경 중 하나 이상을 입력/선택해주세요.');
+        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean) {
+            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 또는 특수문자 일괄 정제 중 하나 이상을 입력/선택해주세요.');
             return;
         }
 
@@ -329,7 +332,10 @@ export default function PptGenerator() {
                         applyDesign: applyDesignChecked, 
                         applyTableDesign: applyTableDesignChecked, 
                         applyFirstRowHeaderStyle: applyFirstRowHeaderStyle,
-                        targetText: designTargetText 
+                        targetText: designTargetText,
+                        applySpecialCharClean: applySpecialCharClean,
+                        replaceNbs: replaceNbs,
+                        unifyBullets: unifyBullets
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -366,12 +372,12 @@ export default function PptGenerator() {
                                 ? `표(Table) ${modifiedBlob.totalTablesCount}개 표준화 및 첫 행 스타일 적용 완료`
                                 : `⚠️ 표(Table) 요소가 존재하지 않아 표 디자인 변경을 생략하고 원본 그대로 저장했습니다.`;
                         }
-                        if (parsedRules.length > 0 || parsedFontRules.length > 0 || parsedFontSizeRules.length > 0 || applyDesignChecked) {
+                        if (parsedRules.length > 0 || parsedFontRules.length > 0 || parsedFontSizeRules.length > 0 || applyDesignChecked || applySpecialCharClean) {
                             if (modifiedBlob.hasChanges) {
-                                const t = '단어/폰트/크기/외곽선 일괄 수정 적용 완료';
+                                const t = '단어/폰트/크기/외곽선/특수문자 일괄 수정 적용 완료';
                                 detailMsg = detailMsg ? `${detailMsg} (${t})` : t;
                             } else if (!applyTableDesignChecked) {
-                                detailMsg = `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
+                                detailMsg = `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 또는 정제할 특수문자 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
                             }
                         }
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg || '변경 사항 없음 (원본 그대로 저장 완료)' });
@@ -394,7 +400,10 @@ export default function PptGenerator() {
                             applyDesign: applyDesignChecked, 
                             applyTableDesign: applyTableDesignChecked, 
                             applyFirstRowHeaderStyle: applyFirstRowHeaderStyle,
-                            targetText: designTargetText 
+                            targetText: designTargetText,
+                            applySpecialCharClean: applySpecialCharClean,
+                            replaceNbs: replaceNbs,
+                            unifyBullets: unifyBullets
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         const fileName = `수정_${file.name}`;
@@ -406,12 +415,12 @@ export default function PptGenerator() {
                                 ? `표(Table) ${modifiedBlob.totalTablesCount}개 표준화 및 첫 행 스타일 적용 완료`
                                 : `⚠️ 표(Table) 요소가 존재하지 않아 표 디자인 변경을 생략하고 원본 그대로 저장했습니다.`;
                         }
-                        if (parsedRules.length > 0 || parsedFontRules.length > 0 || parsedFontSizeRules.length > 0 || applyDesignChecked) {
+                        if (parsedRules.length > 0 || parsedFontRules.length > 0 || parsedFontSizeRules.length > 0 || applyDesignChecked || applySpecialCharClean) {
                             if (modifiedBlob.hasChanges) {
-                                const t = '단어/폰트/크기/외곽선 일괄 수정 적용 완료';
+                                const t = '단어/폰트/크기/외곽선/특수문자 일괄 수정 적용 완료';
                                 detailMsg = detailMsg ? `${detailMsg} (${t})` : t;
                             } else if (!applyTableDesignChecked) {
-                                detailMsg = `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
+                                detailMsg = `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 또는 정제할 특수문자 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
                             }
                         }
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg || '변경 사항 없음 (원본 그대로 저장 완료)' });
@@ -471,6 +480,9 @@ export default function PptGenerator() {
                 setApplyTableDesignChecked(false);
                 setApplyFirstRowHeaderStyle(true);
                 setDesignTargetText('');
+                setApplySpecialCharClean(false);
+                setReplaceNbs(true);
+                setUnifyBullets(true);
             } else {
                 setErrorMsg('처리된 파일이 없습니다. 변경 대상 텍스트나 디자인 요소가 존재하는지 확인해주세요.');
             }
@@ -939,23 +951,99 @@ export default function PptGenerator() {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* 옵션 F: 특수문자 일괄 변경 */}
+                            <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={applySpecialCharClean}
+                                        onChange={(e) => setApplySpecialCharClean(e.target.checked)}
+                                        style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
+                                    />
+                                    옵션 F: 특수문자 일괄 변경 기능 적용
+                                </label>
+                                <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                                    💡 PPT 본문 텍스트 내 Non-Breaking Space(줄바꿈 없는 공백)와 중간점(·, •, - 등)을 정제합니다.
+                                </div>
+                                
+                                <div style={{ 
+                                    paddingLeft: '28px', 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    gap: '12px', 
+                                    borderLeft: '2px solid ' + (applySpecialCharClean ? 'rgba(168, 85, 247, 0.5)' : 'rgba(255, 255, 255, 0.1)'), 
+                                    marginTop: '4px',
+                                    opacity: applySpecialCharClean ? 1 : 0.45,
+                                    pointerEvents: applySpecialCharClean ? 'auto' : 'none',
+                                    transition: 'all 0.3s ease'
+                                }}>
+                                    <label style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '8px', 
+                                        cursor: applySpecialCharClean ? 'pointer' : 'not-allowed', 
+                                        fontSize: '13px', 
+                                        color: applySpecialCharClean ? 'var(--text-primary)' : 'var(--text-muted)', 
+                                        fontWeight: 600 
+                                    }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={replaceNbs}
+                                            disabled={!applySpecialCharClean}
+                                            onChange={(e) => setReplaceNbs(e.target.checked)}
+                                            style={{ 
+                                                width: '16px', 
+                                                height: '16px', 
+                                                cursor: applySpecialCharClean ? 'pointer' : 'not-allowed', 
+                                                accentColor: '#a855f7' 
+                                            }}
+                                        />
+                                        줄바꿈 없는 공백 (Non-Breaking Space, \xa0) 일반 공백으로 변환
+                                    </label>
+                                    
+                                    <label style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '8px', 
+                                        cursor: applySpecialCharClean ? 'pointer' : 'not-allowed', 
+                                        fontSize: '13px', 
+                                        color: applySpecialCharClean ? 'var(--text-primary)' : 'var(--text-muted)', 
+                                        fontWeight: 600 
+                                    }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={unifyBullets}
+                                            disabled={!applySpecialCharClean}
+                                            onChange={(e) => setUnifyBullets(e.target.checked)}
+                                            style={{ 
+                                                width: '16px', 
+                                                height: '16px', 
+                                                cursor: applySpecialCharClean ? 'pointer' : 'not-allowed', 
+                                                accentColor: '#a855f7' 
+                                            }}
+                                        />
+                                        중간점 혼용 (· vs • vs -)을 •로 통일 (텍스트 내부의 구분용)
+                                    </label>
+                                </div>
+                            </div>
                         </div>
 
                         <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
                             <button
                                 className="interactive"
                                 onClick={handleBatchProcess}
-                                disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked)}
+                                disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean)}
                                 style={{
                                     width: '100%',
                                     padding: '16px',
-                                    background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                                    color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked)) ? 'var(--text-muted)' : 'white',
+                                    background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                                    color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean)) ? 'var(--text-muted)' : 'white',
                                     border: 'none',
                                     borderRadius: '12px',
                                     fontSize: '16px',
                                     fontWeight: 700,
-                                    cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked)) ? 'not-allowed' : 'pointer',
+                                    cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean)) ? 'not-allowed' : 'pointer',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                                 }}
                             >
