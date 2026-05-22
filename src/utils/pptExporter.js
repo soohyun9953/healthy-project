@@ -694,6 +694,11 @@ export async function processPptBatch(pptFile, options) {
     
     let hasChanges = false;
     let totalTablesCount = 0; // PPT 내에 감지된 총 테이블(표) 요소 개수 누적기
+    let totalReplacedWords = 0;
+    let totalReplacedFonts = 0;
+    let totalReplacedFontSizes = 0;
+    let totalReplacedTextDesigns = 0;
+    let totalSpecialCharsCleaned = 0;
     
     // 타겟 슬라이드 XML 파일 목록
     const targetFiles = allFiles.filter(p => p.endsWith('.xml') && 
@@ -1117,13 +1122,26 @@ export async function processPptBatch(pptFile, options) {
                 // [신규] 특수문자 일괄 정제
                 if (applySpecialCharClean) {
                     if (replaceNbs) {
+                        const nbsCount1 = text.split('\xa0').length - 1;
+                        const nbsCount2 = text.split('\u00a0').length - 1;
+                        if (nbsCount1 > 0 || nbsCount2 > 0) {
+                            totalSpecialCharsCleaned += (nbsCount1 + nbsCount2);
+                        }
                         text = text.split('\xa0').join(' ');
                         text = text.split('\u00a0').join(' ');
                     }
                     if (unifyBullets) {
-                        // 1. 중간점 통일 (· -> •)
+                        const bulletCount = text.split('·').length - 1;
+                        if (bulletCount > 0) {
+                            totalSpecialCharsCleaned += bulletCount;
+                        }
                         text = text.split('·').join('•');
-                        // 2. 글머리기호 느낌의 하이픈 기호 정교하게 치환
+                        
+                        const hyphenMatches1 = text.match(/^-(\s+)?/) ? 1 : 0;
+                        const hyphenMatches2 = (text.match(/\s+-(\s+)?/g) || []).length;
+                        if (hyphenMatches1 > 0 || hyphenMatches2 > 0) {
+                            totalSpecialCharsCleaned += (hyphenMatches1 + hyphenMatches2);
+                        }
                         text = text.replace(/^-(\s+)?/, '• ');
                         text = text.replace(/\s+-(\s+)?/g, ' • ');
                     }
@@ -1131,6 +1149,10 @@ export async function processPptBatch(pptFile, options) {
                 
                 if (replaceRules.length > 0) {
                     for (const rule of replaceRules) {
+                        const wordCount = text.split(rule.oldWord).length - 1;
+                        if (wordCount > 0) {
+                            totalReplacedWords += wordCount;
+                        }
                         text = text.split(rule.oldWord).join(rule.newWord);
                     }
                 }
@@ -1149,6 +1171,7 @@ export async function processPptBatch(pptFile, options) {
                     for (const rule of fontRules) {
                         if (typeface === rule.oldWord) {
                             el.setAttribute('typeface', rule.newWord);
+                            totalReplacedFonts++;
                             fileChanged = true;
                             hasChanges = true;
                             break;
@@ -1178,6 +1201,7 @@ export async function processPptBatch(pptFile, options) {
                                 const newSzVal = Math.round(rule.newSize * 100).toString();
                                 if (rPr.getAttribute('sz') !== newSzVal) {
                                     rPr.setAttribute('sz', newSzVal);
+                                    totalReplacedFontSizes++;
                                     fileChanged = true;
                                     hasChanges = true;
                                 }
@@ -1188,6 +1212,7 @@ export async function processPptBatch(pptFile, options) {
                                 if (currentSz === oldSzVal) {
                                     const newSzVal = Math.round(rule.newSize * 100).toString();
                                     rPr.setAttribute('sz', newSzVal);
+                                    totalReplacedFontSizes++;
                                     fileChanged = true;
                                     hasChanges = true;
                                     break;
@@ -1201,6 +1226,7 @@ export async function processPptBatch(pptFile, options) {
                                 rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
                                 rPr.setAttribute('sz', Math.round(rule.newSize * 100).toString());
                                 el.insertBefore(rPr, el.firstChild);
+                                totalReplacedFontSizes++;
                                 fileChanged = true;
                                 hasChanges = true;
                                 break;
@@ -1217,6 +1243,7 @@ export async function processPptBatch(pptFile, options) {
                             const newSzVal = Math.round(rule.newSize * 100).toString();
                             if (el.getAttribute('sz') !== newSzVal) {
                                 el.setAttribute('sz', newSzVal);
+                                totalReplacedFontSizes++;
                                 fileChanged = true;
                                 hasChanges = true;
                             }
@@ -1226,6 +1253,7 @@ export async function processPptBatch(pptFile, options) {
                             if (currentSz === oldSzVal) {
                                 const newSzVal = Math.round(rule.newSize * 100).toString();
                                 el.setAttribute('sz', newSzVal);
+                                totalReplacedFontSizes++;
                                 fileChanged = true;
                                 hasChanges = true;
                                 break;
@@ -1240,6 +1268,7 @@ export async function processPptBatch(pptFile, options) {
         if (applyDesign && designTargetFilesSet.has(slidePath)) {
             const xmlDocInner = parser.parseFromString(slideXmlStr, 'application/xml'); // 새로 파싱하거나 기존 것 사용
             if (xmlDocInner.getElementsByTagName('parsererror').length === 0) {
+                let textDesignAppliedCount = 0;
                 function applyLnToRPr(rPr) {
                     let existingLn = null;
                     for (let j = 0; j < rPr.childNodes.length; j++) {
@@ -1271,6 +1300,7 @@ export async function processPptBatch(pptFile, options) {
                     ln.appendChild(prstDash);
                     
                     rPr.insertBefore(ln, rPr.firstChild);
+                    textDesignAppliedCount++;
                 }
 
                 designChanged = false;
@@ -1306,6 +1336,7 @@ export async function processPptBatch(pptFile, options) {
                 if (designChanged) {
                     slideXmlStr = serializer.serializeToString(xmlDocInner);
                     fileChanged = true;
+                    totalReplacedTextDesigns += textDesignAppliedCount;
                 }
             }
         }
@@ -1334,6 +1365,11 @@ export async function processPptBatch(pptFile, options) {
     // 💡 동적 커스텀 프로퍼티 바인딩으로 파일별 수정 메타데이터 보존
     blob.totalTablesCount = totalTablesCount;
     blob.hasChanges = hasChanges;
+    blob.totalReplacedWords = totalReplacedWords;
+    blob.totalReplacedFonts = totalReplacedFonts;
+    blob.totalReplacedFontSizes = totalReplacedFontSizes;
+    blob.totalReplacedTextDesigns = totalReplacedTextDesigns;
+    blob.totalSpecialCharsCleaned = totalSpecialCharsCleaned;
 
     return blob;
 }

@@ -238,6 +238,74 @@ export default function PptGenerator() {
         });
     };
 
+    const buildBatchReportDetail = (modifiedBlob, options) => {
+        const {
+            applyTableDesignChecked,
+            parsedRules,
+            parsedFontRules,
+            parsedFontSizeRules,
+            applyDesignChecked,
+            applySpecialCharClean
+        } = options;
+
+        const changes = [];
+
+        // 1. 단어 수정
+        if (parsedRules.length > 0) {
+            const count = modifiedBlob.totalReplacedWords || 0;
+            changes.push(`단어 수정 ${count}개`);
+        }
+        // 2. 폰트 변경
+        if (parsedFontRules.length > 0) {
+            const count = modifiedBlob.totalReplacedFonts || 0;
+            changes.push(`폰트 변경 ${count}개`);
+        }
+        // 3. 폰트 크기 변경
+        if (parsedFontSizeRules.length > 0) {
+            const count = modifiedBlob.totalReplacedFontSizes || 0;
+            changes.push(`폰트 크기 변경 ${count}개`);
+        }
+        // 4. 특수문자 일괄 정제
+        if (applySpecialCharClean) {
+            const count = modifiedBlob.totalSpecialCharsCleaned || 0;
+            changes.push(`특수문자 정제 ${count}개`);
+        }
+        // 5. 외곽선/텍스트 디자인 변경
+        if (applyDesignChecked) {
+            const count = modifiedBlob.totalReplacedTextDesigns || 0;
+            changes.push(`텍스트 디자인 변경 ${count}개`);
+        }
+        // 6. 표 표준화
+        if (applyTableDesignChecked) {
+            if (modifiedBlob.totalTablesCount > 0) {
+                changes.push(`표 표준화 및 스타일 적용 ${modifiedBlob.totalTablesCount}개`);
+            } else {
+                changes.push(`표 없음(표 스타일 적용 제외됨)`);
+            }
+        }
+
+        if (changes.length > 0) {
+            // 실질적인 변경이 하나라도 존재하는지 확인 (표 없음 제외)
+            const hasRealChanges = (modifiedBlob.totalReplacedWords || 0) > 0 ||
+                                  (modifiedBlob.totalReplacedFonts || 0) > 0 ||
+                                  (modifiedBlob.totalReplacedFontSizes || 0) > 0 ||
+                                  (modifiedBlob.totalSpecialCharsCleaned || 0) > 0 ||
+                                  (modifiedBlob.totalReplacedTextDesigns || 0) > 0 ||
+                                  (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
+
+            if (hasRealChanges) {
+                return `${changes.join(', ')} 완료`;
+            } else {
+                if (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) === 0) {
+                    return `⚠️ 표가 존재하지 않으며, 감지된 다른 일치 변경 대상(단어, 폰트, 크기, 특수문자)이 없어 원본 그대로 저장했습니다.`;
+                }
+                return `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 또는 정제할 특수문자 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
+            }
+        }
+
+        return '변경 사항 없음 (원본 그대로 저장 완료)';
+    };
+
     // 일괄 편집 핸들러 (단어 수정 + 디자인 적용 + 다중 파일 + 폴더 지정)
     const handleBatchProcess = async () => {
         if (batchPptFiles.length === 0) {
@@ -366,21 +434,15 @@ export default function PptGenerator() {
                     }
 
                     if (saved) {
-                        let detailMsg = '';
-                        if (applyTableDesignChecked) {
-                            detailMsg = modifiedBlob.totalTablesCount > 0
-                                ? `표(Table) ${modifiedBlob.totalTablesCount}개 표준화 및 첫 행 스타일 적용 완료`
-                                : `⚠️ 표(Table) 요소가 존재하지 않아 표 디자인 변경을 생략하고 원본 그대로 저장했습니다.`;
-                        }
-                        if (parsedRules.length > 0 || parsedFontRules.length > 0 || parsedFontSizeRules.length > 0 || applyDesignChecked || applySpecialCharClean) {
-                            if (modifiedBlob.hasChanges) {
-                                const t = '단어/폰트/크기/외곽선/특수문자 일괄 수정 적용 완료';
-                                detailMsg = detailMsg ? `${detailMsg} (${t})` : t;
-                            } else if (!applyTableDesignChecked) {
-                                detailMsg = `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 또는 정제할 특수문자 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
-                            }
-                        }
-                        reports.push({ fileName: file.name, status: 'success', detail: detailMsg || '변경 사항 없음 (원본 그대로 저장 완료)' });
+                        const detailMsg = buildBatchReportDetail(modifiedBlob, {
+                            applyTableDesignChecked,
+                            parsedRules,
+                            parsedFontRules,
+                            parsedFontSizeRules,
+                            applyDesignChecked,
+                            applySpecialCharClean
+                        });
+                        reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
                     }
                 } catch (fileErr) {
@@ -409,21 +471,15 @@ export default function PptGenerator() {
                         const fileName = `수정_${file.name}`;
                         zip.file(fileName, modifiedBlob);
 
-                        let detailMsg = '';
-                        if (applyTableDesignChecked) {
-                            detailMsg = modifiedBlob.totalTablesCount > 0
-                                ? `표(Table) ${modifiedBlob.totalTablesCount}개 표준화 및 첫 행 스타일 적용 완료`
-                                : `⚠️ 표(Table) 요소가 존재하지 않아 표 디자인 변경을 생략하고 원본 그대로 저장했습니다.`;
-                        }
-                        if (parsedRules.length > 0 || parsedFontRules.length > 0 || parsedFontSizeRules.length > 0 || applyDesignChecked || applySpecialCharClean) {
-                            if (modifiedBlob.hasChanges) {
-                                const t = '단어/폰트/크기/외곽선/특수문자 일괄 수정 적용 완료';
-                                detailMsg = detailMsg ? `${detailMsg} (${t})` : t;
-                            } else if (!applyTableDesignChecked) {
-                                detailMsg = `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 또는 정제할 특수문자 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
-                            }
-                        }
-                        reports.push({ fileName: file.name, status: 'success', detail: detailMsg || '변경 사항 없음 (원본 그대로 저장 완료)' });
+                        const detailMsg = buildBatchReportDetail(modifiedBlob, {
+                            applyTableDesignChecked,
+                            parsedRules,
+                            parsedFontRules,
+                            parsedFontSizeRules,
+                            applyDesignChecked,
+                            applySpecialCharClean
+                        });
+                        reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
                     } catch (fileErr) {
                         console.error(`Error processing ${file.name}:`, fileErr);
