@@ -39,6 +39,7 @@ export default function PptGenerator() {
     const [applySpecialCharClean, setApplySpecialCharClean] = useState(false); // 옵션 F 활성화 여부
     const [replaceNbs, setReplaceNbs] = useState(true); // 하위 옵션 1: NBS 일반 공백 변환
     const [unifyBullets, setUnifyBullets] = useState(true); // 하위 옵션 2: 중간점 통일
+    const [clean_vertical_tab, set_clean_vertical_tab] = useState(true); // 하위 옵션 3: 세로 탭 품질검토 오류 수정
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -403,7 +404,8 @@ export default function PptGenerator() {
                         targetText: designTargetText,
                         applySpecialCharClean: applySpecialCharClean,
                         replaceNbs: replaceNbs,
-                        unifyBullets: unifyBullets
+                        unifyBullets: unifyBullets,
+                        clean_vertical_tab: clean_vertical_tab
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -465,7 +467,8 @@ export default function PptGenerator() {
                             targetText: designTargetText,
                             applySpecialCharClean: applySpecialCharClean,
                             replaceNbs: replaceNbs,
-                            unifyBullets: unifyBullets
+                            unifyBullets: unifyBullets,
+                            clean_vertical_tab: clean_vertical_tab
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         const fileName = `수정_${file.name}`;
@@ -539,6 +542,7 @@ export default function PptGenerator() {
                 setApplySpecialCharClean(false);
                 setReplaceNbs(true);
                 setUnifyBullets(true);
+                set_clean_vertical_tab(true);
             } else {
                 setErrorMsg('처리된 파일이 없습니다. 변경 대상 텍스트나 디자인 요소가 존재하는지 확인해주세요.');
             }
@@ -572,6 +576,7 @@ export default function PptGenerator() {
                 {/* 탭 메뉴 */}
                 <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px' }}>
                     <button 
+                        id="tab-excel-mapping"
                         onClick={() => { setActiveTab('excel_mapping'); setErrorMsg(null); setSuccessMsg(null); }}
                         className="interactive"
                         style={{
@@ -585,6 +590,7 @@ export default function PptGenerator() {
                         엑셀 데이터 매핑 생성
                     </button>
                     <button 
+                        id="tab-batch-edit"
                         onClick={() => { setActiveTab('batch_edit'); setErrorMsg(null); setSuccessMsg(null); }}
                         className="interactive"
                         style={{
@@ -598,6 +604,7 @@ export default function PptGenerator() {
                         PPT 텍스트/디자인 일괄 편집
                     </button>
                     <button 
+                        id="tab-smart-animation"
                         onClick={() => { setActiveTab('smart_animation'); setErrorMsg(null); setSuccessMsg(null); }}
                         className="interactive"
                         style={{
@@ -1012,6 +1019,7 @@ export default function PptGenerator() {
                             <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
                                     <input 
+                                        id="checkbox-option-f"
                                         type="checkbox" 
                                         checked={applySpecialCharClean}
                                         onChange={(e) => setApplySpecialCharClean(e.target.checked)}
@@ -1081,12 +1089,38 @@ export default function PptGenerator() {
                                         />
                                         중간점 혼용 (· vs • vs -)을 •로 통일 (텍스트 내부의 구분용)
                                     </label>
+                                    
+                                    <label style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '8px', 
+                                        cursor: applySpecialCharClean ? 'pointer' : 'not-allowed', 
+                                        fontSize: '13px', 
+                                        color: applySpecialCharClean ? 'var(--text-primary)' : 'var(--text-muted)', 
+                                        fontWeight: 600 
+                                    }}>
+                                        <input
+                                            id="checkbox-clean-vt"
+                                            type="checkbox"
+                                            checked={clean_vertical_tab}
+                                            disabled={!applySpecialCharClean}
+                                            onChange={(e) => set_clean_vertical_tab(e.target.checked)}
+                                            style={{ 
+                                                width: '16px', 
+                                                height: '16px', 
+                                                cursor: applySpecialCharClean ? 'pointer' : 'not-allowed', 
+                                                accentColor: '#a855f7' 
+                                            }}
+                                        />
+                                        세로 탭(Vertical Tab) 품질검토 오류 수정 (\v → \n 변환)
+                                    </label>
                                 </div>
                             </div>
                         </div>
 
                         <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
                             <button
+                                id="btn-batch-process"
                                 className="interactive"
                                 onClick={handleBatchProcess}
                                 disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean)}

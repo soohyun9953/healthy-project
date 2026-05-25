@@ -659,6 +659,38 @@ export async function injectSlidesIntoMaster(masterFile, aiGenBlob) {
 }
 
 /**
+ * [신규 헬퍼 함수] 압축 파일 내의 모든 XML 및 관계(.rels) 파일에서 수직 탭 제어문자를 완벽하게 정제합니다.
+ * @param {PizZip} zip_archive PizZip 압축 아카이브 객체
+ * @returns {number} 정제된 세로 탭 문자의 총 개수
+ */
+function clean_all_vertical_tabs(zip_archive) {
+    let cleaned_count = 0;
+    const all_file_paths = Object.keys(zip_archive.files);
+    
+    all_file_paths.forEach(file_path => {
+        const current_file = zip_archive.file(file_path);
+        if (!current_file || current_file.dir) return;
+        
+        // XML 및 관계(rels) 관련 파일 등 텍스트 포맷의 파일만 정밀하게 타격
+        if (file_path.endsWith('.xml') || file_path.endsWith('.rels')) {
+            let file_content = current_file.asText();
+            const vertical_tab_pattern = /[\v\u000b\x0b]/g;
+            
+            if (vertical_tab_pattern.test(file_content)) {
+                const match_count = (file_content.match(vertical_tab_pattern) || []).length;
+                cleaned_count += match_count;
+                
+                // 수직 탭을 일반 개행 문자(\n)로 변환
+                file_content = file_content.replace(vertical_tab_pattern, '\n');
+                zip_archive.file(file_path, file_content);
+            }
+        }
+    });
+    
+    return cleaned_count;
+}
+
+/**
  * [신규] PPT 파일에 단어 일괄 수정과 텍스트 디자인 일괄 변경을 동시에 적용하여 Blob을 반환합니다.
  * @param {File} pptFile 처리할 PPT 파일
  * @param {Object} options { replaceRules: Array, fontRules: Array, applyDesign: boolean, targetText: string }
@@ -677,7 +709,8 @@ export async function processPptBatch(pptFile, options) {
         targetText = '',
         applySpecialCharClean = false,
         replaceNbs = false,
-        unifyBullets = false
+        unifyBullets = false,
+        clean_vertical_tab = false
     } = options;
     
     if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean) {
@@ -686,6 +719,13 @@ export async function processPptBatch(pptFile, options) {
 
     const arrayBuffer = await pptFile.arrayBuffer();
     const zip = new PizZip(arrayBuffer);
+    
+    // [1단계 프리필터] 시작 시점에 zip 내 모든 XML/rels 파일에서 수직 탭 완벽 선제 정제
+    let total_cleaned_vt = 0;
+    if (clean_vertical_tab) {
+        total_cleaned_vt += clean_all_vertical_tabs(zip);
+    }
+    
     const allFiles = Object.keys(zip.files);
     
     const parser = new DOMParser();
@@ -766,6 +806,17 @@ export async function processPptBatch(pptFile, options) {
         let slideXmlStr = zip.file(slidePath).asText();
         let fileChanged = false;
         let designChanged = false;
+        
+        // [선제 조치] XML 파싱 에러를 유발하는 수직 탭(\x0b, \u000b) 제어문자를 일반 개행(\n)으로 먼저 문자열 치환
+        if (clean_vertical_tab) {
+            const vt_count = (slideXmlStr.match(/[\v\u000b\x0b]/g) || []).length;
+            if (vt_count > 0) {
+                totalSpecialCharsCleaned += vt_count;
+                slideXmlStr = slideXmlStr.replace(/[\v\u000b\x0b]/g, '\n');
+                fileChanged = true;
+                hasChanges = true;
+            }
+        }
         
         const xmlDoc = parser.parseFromString(slideXmlStr, 'application/xml');
         if (xmlDoc.getElementsByTagName('parsererror').length > 0) return;
@@ -861,19 +912,34 @@ export async function processPptBatch(pptFile, options) {
                         // 역순 ['lnB', 'lnT', 'lnR', 'lnL'] 로 insertBefore(firstChild)를 하면
                         // 최종 tcPr 자식 순서는 [lnL, lnR, lnT, lnB, ...] 가 되어 XSD 스키마와 100% 정확하게 정렬됩니다!
                         const reversedBNames = ['lnB', 'lnT', 'lnR', 'lnL'];
-                        
                         reversedBNames.forEach(bName => {
-                            // 모든 테두리는 기본 회색(#7F7F7F)으로 통일 (첫행의 내부 실선을 흰색으로 하는 것 중지)
-                            const borderColor = '7F7F7F';
+                            // 💡 정밀 렌더링 설계: 두께를 0.5pt (w="6350")로 통일하되, 상하 충돌 방지를 위해 색상만 흰색으로 적용
+                            let border_color = '7F7F7F';
+                            const border_width = '6350'; // 모든 표 테두리 실선 0.5pt로 통일
+                            
+                            if (rIdx === 0) {
+                                const is_left_edge = (bName === 'lnL' && cIdx === 0);
+                                const is_right_edge = (bName === 'lnR' && cIdx === tcs.length - 1);
+                                const is_top_edge = (bName === 'lnT');
+                                
+                                if (is_left_edge || is_right_edge || is_top_edge) {
+                                    border_color = '7F7F7F';
+                                } else {
+                                    border_color = 'FFFFFF'; // 첫 행 내부 실선만 흰색 적용
+                                }
+                            } else if (rIdx === 1) {
+                                // 💡 상하 충돌 방지: 두 번째 행의 상단 테두리(lnT)는 첫 번째 행의 하단(lnB)과 만나므로 동일하게 흰색 적용!
+                                if (bName === 'lnT') {
+                                    border_color = 'FFFFFF';
+                                }
+                            }
                             
                             const ln = xmlDoc.createElementNS(nsA, `a:${bName}`);
-                            ln.setAttribute('w', '6350'); // 0.5pt (1 pt = 12700 EMU -> 0.5 pt = 6350 EMU)
-                            ln.setAttribute('cmpd', 'sng'); // 단일선 (Single line)
-                            ln.setAttribute('cap', 'flat'); // 캡 스타일 평평하게
+                            ln.setAttribute('w', border_width); // 0.5pt 두께 주입
                             
                             const solidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
                             const srgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                            srgbClr.setAttribute('val', borderColor); // 결정된 정밀 색상 주입
+                            srgbClr.setAttribute('val', border_color); // 결정된 색상 주입
                             solidFill.appendChild(srgbClr);
                             ln.appendChild(solidFill);
                             
@@ -1352,9 +1418,10 @@ export async function processPptBatch(pptFile, options) {
         }
     });
 
-    if (!hasChanges) {
-        // 단어 수정이 실패했거나 디자인 변경 대상이 없었을 경우
-        // 에러를 던질지 원본을 그냥 반환할지는 기획에 따르나, 성공 메시지를 위해 원본으로 진행
+    if (clean_vertical_tab) {
+        // [2단계 포스트필터] DOM 가공 완료 후 최종 저장 직전에 전수 한 번 더 정제하여 수직 탭 완전 차단
+        total_cleaned_vt += clean_all_vertical_tabs(zip);
+        totalSpecialCharsCleaned = total_cleaned_vt;
     }
 
     const blob = zip.generate({
