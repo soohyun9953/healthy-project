@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
     Presentation, FileSpreadsheet, Upload, X, Loader2, Info, Settings, 
     Download, Play, FileDown, Sparkles, MousePointer2, CheckCircle2,
@@ -29,7 +29,13 @@ export default function PptGenerator() {
 
     // PPT 일괄 편집 (단어 수정 + 디자인 변경) 관련 State
     const [batchPptFiles, setBatchPptFiles] = useState([]);
-    const [replaceRules, setReplaceRules] = useState('');
+    const [replaceRules, setReplaceRules] = useState(() => {
+        try {
+            return localStorage.getItem('ppt_replace_rules') || '';
+        } catch (e) {
+            return '';
+        }
+    });
     const [fontRules, setFontRules] = useState('');
     const [fontSize, setFontSize] = useState('');
     const [applyDesignChecked, setApplyDesignChecked] = useState(false);
@@ -55,6 +61,14 @@ export default function PptGenerator() {
 
     const [errorMsg, setErrorMsg] = useState(null);
     const [successMsg, setSuccessMsg] = useState(null);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('ppt_replace_rules', replaceRules);
+        } catch (e) {
+            console.error('Error saving replaceRules to localStorage:', e);
+        }
+    }, [replaceRules]);
 
     // 엑셀 매핑 핸들러들
     const processExcelFile = async (file) => {
@@ -532,7 +546,6 @@ export default function PptGenerator() {
                     setSuccessMsg(`성공적으로 파일이 편집·저장되었습니다. 하단의 파일별 일괄 편집 상세 결과 리포트를 확인해 주세요.`);
                 }
                 setBatchPptFiles([]);
-                setReplaceRules('');
                 setFontRules('');
                 setFontSize('');
                 setApplyDesignChecked(false);
@@ -886,6 +899,10 @@ export default function PptGenerator() {
                                 />
                                 <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                                     형식: <code>기존단어(새로운단어)</code> (복수는 쉼표로 구분)
+                                </div>
+                                <div style={{ fontSize: '12.5px', color: '#a855f7', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
+                                    <span>입력하신 단어 수정 규칙은 브라우저에 자동 영구 저장되어 언제든 재사용 가능합니다.</span>
                                 </div>
                             </div>
 
