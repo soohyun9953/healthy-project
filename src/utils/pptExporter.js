@@ -712,11 +712,33 @@ export async function processPptBatch(pptFile, options) {
         unifyBullets = false,
         clean_vertical_tab = false,
         add_title_page_numbers = false,
-        add_space_before_parenthesis = false
+        add_space_before_parenthesis = false,
+        textColorRulesStr = ''
     } = options;
     
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim())) {
         throw new Error('적용할 변경 사항이 없습니다.');
+    }
+
+    const textColorRules = [];
+    if (textColorRulesStr && textColorRulesStr.trim()) {
+        const parts = textColorRulesStr.split(',');
+        for (const part of parts) {
+            const trimmed = part.trim();
+            if (!trimmed) continue;
+            const match = trimmed.match(/^(.+?)\((.+?)\)$/);
+            if (match) {
+                const oldColor = match[1].trim().replace('#', '').toUpperCase();
+                const newColor = match[2].trim().replace('#', '').toUpperCase();
+                const hexRegex = /^[0-9A-F]{6}$/;
+                if (!hexRegex.test(oldColor) || !hexRegex.test(newColor)) {
+                    throw new Error(`색상 규칙의 형식이 올바르지 않습니다: "${trimmed}" (색상값은 6자리 Hex 형식이어야 합니다. 예: FF0000(0000FF))`);
+                }
+                textColorRules.push({ oldColor, newColor });
+            } else {
+                throw new Error(`색상 규칙 형식이 올바르지 않습니다: "${trimmed}" (올바른 형식 예: FF0000(0000FF))`);
+            }
+        }
     }
 
     const arrayBuffer = await pptFile.arrayBuffer();
@@ -742,6 +764,7 @@ export async function processPptBatch(pptFile, options) {
     let totalReplacedTextDesigns = 0;
     let totalSpecialCharsCleaned = 0;
     let totalTitleSpacesAdded = 0;
+    let totalTextColorReplaced = 0;
     
     // [옵션 G] 동일 제목 슬라이드 일련번호 자동 추가 로직
     if (add_title_page_numbers) {
@@ -1538,6 +1561,46 @@ export async function processPptBatch(pptFile, options) {
                     }
                 }
             }
+
+            // 3. 글자 색상 일괄 매핑 치환 (solidFill -> srgbClr val 변경)
+            if (textColorRules.length > 0 && !slidePath.startsWith('ppt/theme/')) {
+                if (localName === 'rPr' || localName === 'defRPr' || localName === 'endParaRPr') {
+                    let solidFill = null;
+                    for (let j = 0; j < el.childNodes.length; j++) {
+                        const child = el.childNodes[j];
+                        const childLocalName = child.localName || child.tagName.split(':').pop();
+                        if (child.nodeType === 1 && childLocalName === 'solidFill') {
+                            solidFill = child;
+                            break;
+                        }
+                    }
+                    
+                    if (solidFill) {
+                        let srgbClr = null;
+                        for (let j = 0; j < solidFill.childNodes.length; j++) {
+                            const child = solidFill.childNodes[j];
+                            const childLocalName = child.localName || child.tagName.split(':').pop();
+                            if (child.nodeType === 1 && childLocalName === 'srgbClr') {
+                                srgbClr = child;
+                                break;
+                            }
+                        }
+                        
+                        if (srgbClr) {
+                            const currentVal = (srgbClr.getAttribute('val') || '').toUpperCase();
+                            for (const rule of textColorRules) {
+                                if (currentVal === rule.oldColor) {
+                                    srgbClr.setAttribute('val', rule.newColor);
+                                    totalTextColorReplaced++;
+                                    fileChanged = true;
+                                    hasChanges = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // 2. 텍스트 디자인 일괄 변경
@@ -1648,6 +1711,7 @@ export async function processPptBatch(pptFile, options) {
     blob.totalReplacedTextDesigns = totalReplacedTextDesigns;
     blob.totalSpecialCharsCleaned = totalSpecialCharsCleaned;
     blob.totalTitleSpacesAdded = totalTitleSpacesAdded;
+    blob.totalTextColorReplaced = totalTextColorReplaced;
 
     return blob;
 }

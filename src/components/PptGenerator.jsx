@@ -48,6 +48,13 @@ export default function PptGenerator() {
     const [clean_vertical_tab, set_clean_vertical_tab] = useState(true); // 하위 옵션 3: 세로 탭 품질검토 오류 수정
     const [add_title_page_numbers, set_add_title_page_numbers] = useState(false); // 옵션 G: 동일 제목 일련번호 자동 추가
     const [add_space_before_parenthesis, set_add_space_before_parenthesis] = useState(true); // 옵션 G 하위 옵션: 제목 뒤 괄호 앞 공백 추가
+    const [textColorRules, setTextColorRules] = useState(() => {
+        try {
+            return localStorage.getItem('ppt_textcolor_rules') || '';
+        } catch (e) {
+            return '';
+        }
+    }); // 옵션 H: 글자 색상 매핑 변경
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -71,6 +78,14 @@ export default function PptGenerator() {
             console.error('Error saving replaceRules to localStorage:', e);
         }
     }, [replaceRules]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('ppt_textcolor_rules', textColorRules);
+        } catch (e) {
+            console.error('Error saving textColorRules to localStorage:', e);
+        }
+    }, [textColorRules]);
 
     // 엑셀 매핑 핸들러들
     const processExcelFile = async (file) => {
@@ -263,7 +278,8 @@ export default function PptGenerator() {
             parsedFontSizeRules,
             applyDesignChecked,
             applySpecialCharClean,
-            add_space_before_parenthesis
+            add_space_before_parenthesis,
+            textColorRules
         } = options;
 
         const changes = [];
@@ -306,6 +322,11 @@ export default function PptGenerator() {
             const count = modifiedBlob.totalTitleSpacesAdded || 0;
             changes.push(`제목 괄호 공백 추가 ${count}개`);
         }
+        // 8. 글자 색상 변경
+        if (textColorRules && textColorRules.trim()) {
+            const count = modifiedBlob.totalTextColorReplaced || 0;
+            changes.push(`글자 색상 변경 ${count}개`);
+        }
 
         if (changes.length > 0) {
             // 실질적인 변경이 하나라도 존재하는지 확인 (표 없음 제외)
@@ -315,15 +336,16 @@ export default function PptGenerator() {
                                   (modifiedBlob.totalSpecialCharsCleaned || 0) > 0 ||
                                   (modifiedBlob.totalReplacedTextDesigns || 0) > 0 ||
                                   (add_space_before_parenthesis && (modifiedBlob.totalTitleSpacesAdded || 0) > 0) ||
+                                  ((textColorRules && textColorRules.trim()) && (modifiedBlob.totalTextColorReplaced || 0) > 0) ||
                                   (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
 
             if (hasRealChanges) {
                 return `${changes.join(', ')} 완료`;
             } else {
                 if (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) === 0) {
-                    return `⚠️ 표가 존재하지 않으며, 감지된 다른 일치 변경 대상(단어, 폰트, 크기, 특수문자, 제목 공백)이 없어 원본 그대로 저장했습니다.`;
+                    return `⚠️ 표가 존재하지 않으며, 감지된 다른 일치 변경 대상(단어, 폰트, 크기, 특수문자, 제목 공백, 글자 색상)이 없어 원본 그대로 저장했습니다.`;
                 }
-                return `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경, 정제할 특수문자, 또는 수정할 제목 괄호 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
+                return `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경, 정제할 특수문자, 수정할 제목 괄호, 또는 글자 색상 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
             }
         }
 
@@ -396,8 +418,8 @@ export default function PptGenerator() {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers) {
-            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 또는 동일 제목 일련번호 추가 중 하나 이상을 입력/선택해주세요.');
+        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim()) {
+            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 또는 글자 색상 일괄 매핑 중 하나 이상을 입력/선택해주세요.');
             return;
         }
 
@@ -430,7 +452,8 @@ export default function PptGenerator() {
                         unifyBullets: unifyBullets,
                         clean_vertical_tab: clean_vertical_tab,
                         add_title_page_numbers: add_title_page_numbers,
-                        add_space_before_parenthesis: add_space_before_parenthesis
+                        add_space_before_parenthesis: add_space_before_parenthesis,
+                        textColorRulesStr: textColorRules
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -468,7 +491,8 @@ export default function PptGenerator() {
                             parsedFontSizeRules,
                             applyDesignChecked,
                             applySpecialCharClean,
-                            add_space_before_parenthesis
+                            add_space_before_parenthesis,
+                            textColorRules
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -496,7 +520,8 @@ export default function PptGenerator() {
                             unifyBullets: unifyBullets,
                             clean_vertical_tab: clean_vertical_tab,
                             add_title_page_numbers: add_title_page_numbers,
-                            add_space_before_parenthesis: add_space_before_parenthesis
+                            add_space_before_parenthesis: add_space_before_parenthesis,
+                            textColorRulesStr: textColorRules
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         const fileName = `수정_${file.name}`;
@@ -509,7 +534,8 @@ export default function PptGenerator() {
                             parsedFontSizeRules,
                             applyDesignChecked,
                             applySpecialCharClean,
-                            add_space_before_parenthesis
+                            add_space_before_parenthesis,
+                            textColorRules
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -1205,6 +1231,40 @@ export default function PptGenerator() {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* 옵션 H: 글자 색상 일괄 매핑 변경 */}
+                            <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ padding: '6px', background: 'rgba(236, 72, 153, 0.1)', borderRadius: '6px' }}>
+                                        <Layers size={16} color="#ec4899" />
+                                    </div>
+                                    <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--text-primary)', fontWeight: 600 }}>
+                                        옵션 H: 글자 색상 일괄 매핑 변경 (선택)
+                                    </h3>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <textarea
+                                        id="input-textcolor-rules"
+                                        value={textColorRules}
+                                        onChange={(e) => setTextColorRules(e.target.value)}
+                                        placeholder="기존색상(변경할색상) 형식으로 입력하세요. 예: FF0000(0000FF), #112233(#445566)"
+                                        style={{
+                                            width: '100%', height: '70px', padding: '10px 12px',
+                                            background: 'rgba(0,0,0,0.2)', border: '1px solid var(--panel-border)',
+                                            borderRadius: '6px', color: 'var(--text-primary)', fontSize: '13px',
+                                            fontFamily: 'monospace', resize: 'vertical', outline: 'none'
+                                        }}
+                                    />
+                                    <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                                        💡 PPT 내 텍스트의 글자 색상을 찾아 일괄적으로 다른 색상으로 안전하게 변경합니다. 다중 규칙은 쉼표(<code>,</code>)로 구분합니다.<br />
+                                        <span style={{ color: 'var(--accent-blue)', fontWeight: 700 }}>형식: FF0000(0000FF), 112233(445566) (# 기호 생략 가능)</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                                        <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success-color)' }}></span>
+                                        <span style={{ fontSize: '12px', color: 'var(--success-color)', fontWeight: 600 }}>브라우저 자동 영구 보존(Auto-save) 적용됨</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
@@ -1212,17 +1272,17 @@ export default function PptGenerator() {
                                 id="btn-batch-process"
                                 className="interactive"
                                 onClick={handleBatchProcess}
-                                disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis)}
+                                disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim())}
                                 style={{
                                     width: '100%',
                                     padding: '16px',
-                                    background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                                    color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis)) ? 'var(--text-muted)' : 'white',
+                                    background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim())) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                                    color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim())) ? 'var(--text-muted)' : 'white',
                                     border: 'none',
                                     borderRadius: '12px',
                                     fontSize: '16px',
                                     fontWeight: 700,
-                                    cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis)) ? 'not-allowed' : 'pointer',
+                                    cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim())) ? 'not-allowed' : 'pointer',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                                 }}
                             >
