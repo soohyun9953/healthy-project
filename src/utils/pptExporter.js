@@ -731,6 +731,63 @@ function parseColorToHex(colorStr) {
 }
 
 /**
+ * [신규] 엘리먼트(r, fld, br, endParaRPr, defRPr)의 실질적인 폰트 크기(sz)를 상속 관계를 고려하여 정밀 추적합니다.
+ */
+function getEffectiveFontSize(el, xmlDoc) {
+    let sz = el.getAttribute('sz');
+    if (sz) return parseInt(sz);
+    
+    const localName = el.localName || el.tagName.split(':').pop();
+    if (localName === 'r' || localName === 'fld' || localName === 'br') {
+        let rPr = null;
+        for (let j = 0; j < el.childNodes.length; j++) {
+            const child = el.childNodes[j];
+            if (child.nodeType === 1 && (child.localName === 'rPr' || child.tagName.split(':').pop() === 'rPr')) {
+                rPr = child;
+                break;
+            }
+        }
+        if (rPr) {
+            sz = rPr.getAttribute('sz');
+            if (sz) return parseInt(sz);
+        }
+    }
+    
+    // 부모 단락 (<a:p>) 수준의 기본 스타일 상속 추적
+    let parent = el.parentNode;
+    while (parent) {
+        const parentLocalName = parent.localName || parent.tagName.split(':').pop();
+        if (parentLocalName === 'p') {
+            let pPr = null;
+            for (let j = 0; j < parent.childNodes.length; j++) {
+                const child = parent.childNodes[j];
+                if (child.nodeType === 1 && (child.localName === 'pPr' || child.tagName.split(':').pop() === 'pPr')) {
+                    pPr = child;
+                    break;
+                }
+            }
+            if (pPr) {
+                let defRPr = null;
+                for (let j = 0; j < pPr.childNodes.length; j++) {
+                    const child = pPr.childNodes[j];
+                    if (child.nodeType === 1 && (child.localName === 'defRPr' || child.tagName.split(':').pop() === 'defRPr')) {
+                        defRPr = child;
+                        break;
+                    }
+                }
+                if (defRPr) {
+                    sz = defRPr.getAttribute('sz');
+                    if (sz) return parseInt(sz);
+                }
+            }
+            break;
+        }
+        parent = parent.parentNode;
+    }
+    return null;
+}
+
+/**
  * [신규] PPT 파일에 단어 일괄 수정과 텍스트 디자인 일괄 변경을 동시에 적용하여 Blob을 반환합니다.
  * @param {File} pptFile 처리할 PPT 파일
  * @param {Object} options { replaceRules: Array, fontRules: Array, applyDesign: boolean, targetText: string }
@@ -1554,42 +1611,46 @@ export async function processPptBatch(pptFile, options) {
                         }
                     }
                     
-                    if (rPr) {
-                        const currentSz = parseInt(rPr.getAttribute('sz'));
-                        for (const rule of fontSizeRules) {
-                            if (rule.oldSize === null) {
-                                // 전체 적용 모드
-                                const newSzVal = Math.round(rule.newSize * 100).toString();
+                    const effectiveSz = getEffectiveFontSize(el, xmlDoc);
+                    
+                    for (const rule of fontSizeRules) {
+                        const newSzVal = Math.round(rule.newSize * 100).toString();
+                        
+                        if (rule.oldSize === null) {
+                            // 전체 적용 모드
+                            if (!rPr) {
+                                rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
+                                if (el.firstChild) {
+                                    el.insertBefore(rPr, el.firstChild);
+                                } else {
+                                    el.appendChild(rPr);
+                                }
+                            }
+                            if (rPr.getAttribute('sz') !== newSzVal) {
+                                rPr.setAttribute('sz', newSzVal);
+                                totalReplacedFontSizes++;
+                                fileChanged = true;
+                                hasChanges = true;
+                            }
+                            break;
+                        } else {
+                            // 매핑 모드
+                            const oldSzVal = Math.round(rule.oldSize * 100);
+                            if (effectiveSz === oldSzVal) {
+                                if (!rPr) {
+                                    rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
+                                    if (el.firstChild) {
+                                        el.insertBefore(rPr, el.firstChild);
+                                    } else {
+                                        el.appendChild(rPr);
+                                    }
+                                }
                                 if (rPr.getAttribute('sz') !== newSzVal) {
                                     rPr.setAttribute('sz', newSzVal);
                                     totalReplacedFontSizes++;
                                     fileChanged = true;
                                     hasChanges = true;
                                 }
-                                break;
-                            } else {
-                                // 매핑 모드
-                                const oldSzVal = Math.round(rule.oldSize * 100);
-                                if (currentSz === oldSzVal) {
-                                    const newSzVal = Math.round(rule.newSize * 100).toString();
-                                    rPr.setAttribute('sz', newSzVal);
-                                    totalReplacedFontSizes++;
-                                    fileChanged = true;
-                                    hasChanges = true;
-                                    break;
-                                }
-                            }
-                        }
-                    } else {
-                        // rPr이 없는 경우, oldSize가 null인 규칙이 있다면 생성하여 적용
-                        for (const rule of fontSizeRules) {
-                            if (rule.oldSize === null) {
-                                rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
-                                rPr.setAttribute('sz', Math.round(rule.newSize * 100).toString());
-                                el.insertBefore(rPr, el.firstChild);
-                                totalReplacedFontSizes++;
-                                fileChanged = true;
-                                hasChanges = true;
                                 break;
                             }
                         }
@@ -1598,10 +1659,12 @@ export async function processPptBatch(pptFile, options) {
                 
                 // 2. 단락 기본 및 종료 스타일 처리 (defRPr, endParaRPr)
                 if (localName === 'defRPr' || localName === 'endParaRPr') {
-                    const currentSz = parseInt(el.getAttribute('sz'));
+                    const effectiveSz = getEffectiveFontSize(el, xmlDoc);
+                    
                     for (const rule of fontSizeRules) {
+                        const newSzVal = Math.round(rule.newSize * 100).toString();
+                        
                         if (rule.oldSize === null) {
-                            const newSzVal = Math.round(rule.newSize * 100).toString();
                             if (el.getAttribute('sz') !== newSzVal) {
                                 el.setAttribute('sz', newSzVal);
                                 totalReplacedFontSizes++;
@@ -1611,12 +1674,13 @@ export async function processPptBatch(pptFile, options) {
                             break;
                         } else {
                             const oldSzVal = Math.round(rule.oldSize * 100);
-                            if (currentSz === oldSzVal) {
-                                const newSzVal = Math.round(rule.newSize * 100).toString();
-                                el.setAttribute('sz', newSzVal);
-                                totalReplacedFontSizes++;
-                                fileChanged = true;
-                                hasChanges = true;
+                            if (effectiveSz === oldSzVal) {
+                                if (el.getAttribute('sz') !== newSzVal) {
+                                    el.setAttribute('sz', newSzVal);
+                                    totalReplacedFontSizes++;
+                                    fileChanged = true;
+                                    hasChanges = true;
+                                }
                                 break;
                             }
                         }
