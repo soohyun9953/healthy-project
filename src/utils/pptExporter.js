@@ -734,21 +734,22 @@ function parseColorToHex(colorStr) {
  * [신규] 엘리먼트(r, fld, br, endParaRPr, defRPr)의 실질적인 폰트 크기(sz)를 상속 관계를 고려하여 정밀 추적합니다.
  */
 function getEffectiveFontSize(el, xmlDoc) {
-    let sz = el.getAttribute('sz');
+    if (!el) return null;
+    let sz = el.getAttribute ? el.getAttribute('sz') : null;
     if (sz) return parseInt(sz);
     
-    const localName = el.localName || el.tagName.split(':').pop();
+    const localName = el.localName || (el.tagName ? el.tagName.split(':').pop() : '');
     if (localName === 'r' || localName === 'fld' || localName === 'br') {
         let rPr = null;
         for (let j = 0; j < el.childNodes.length; j++) {
             const child = el.childNodes[j];
-            if (child.nodeType === 1 && (child.localName === 'rPr' || child.tagName.split(':').pop() === 'rPr')) {
+            if (child.nodeType === 1 && (child.localName === 'rPr' || (child.tagName && child.tagName.split(':').pop() === 'rPr'))) {
                 rPr = child;
                 break;
             }
         }
         if (rPr) {
-            sz = rPr.getAttribute('sz');
+            sz = rPr.getAttribute ? rPr.getAttribute('sz') : null;
             if (sz) return parseInt(sz);
         }
     }
@@ -756,31 +757,33 @@ function getEffectiveFontSize(el, xmlDoc) {
     // 부모 단락 (<a:p>) 수준의 기본 스타일 상속 추적
     let parent = el.parentNode;
     while (parent) {
-        const parentLocalName = parent.localName || parent.tagName.split(':').pop();
-        if (parentLocalName === 'p') {
-            let pPr = null;
-            for (let j = 0; j < parent.childNodes.length; j++) {
-                const child = parent.childNodes[j];
-                if (child.nodeType === 1 && (child.localName === 'pPr' || child.tagName.split(':').pop() === 'pPr')) {
-                    pPr = child;
-                    break;
-                }
-            }
-            if (pPr) {
-                let defRPr = null;
-                for (let j = 0; j < pPr.childNodes.length; j++) {
-                    const child = pPr.childNodes[j];
-                    if (child.nodeType === 1 && (child.localName === 'defRPr' || child.tagName.split(':').pop() === 'defRPr')) {
-                        defRPr = child;
+        if (parent.nodeType === 1) {
+            const parentLocalName = parent.localName || (parent.tagName ? parent.tagName.split(':').pop() : '');
+            if (parentLocalName === 'p') {
+                let pPr = null;
+                for (let j = 0; j < parent.childNodes.length; j++) {
+                    const child = parent.childNodes[j];
+                    if (child.nodeType === 1 && (child.localName === 'pPr' || (child.tagName && child.tagName.split(':').pop() === 'pPr'))) {
+                        pPr = child;
                         break;
                     }
                 }
-                if (defRPr) {
-                    sz = defRPr.getAttribute('sz');
-                    if (sz) return parseInt(sz);
+                if (pPr) {
+                    let defRPr = null;
+                    for (let j = 0; j < pPr.childNodes.length; j++) {
+                        const child = pPr.childNodes[j];
+                        if (child.nodeType === 1 && (child.localName === 'defRPr' || (child.tagName && child.tagName.split(':').pop() === 'defRPr'))) {
+                            defRPr = child;
+                            break;
+                        }
+                    }
+                    if (defRPr) {
+                        sz = defRPr.getAttribute ? defRPr.getAttribute('sz') : null;
+                        if (sz) return parseInt(sz);
+                    }
                 }
+                break;
             }
-            break;
         }
         parent = parent.parentNode;
     }
