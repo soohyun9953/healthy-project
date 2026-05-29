@@ -55,6 +55,13 @@ export default function PptGenerator() {
             return '';
         }
     }); // 옵션 H: 글자 색상 매핑 변경
+    const [preventWordWrap, setPreventWordWrap] = useState(() => {
+        try {
+            return localStorage.getItem('ppt_prevent_word_wrap') === 'true';
+        } catch (e) {
+            return false;
+        }
+    }); // 옵션 I: 단락 한글 단어 잘림 방지
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -86,6 +93,14 @@ export default function PptGenerator() {
             console.error('Error saving textColorRules to localStorage:', e);
         }
     }, [textColorRules]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('ppt_prevent_word_wrap', preventWordWrap);
+        } catch (e) {
+            console.error('Error saving preventWordWrap to localStorage:', e);
+        }
+    }, [preventWordWrap]);
 
     // 엑셀 매핑 핸들러들
     const processExcelFile = async (file) => {
@@ -279,7 +294,8 @@ export default function PptGenerator() {
             applyDesignChecked,
             applySpecialCharClean,
             add_space_before_parenthesis,
-            textColorRules
+            textColorRules,
+            preventWordWrap
         } = options;
 
         const changes = [];
@@ -327,6 +343,11 @@ export default function PptGenerator() {
             const count = modifiedBlob.totalTextColorReplaced || 0;
             changes.push(`글자 색상 변경 ${count}개`);
         }
+        // 9. 단락 단어 잘림 방지
+        if (preventWordWrap) {
+            const count = modifiedBlob.totalWordWrapPrevented || 0;
+            changes.push(`단어 잘림 방지 적용 ${count}개 단락`);
+        }
 
         if (changes.length > 0) {
             // 실질적인 변경이 하나라도 존재하는지 확인 (표 없음 제외)
@@ -337,15 +358,16 @@ export default function PptGenerator() {
                                   (modifiedBlob.totalReplacedTextDesigns || 0) > 0 ||
                                   (add_space_before_parenthesis && (modifiedBlob.totalTitleSpacesAdded || 0) > 0) ||
                                   ((textColorRules && textColorRules.trim()) && (modifiedBlob.totalTextColorReplaced || 0) > 0) ||
+                                  (preventWordWrap && (modifiedBlob.totalWordWrapPrevented || 0) > 0) ||
                                   (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
 
             if (hasRealChanges) {
                 return `${changes.join(', ')} 완료`;
             } else {
                 if (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) === 0) {
-                    return `⚠️ 표가 존재하지 않으며, 감지된 다른 일치 변경 대상(단어, 폰트, 크기, 특수문자, 제목 공백, 글자 색상)이 없어 원본 그대로 저장했습니다.`;
+                    return `⚠️ 표가 존재하지 않으며, 감지된 다른 일치 변경 대상(단어, 폰트, 크기, 특수문자, 제목 공백, 글자 색상, 단어 잘림 방지)이 없어 원본 그대로 저장했습니다.`;
                 }
-                return `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경, 정제할 특수문자, 수정할 제목 괄호, 또는 글자 색상 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
+                return `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경, 정제할 특수문자, 수정할 제목 괄호, 글자 색상, 또는 잘림 방지 대상 단락이 감지되지 않아 원본 그대로 저장했습니다.`;
             }
         }
 
@@ -418,8 +440,8 @@ export default function PptGenerator() {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim()) {
-            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 또는 글자 색상 일괄 매핑 중 하나 이상을 입력/선택해주세요.');
+        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap) {
+            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 또는 단락 단어 잘림 방지 중 하나 이상을 입력/선택해주세요.');
             return;
         }
 
@@ -453,7 +475,8 @@ export default function PptGenerator() {
                         clean_vertical_tab: clean_vertical_tab,
                         add_title_page_numbers: add_title_page_numbers,
                         add_space_before_parenthesis: add_space_before_parenthesis,
-                        textColorRulesStr: textColorRules
+                        textColorRulesStr: textColorRules,
+                        preventWordWrap: preventWordWrap
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -492,7 +515,8 @@ export default function PptGenerator() {
                             applyDesignChecked,
                             applySpecialCharClean,
                             add_space_before_parenthesis,
-                            textColorRules
+                            textColorRules,
+                            preventWordWrap
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -521,7 +545,8 @@ export default function PptGenerator() {
                             clean_vertical_tab: clean_vertical_tab,
                             add_title_page_numbers: add_title_page_numbers,
                             add_space_before_parenthesis: add_space_before_parenthesis,
-                            textColorRulesStr: textColorRules
+                            textColorRulesStr: textColorRules,
+                            preventWordWrap: preventWordWrap
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         const fileName = `수정_${file.name}`;
@@ -535,7 +560,8 @@ export default function PptGenerator() {
                             applyDesignChecked,
                             applySpecialCharClean,
                             add_space_before_parenthesis,
-                            textColorRules
+                            textColorRules,
+                            preventWordWrap
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -1265,6 +1291,27 @@ export default function PptGenerator() {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* 옵션 I: 단락 한글 단어 잘림 방지 (Hangul Word Wrap) */}
+                            <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                                    <input 
+                                        id="checkbox-option-i"
+                                        type="checkbox" 
+                                        checked={preventWordWrap}
+                                        onChange={(e) => setPreventWordWrap(e.target.checked)}
+                                        style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
+                                    />
+                                    옵션 I: 단락 한글 단어 잘림 방지 (Hangul Word Wrap) 적용
+                                </label>
+                                <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                                    💡 글자 끝에서 단어가 뚝 끊겨서 줄바꿈되는 현상을 해결합니다. 한글 단어가 온전한 상태로 가독성 높게 다음 줄로 정렬됩니다.
+                                </div>
+                                <div style={{ paddingLeft: '28px', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                                    <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success-color)' }}></span>
+                                    <span style={{ fontSize: '12px', color: 'var(--success-color)', fontWeight: 600 }}>브라우저 자동 영구 보존(Auto-save) 적용됨</span>
+                                </div>
+                            </div>
                         </div>
 
                         <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
@@ -1272,17 +1319,17 @@ export default function PptGenerator() {
                                 id="btn-batch-process"
                                 className="interactive"
                                 onClick={handleBatchProcess}
-                                disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim())}
+                                disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap)}
                                 style={{
                                     width: '100%',
                                     padding: '16px',
-                                    background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim())) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                                    color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim())) ? 'var(--text-muted)' : 'white',
+                                    background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                                    color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap)) ? 'var(--text-muted)' : 'white',
                                     border: 'none',
                                     borderRadius: '12px',
                                     fontSize: '16px',
                                     fontWeight: 700,
-                                    cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim())) ? 'not-allowed' : 'pointer',
+                                    cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap)) ? 'not-allowed' : 'pointer',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                                 }}
                             >

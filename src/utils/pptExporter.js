@@ -713,10 +713,11 @@ export async function processPptBatch(pptFile, options) {
         clean_vertical_tab = false,
         add_title_page_numbers = false,
         add_space_before_parenthesis = false,
-        textColorRulesStr = ''
+        textColorRulesStr = '',
+        preventWordWrap = false
     } = options;
     
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim())) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -765,6 +766,7 @@ export async function processPptBatch(pptFile, options) {
     let totalSpecialCharsCleaned = 0;
     let totalTitleSpacesAdded = 0;
     let totalTextColorReplaced = 0;
+    let totalWordWrapPrevented = 0;
     
     // [옵션 G] 동일 제목 슬라이드 일련번호 자동 추가 로직
     if (add_title_page_numbers) {
@@ -1601,6 +1603,37 @@ export async function processPptBatch(pptFile, options) {
                     }
                 }
             }
+
+            // 4. 단락 한글 단어 잘림 방지 (eaLnBrk="0", latinLnBrk="0")
+            if (preventWordWrap && localName === 'p' && !slidePath.startsWith('ppt/theme/')) {
+                let pPr = null;
+                for (let j = 0; j < el.childNodes.length; j++) {
+                    const child = el.childNodes[j];
+                    if (child.nodeType === 1) {
+                        const childLocalName = child.localName || child.tagName.split(':').pop();
+                        if (childLocalName === 'pPr') {
+                            pPr = child;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!pPr) {
+                    pPr = xmlDoc.createElementNS(nsA, 'a:pPr');
+                    el.insertBefore(pPr, el.firstChild);
+                }
+                
+                const oldEa = pPr.getAttribute('eaLnBrk');
+                const oldLat = pPr.getAttribute('latinLnBrk');
+                
+                if (oldEa !== '0' || oldLat !== '0') {
+                    pPr.setAttribute('eaLnBrk', '0');
+                    pPr.setAttribute('latinLnBrk', '0');
+                    totalWordWrapPrevented++;
+                    fileChanged = true;
+                    hasChanges = true;
+                }
+            }
         }
 
         // 2. 텍스트 디자인 일괄 변경
@@ -1712,6 +1745,7 @@ export async function processPptBatch(pptFile, options) {
     blob.totalSpecialCharsCleaned = totalSpecialCharsCleaned;
     blob.totalTitleSpacesAdded = totalTitleSpacesAdded;
     blob.totalTextColorReplaced = totalTextColorReplaced;
+    blob.totalWordWrapPrevented = totalWordWrapPrevented;
 
     return blob;
 }
