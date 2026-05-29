@@ -1636,7 +1636,8 @@ export async function processPptBatch(pptFile, options) {
                         } else {
                             // 매핑 모드
                             const oldSzVal = Math.round(rule.oldSize * 100);
-                            if (effectiveSz === oldSzVal) {
+                            // 소수점 폰트 크기 미세 오차(인코딩에 따라 sz=998 등이 9.9pt 혹은 10pt로 보임)를 완벽 대응하기 위해 ±50(±0.5pt) 범위의 오차 허용 매칭 반영
+                            if (effectiveSz !== null && Math.abs(effectiveSz - oldSzVal) <= 50) {
                                 if (!rPr) {
                                     rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
                                     if (el.firstChild) {
@@ -1674,7 +1675,7 @@ export async function processPptBatch(pptFile, options) {
                             break;
                         } else {
                             const oldSzVal = Math.round(rule.oldSize * 100);
-                            if (effectiveSz === oldSzVal) {
+                            if (effectiveSz !== null && Math.abs(effectiveSz - oldSzVal) <= 50) {
                                 if (el.getAttribute('sz') !== newSzVal) {
                                     el.setAttribute('sz', newSzVal);
                                     totalReplacedFontSizes++;
