@@ -1124,7 +1124,11 @@ export async function processPptBatch(pptFile, options) {
                         
                         if (!tcPr) {
                             tcPr = xmlDoc.createElementNS(nsA, 'a:tcPr');
-                            tc.insertBefore(tcPr, tc.firstChild);
+                            if (tc.firstChild) {
+                                tc.insertBefore(tcPr, tc.firstChild);
+                            } else {
+                                tc.appendChild(tcPr);
+                            }
                         }
                         
                         // [규칙 1]: 모든 셀에 대해 테두리 선 굵기 0.5pt (w="6350"), 기본 색상 127,127,127 (#7F7F7F) 적용
@@ -1262,7 +1266,11 @@ export async function processPptBatch(pptFile, options) {
                                     }
                                     if (!rPr) {
                                         rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
-                                        run.insertBefore(rPr, run.firstChild);
+                                        if (run.firstChild) {
+                                            run.insertBefore(rPr, run.firstChild);
+                                        } else {
+                                            run.appendChild(rPr);
+                                        }
                                     }
                                 }
                                 
@@ -1384,7 +1392,11 @@ export async function processPptBatch(pptFile, options) {
                                 }
                                 if (!pPr) {
                                     pPr = xmlDoc.createElementNS(nsA, 'a:pPr');
-                                    p.insertBefore(pPr, p.firstChild);
+                                    if (p.firstChild) {
+                                        p.insertBefore(pPr, p.firstChild);
+                                    } else {
+                                        p.appendChild(pPr);
+                                    }
                                 }
                                 pPr.setAttribute('algn', 'ctr'); // 가운데 정렬 추가
                                 
