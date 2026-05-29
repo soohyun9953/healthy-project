@@ -1605,7 +1605,7 @@ export async function processPptBatch(pptFile, options) {
             }
 
             // 4. 단락 한글 단어 잘림 방지 (eaLnBrk="0", latinLnBrk="0")
-            if (preventWordWrap && localName === 'p' && !slidePath.startsWith('ppt/theme/')) {
+            if (preventWordWrap && localName === 'p' && slidePath.startsWith('ppt/slides/slide')) {
                 let pPr = null;
                 for (let j = 0; j < el.childNodes.length; j++) {
                     const child = el.childNodes[j];
@@ -1620,7 +1620,11 @@ export async function processPptBatch(pptFile, options) {
                 
                 if (!pPr) {
                     pPr = xmlDoc.createElementNS(nsA, 'a:pPr');
-                    el.insertBefore(pPr, el.firstChild);
+                    if (el.firstChild) {
+                        el.insertBefore(pPr, el.firstChild);
+                    } else {
+                        el.appendChild(pPr);
+                    }
                 }
                 
                 const oldEa = pPr.getAttribute('eaLnBrk');
