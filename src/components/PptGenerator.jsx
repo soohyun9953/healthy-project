@@ -47,6 +47,7 @@ export default function PptGenerator() {
     const [unifyBullets, setUnifyBullets] = useState(true); // 하위 옵션 2: 중간점 통일
     const [clean_vertical_tab, set_clean_vertical_tab] = useState(true); // 하위 옵션 3: 세로 탭 품질검토 오류 수정
     const [add_title_page_numbers, set_add_title_page_numbers] = useState(false); // 옵션 G: 동일 제목 일련번호 자동 추가
+    const [add_space_before_parenthesis, set_add_space_before_parenthesis] = useState(true); // 옵션 G 하위 옵션: 제목 뒤 괄호 앞 공백 추가
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -261,7 +262,8 @@ export default function PptGenerator() {
             parsedFontRules,
             parsedFontSizeRules,
             applyDesignChecked,
-            applySpecialCharClean
+            applySpecialCharClean,
+            add_space_before_parenthesis
         } = options;
 
         const changes = [];
@@ -299,6 +301,11 @@ export default function PptGenerator() {
                 changes.push(`표 없음(표 스타일 적용 제외됨)`);
             }
         }
+        // 7. 제목 괄호 공백 추가
+        if (add_space_before_parenthesis) {
+            const count = modifiedBlob.totalTitleSpacesAdded || 0;
+            changes.push(`제목 괄호 공백 추가 ${count}개`);
+        }
 
         if (changes.length > 0) {
             // 실질적인 변경이 하나라도 존재하는지 확인 (표 없음 제외)
@@ -307,15 +314,16 @@ export default function PptGenerator() {
                                   (modifiedBlob.totalReplacedFontSizes || 0) > 0 ||
                                   (modifiedBlob.totalSpecialCharsCleaned || 0) > 0 ||
                                   (modifiedBlob.totalReplacedTextDesigns || 0) > 0 ||
+                                  (add_space_before_parenthesis && (modifiedBlob.totalTitleSpacesAdded || 0) > 0) ||
                                   (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
 
             if (hasRealChanges) {
                 return `${changes.join(', ')} 완료`;
             } else {
                 if (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) === 0) {
-                    return `⚠️ 표가 존재하지 않으며, 감지된 다른 일치 변경 대상(단어, 폰트, 크기, 특수문자)이 없어 원본 그대로 저장했습니다.`;
+                    return `⚠️ 표가 존재하지 않으며, 감지된 다른 일치 변경 대상(단어, 폰트, 크기, 특수문자, 제목 공백)이 없어 원본 그대로 저장했습니다.`;
                 }
-                return `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경 또는 정제할 특수문자 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
+                return `ℹ️ 일치하는 단어, 폰트명, 폰트 크기 변경, 정제할 특수문자, 또는 수정할 제목 괄호 대상이 감지되지 않아 원본 그대로 저장했습니다.`;
             }
         }
 
@@ -421,7 +429,8 @@ export default function PptGenerator() {
                         replaceNbs: replaceNbs,
                         unifyBullets: unifyBullets,
                         clean_vertical_tab: clean_vertical_tab,
-                        add_title_page_numbers: add_title_page_numbers
+                        add_title_page_numbers: add_title_page_numbers,
+                        add_space_before_parenthesis: add_space_before_parenthesis
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -458,7 +467,8 @@ export default function PptGenerator() {
                             parsedFontRules,
                             parsedFontSizeRules,
                             applyDesignChecked,
-                            applySpecialCharClean
+                            applySpecialCharClean,
+                            add_space_before_parenthesis
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -485,7 +495,8 @@ export default function PptGenerator() {
                             replaceNbs: replaceNbs,
                             unifyBullets: unifyBullets,
                             clean_vertical_tab: clean_vertical_tab,
-                            add_title_page_numbers: add_title_page_numbers
+                            add_title_page_numbers: add_title_page_numbers,
+                            add_space_before_parenthesis: add_space_before_parenthesis
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         const fileName = `수정_${file.name}`;
@@ -497,7 +508,8 @@ export default function PptGenerator() {
                             parsedFontRules,
                             parsedFontSizeRules,
                             applyDesignChecked,
-                            applySpecialCharClean
+                            applySpecialCharClean,
+                            add_space_before_parenthesis
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -559,6 +571,8 @@ export default function PptGenerator() {
                 setReplaceNbs(true);
                 setUnifyBullets(true);
                 set_clean_vertical_tab(true);
+                set_add_title_page_numbers(false);
+                set_add_space_before_parenthesis(true);
             } else {
                 setErrorMsg('처리된 파일이 없습니다. 변경 대상 텍스트나 디자인 요소가 존재하는지 확인해주세요.');
             }
@@ -1153,6 +1167,43 @@ export default function PptGenerator() {
                                     💡 PPT 상단 제목이 동일하게 여러 장 연속될 경우, 자동으로 제목 뒤에 일련번호를 주입합니다.<br />
                                     <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold' }}>예: "2.1 예시 제목"이 10장 연속 시 ➜ "2.1 예시 제목 (1/10)" ... "2.1 예시 제목 (10/10)"</span>
                                 </div>
+                                
+                                {/* 하위 옵션: 괄호 앞 공백 추가 */}
+                                <div style={{ 
+                                    paddingLeft: '28px', 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    gap: '8px', 
+                                    borderLeft: '2px solid rgba(168, 85, 247, 0.5)', 
+                                    marginTop: '4px',
+                                    transition: 'all 0.3s ease'
+                                }}>
+                                    <label style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '8px', 
+                                        cursor: 'pointer', 
+                                        fontSize: '13px', 
+                                        color: 'var(--text-primary)', 
+                                        fontWeight: 600 
+                                    }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={add_space_before_parenthesis}
+                                            onChange={(e) => set_add_space_before_parenthesis(e.target.checked)}
+                                            style={{ 
+                                                width: '16px', 
+                                                height: '16px', 
+                                                cursor: 'pointer', 
+                                                accentColor: '#a855f7' 
+                                            }}
+                                        />
+                                        제목 뒷부분 괄호 기호 앞에 공백(스페이스) 추가
+                                    </label>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
+                                        (예: "2.1 예시 제목(1/2)" ➜ <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold' }}>"2.1 예시 제목 (1/2)"</span>로 자동 스페이스 보정)
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -1161,17 +1212,17 @@ export default function PptGenerator() {
                                 id="btn-batch-process"
                                 className="interactive"
                                 onClick={handleBatchProcess}
-                                disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers)}
+                                disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis)}
                                 style={{
                                     width: '100%',
                                     padding: '16px',
-                                    background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                                    color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers)) ? 'var(--text-muted)' : 'white',
+                                    background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                                    color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis)) ? 'var(--text-muted)' : 'white',
                                     border: 'none',
                                     borderRadius: '12px',
                                     fontSize: '16px',
                                     fontWeight: 700,
-                                    cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers)) ? 'not-allowed' : 'pointer',
+                                    cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis)) ? 'not-allowed' : 'pointer',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                                 }}
                             >

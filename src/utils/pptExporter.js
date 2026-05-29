@@ -711,10 +711,11 @@ export async function processPptBatch(pptFile, options) {
         replaceNbs = false,
         unifyBullets = false,
         clean_vertical_tab = false,
-        add_title_page_numbers = false
+        add_title_page_numbers = false,
+        add_space_before_parenthesis = false
     } = options;
     
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -740,6 +741,7 @@ export async function processPptBatch(pptFile, options) {
     let totalReplacedFontSizes = 0;
     let totalReplacedTextDesigns = 0;
     let totalSpecialCharsCleaned = 0;
+    let totalTitleSpacesAdded = 0;
     
     // [옵션 G] 동일 제목 슬라이드 일련번호 자동 추가 로직
     if (add_title_page_numbers) {
@@ -848,8 +850,18 @@ export async function processPptBatch(pptFile, options) {
                 const t_nodes = slide_info.titleNodes;
                 
                 if (t_nodes.length > 0) {
+                    let final_title = run.title_text;
+                    if (add_space_before_parenthesis) {
+                        const regex = /([^\s])\(([^)]+?)\)/g;
+                        if (regex.test(final_title)) {
+                            const matchCount = (final_title.match(regex) || []).length;
+                            final_title = final_title.replace(regex, "$1 ($2)");
+                            totalTitleSpacesAdded += matchCount;
+                        }
+                    }
+
                     // 첫 번째 t 노드에 전체 텍스트 + 일련번호 결합 주입
-                    t_nodes[0].textContent = `${run.title_text} (${idx + 1}/${run.count})`;
+                    t_nodes[0].textContent = `${final_title} (${idx + 1}/${run.count})`;
                     
                     // 나머지 t 노드들은 중복 표출 방지를 위해 깨끗이 비움
                     for (let n_idx = 1; n_idx < t_nodes.length; n_idx++) {
@@ -859,6 +871,79 @@ export async function processPptBatch(pptFile, options) {
                     // 변경된 슬라이드 XML을 zip 아카이브에 직렬화 갱신
                     const updated_xml = serializer.serializeToString(slide_info.xmlDoc);
                     zip.file(slide_info.slidePath, updated_xml);
+                    hasChanges = true;
+                }
+            }
+        });
+    }
+
+    // [옵션 G 하위 옵션 단독 실행] 일련번호 추가가 안 켜졌으나 제목 괄호 공백 추가만 단독 켜진 경우
+    if (add_space_before_parenthesis && !add_title_page_numbers) {
+        const slide_files = allFiles
+            .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml'))
+            .sort((a, b) => {
+                const num_a = parseInt(a.match(/\d+/)[0]);
+                const num_b = parseInt(b.match(/\d+/)[0]);
+                return num_a - num_b;
+            });
+
+        slide_files.forEach(slide_path => {
+            const slide_xml_str = zip.file(slide_path).asText();
+            const xml_doc = parser.parseFromString(slide_xml_str, 'application/xml');
+            
+            // 제목 Shape 추출
+            let title_text = "";
+            let title_nodes = [];
+            
+            const shapes = xml_doc.getElementsByTagNameNS('*', 'sp');
+            for (let i = 0; i < shapes.length; i++) {
+                const sp = shapes[i];
+                const c_nv_pr = sp.getElementsByTagNameNS('*', 'cNvPr')[0];
+                const ph = sp.getElementsByTagNameNS('*', 'ph')[0];
+                
+                let is_title_shape = false;
+                if (c_nv_pr) {
+                    const sp_name = (c_nv_pr.getAttribute('name') || '').toLowerCase();
+                    if (sp_name.includes('title') || sp_name.includes('header') || sp_name.includes('제목')) {
+                        is_title_shape = true;
+                    }
+                }
+                if (ph) {
+                    const ph_type = ph.getAttribute('type');
+                    if (ph_type === 'title' || ph_type === 'ctrTitle') {
+                        is_title_shape = true;
+                    }
+                }
+                
+                if (is_title_shape) {
+                    const tx_body = sp.getElementsByTagNameNS('*', 'txBody')[0];
+                    if (tx_body) {
+                        const t_elements = tx_body.getElementsByTagNameNS('*', 't');
+                        if (t_elements.length > 0) {
+                            const nodes_arr = Array.from(t_elements);
+                            const text_content = nodes_arr.map(n => n.textContent || '').join('').trim();
+                            if (text_content) {
+                                title_text = text_content;
+                                title_nodes = nodes_arr;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (title_nodes.length > 0) {
+                const regex = /([^\s])\(([^)]+?)\)/g;
+                if (regex.test(title_text)) {
+                    const matchCount = (title_text.match(regex) || []).length;
+                    title_nodes[0].textContent = title_text.replace(regex, "$1 ($2)");
+                    for (let n_idx = 1; n_idx < title_nodes.length; n_idx++) {
+                        title_nodes[n_idx].textContent = "";
+                    }
+                    totalTitleSpacesAdded += matchCount;
+                    
+                    const updated_xml = serializer.serializeToString(xml_doc);
+                    zip.file(slide_path, updated_xml);
                     hasChanges = true;
                 }
             }
@@ -1562,6 +1647,7 @@ export async function processPptBatch(pptFile, options) {
     blob.totalReplacedFontSizes = totalReplacedFontSizes;
     blob.totalReplacedTextDesigns = totalReplacedTextDesigns;
     blob.totalSpecialCharsCleaned = totalSpecialCharsCleaned;
+    blob.totalTitleSpacesAdded = totalTitleSpacesAdded;
 
     return blob;
 }
