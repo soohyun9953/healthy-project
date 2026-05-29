@@ -417,7 +417,7 @@ body {
 .settings-body { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
 
 .setting-group { display: flex; flex-direction: column; gap: 10px; }
-.setting-group label { font-size: 12px; font-weight: 600; color: var(--text-secondary); display: flex; alignItems: center; gap: 6px; }
+.setting-group label { font-size: 12px; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
 .setting-group input, .model-select { 
   width: 100%; font-size: 13px; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); 
   border-radius: 8px; padding: 10px 12px; color: var(--text-primary); 

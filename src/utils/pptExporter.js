@@ -691,6 +691,46 @@ function clean_all_vertical_tabs(zip_archive) {
 }
 
 /**
+ * [신규] RGB(r,g,b) 혹은 r,g,b 혹은 HEX 형식을 6자리 HEX(대문자)로 변환하는 헬퍼 함수
+ */
+function parseColorToHex(colorStr) {
+    const trimmed = colorStr.trim();
+    
+    // 1. rgb(r, g, b) 또는 RGB(r, g, b) 형태 감지
+    const rgbRegex = /^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i;
+    const rgbMatch = trimmed.match(rgbRegex);
+    if (rgbMatch) {
+        const r = parseInt(rgbMatch[1], 10);
+        const g = parseInt(rgbMatch[2], 10);
+        const b = parseInt(rgbMatch[3], 10);
+        if (r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255) {
+            return [r, g, b].map(x => x.toString(16).padStart(2, '0').toUpperCase()).join('');
+        }
+    }
+    
+    // 2. r, g, b 형태 감지 (예: 255, 0, 0)
+    const simpleRgbRegex = /^(\d+)\s*,\s*(\d+)\s*,\s*(\d+)$/;
+    const simpleRgbMatch = trimmed.match(simpleRgbRegex);
+    if (simpleRgbMatch) {
+        const r = parseInt(simpleRgbMatch[1], 10);
+        const g = parseInt(simpleRgbMatch[2], 10);
+        const b = parseInt(simpleRgbMatch[3], 10);
+        if (r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255) {
+            return [r, g, b].map(x => x.toString(16).padStart(2, '0').toUpperCase()).join('');
+        }
+    }
+    
+    // 3. HEX 형태 감지 (예: #FF0000 또는 FF0000)
+    const cleanHex = trimmed.replace('#', '').toUpperCase();
+    const hexRegex = /^[0-9A-F]{6}$/;
+    if (hexRegex.test(cleanHex)) {
+        return cleanHex;
+    }
+    
+    return null;
+}
+
+/**
  * [신규] PPT 파일에 단어 일괄 수정과 텍스트 디자인 일괄 변경을 동시에 적용하여 Blob을 반환합니다.
  * @param {File} pptFile 처리할 PPT 파일
  * @param {Object} options { replaceRules: Array, fontRules: Array, applyDesign: boolean, targetText: string }
@@ -723,21 +763,29 @@ export async function processPptBatch(pptFile, options) {
 
     const textColorRules = [];
     if (textColorRulesStr && textColorRulesStr.trim()) {
-        const parts = textColorRulesStr.split(',');
+        // 줄바꿈 또는 세미콜론으로 규칙 구분
+        const parts = textColorRulesStr.split(/[\n;]+/);
         for (const part of parts) {
             const trimmed = part.trim();
             if (!trimmed) continue;
-            const match = trimmed.match(/^(.+?)\((.+?)\)$/);
-            if (match) {
-                const oldColor = match[1].trim().replace('#', '').toUpperCase();
-                const newColor = match[2].trim().replace('#', '').toUpperCase();
-                const hexRegex = /^[0-9A-F]{6}$/;
-                if (!hexRegex.test(oldColor) || !hexRegex.test(newColor)) {
-                    throw new Error(`색상 규칙의 형식이 올바르지 않습니다: "${trimmed}" (색상값은 6자리 Hex 형식이어야 합니다. 예: FF0000(0000FF))`);
+            
+            const lastOpenParen = trimmed.lastIndexOf('(');
+            const lastCloseParen = trimmed.lastIndexOf(')');
+            
+            if (lastOpenParen !== -1 && lastCloseParen !== -1 && lastCloseParen > lastOpenParen) {
+                const oldColorPart = trimmed.substring(0, lastOpenParen).trim();
+                const newColorPart = trimmed.substring(lastOpenParen + 1, lastCloseParen).trim();
+                
+                const oldColorHex = parseColorToHex(oldColorPart);
+                const newColorHex = parseColorToHex(newColorPart);
+                
+                if (!oldColorHex || !newColorHex) {
+                    throw new Error(`색상 규칙의 형식이 올바르지 않습니다: "${trimmed}" (색상값은 RGB 혹은 HEX 형식이어야 합니다. 예: rgb(255,0,0) 또는 255,0,0)`);
                 }
-                textColorRules.push({ oldColor, newColor });
+                
+                textColorRules.push({ oldColor: oldColorHex, newColor: newColorHex });
             } else {
-                throw new Error(`색상 규칙 형식이 올바르지 않습니다: "${trimmed}" (올바른 형식 예: FF0000(0000FF))`);
+                throw new Error(`색상 규칙 형식이 올바르지 않습니다: "${trimmed}" (올바른 형식 예: rgb(255,0,0)(rgb(0,0,255)) 또는 255,0,0(0,0,255))`);
             }
         }
     }

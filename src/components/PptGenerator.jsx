@@ -1273,17 +1273,18 @@ export default function PptGenerator() {
                                         id="input-textcolor-rules"
                                         value={textColorRules}
                                         onChange={(e) => setTextColorRules(e.target.value)}
-                                        placeholder="기존색상(변경할색상) 형식으로 입력하세요. 예: FF0000(0000FF), #112233(#445566)"
+                                        placeholder="기존색상(변경할색상) 형식으로 입력하세요.&#10;예: rgb(255,0,0)(rgb(0,0,255)) 또는 255,0,0(0,0,255)"
                                         style={{
-                                            width: '100%', height: '70px', padding: '10px 12px',
+                                            width: '100%', height: '80px', padding: '10px 12px',
                                             background: 'rgba(0,0,0,0.2)', border: '1px solid var(--panel-border)',
                                             borderRadius: '6px', color: 'var(--text-primary)', fontSize: '13px',
-                                            fontFamily: 'monospace', resize: 'vertical', outline: 'none'
+                                            fontFamily: 'monospace', resize: 'vertical', outline: 'none',
+                                            lineHeight: '1.5'
                                         }}
                                     />
                                     <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                                        💡 PPT 내 텍스트의 글자 색상을 찾아 일괄적으로 다른 색상으로 안전하게 변경합니다. 다중 규칙은 쉼표(<code>,</code>)로 구분합니다.<br />
-                                        <span style={{ color: 'var(--accent-blue)', fontWeight: 700 }}>형식: FF0000(0000FF), 112233(445566) (# 기호 생략 가능)</span>
+                                        💡 PPT 내 텍스트의 글자 색상을 찾아 일괄 변경합니다. 다중 규칙은 **줄바꿈(엔터)** 또는 **세미콜론(<code>;</code>)**으로 구분합니다.<br />
+                                        <span style={{ color: 'var(--accent-blue)', fontWeight: 700 }}>형식: rgb(255,0,0)(rgb(0,0,255)) 또는 255,0,0(0,0,255)</span>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
                                         <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success-color)' }}></span>
