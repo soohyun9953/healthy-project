@@ -53,7 +53,7 @@ export async function convertPptxToHwpx(pptxFile) {
             continue;
         }
 
-        // 해당 슬라이드의 Relationships (.rels) 파일을 읽어 이미지 리소스 경로 해독 준비
+        // Relationships (.rels) 파일을 읽어 이미지 리소스 경로 해독 준비
         const slideNum = slidePath.match(/\d+/)[0];
         const relsPath = `ppt/slides/_rels/slide${slideNum}.xml.rels`;
         const relsMap = new Map();
@@ -71,12 +71,11 @@ export async function convertPptxToHwpx(pptxFile) {
 
         const elements = [];
 
-        // 💡 [조치 1]: 도형 및 텍스트 상자 (<p:sp>) 추출
+        // 도형 및 텍스트 상자 (<p:sp>) 추출
         const spList = xmlDoc.getElementsByTagNameNS(nsP, 'sp');
         for (let i = 0; i < spList.length; i++) {
             const sp = spList[i];
             
-            // 좌표 (off x, y) 추출
             let x = 0, y = 0;
             const off = sp.getElementsByTagNameNS(nsA, 'off')[0];
             if (off) {
@@ -84,7 +83,6 @@ export async function convertPptxToHwpx(pptxFile) {
                 y = parseInt(off.getAttribute('y') || '0');
             }
 
-            // 텍스트 단락 수집
             const pList = sp.getElementsByTagNameNS(nsA, 'p');
             const paragraphs = [];
             for (let j = 0; j < pList.length; j++) {
@@ -110,12 +108,11 @@ export async function convertPptxToHwpx(pptxFile) {
             }
         }
 
-        // 💡 [조치 2]: 표 (<a:tbl>) 추출
+        // 표 (<a:tbl>) 추출
         const tblList = xmlDoc.getElementsByTagNameNS(nsA, 'tbl');
         for (let i = 0; i < tblList.length; i++) {
             const tbl = tblList[i];
             
-            // 표의 상위 graphicFrame에서 좌표 획득
             let x = 0, y = 0;
             let parent = tbl.parentNode;
             while (parent) {
@@ -131,7 +128,6 @@ export async function convertPptxToHwpx(pptxFile) {
                 parent = parent.parentNode;
             }
 
-            // 2차원 표 셀 데이터 생성
             const trList = tbl.getElementsByTagNameNS(nsA, 'tr');
             const tableData = [];
             for (let r = 0; r < trList.length; r++) {
@@ -160,7 +156,7 @@ export async function convertPptxToHwpx(pptxFile) {
             }
         }
 
-        // 💡 [조치 3]: 이미지 (<p:pic>) 추출
+        // 이미지 (<p:pic>) 추출
         const picList = xmlDoc.getElementsByTagNameNS(nsP, 'pic');
         for (let i = 0; i < picList.length; i++) {
             const pic = picList[i];
@@ -172,13 +168,11 @@ export async function convertPptxToHwpx(pptxFile) {
                 y = parseInt(off.getAttribute('y') || '0');
             }
 
-            // 그림 리소스 rId 탐색
             const blip = pic.getElementsByTagNameNS(nsA, 'blip')[0];
             if (blip) {
                 const rId = blip.getAttributeNS(nsR, 'embed') || blip.getAttribute('r:embed');
                 if (rId && relsMap.has(rId)) {
                     let targetPath = relsMap.get(rId);
-                    // 상대 경로 보정 (../media/image1.png -> ppt/media/image1.png)
                     if (targetPath.startsWith('../')) {
                         targetPath = 'ppt/' + targetPath.replace('../', '');
                     } else if (!targetPath.startsWith('ppt/')) {
@@ -200,8 +194,7 @@ export async function convertPptxToHwpx(pptxFile) {
             }
         }
 
-        // 💡 [조치 4]: 위 ➜ 아래, 왼쪽 ➜ 오른쪽 흐름 정렬 알고리즘 가동
-        // EMU 좌표 기준, y좌표가 유사(대략 1cm = 360,000 EMU 이내)한 경우 수평 정렬로 간주해 x좌표 기준으로 나열합니다.
+        // 좌표 기준 순서 정렬
         elements.sort((a, b) => {
             const yDiff = a.y - b.y;
             if (Math.abs(yDiff) < 360000) {
@@ -210,7 +203,6 @@ export async function convertPptxToHwpx(pptxFile) {
             return yDiff;
         });
 
-        // 💡 [조치 5]: 슬라이드 헤더 추가 및 HWPXBuilder 빌드 적용
         builder.addParagraph(`■ 슬라이드 ${idx + 1}`, { fontSize: 13, bold: true, color: '#a855f7' });
         builder.addEmptyParagraph();
 
@@ -223,7 +215,7 @@ export async function convertPptxToHwpx(pptxFile) {
                 builder.addEmptyParagraph();
             } else if (el.type === 'table') {
                 builder.addTable(el.data, {
-                    width: 170, // A4 용지 폭 감안
+                    width: 170,
                     borderStyle: 'SOLID',
                     cellPadding: 1.2
                 });
@@ -231,7 +223,6 @@ export async function convertPptxToHwpx(pptxFile) {
                 builder.addEmptyParagraph();
             } else if (el.type === 'image') {
                 try {
-                    // hwpx-js binary 이미지 객체 임베딩
                     builder.addImage(el.data, el.ext, { width: 120, height: 90 });
                     totalImages++;
                     builder.addEmptyParagraph();
@@ -245,16 +236,238 @@ export async function convertPptxToHwpx(pptxFile) {
     const doc = builder.build();
     const uint8 = await write(doc);
     
-    // 최종 결과 파일 생성
     const blob = new Blob([uint8], { type: 'application/x-hwp-hwpx' });
-    
-    // 통계 메타데이터 바인딩
     blob.totalSlidesCount = slideFiles.length;
     blob.totalParagraphsCount = totalParagraphs;
     blob.totalTablesCount = totalTables;
     blob.totalImagesCount = totalImages;
 
     return blob;
+}
+
+// ==================== PPTX 서식 이식형 융합 기능 섹션 ====================
+
+/**
+ * PPTX의 a:tc 노드에서 단락 및 런들을 순회하며 서식 정보(Bold, Color)와 글머리 기호(bullet)가 있는 텍스트 리스트를 수집합니다.
+ */
+function extractPptCellStyledText(tc, nsA) {
+    const paragraphs = [];
+    const pList = tc.getElementsByTagNameNS('*', 'p'); // a:p
+    
+    for (let i = 0; i < pList.length; i++) {
+        const p = pList[i];
+        const pRuns = [];
+        
+        // 1. 문단 글머리(불릿) 기호 감지 및 주입
+        const pPr = p.getElementsByTagNameNS(nsA, 'pPr')[0] || p.getElementsByTagName('a:pPr')[0];
+        if (pPr) {
+            const buChar = pPr.getElementsByTagNameNS(nsA, 'buChar')[0] || pPr.getElementsByTagName('a:buChar')[0];
+            if (buChar && buChar.hasAttribute('char')) {
+                const bulletChar = buChar.getAttribute('char');
+                pRuns.push({
+                    text: bulletChar + ' ',
+                    bold: false,
+                    color: null
+                });
+            }
+        }
+        
+        // 2. 개별 런 순회
+        for (let j = 0; j < p.childNodes.length; j++) {
+            const child = p.childNodes[j];
+            const tagName = child.localName || child.tagName?.split(':').pop();
+            
+            if (tagName === 'r') {
+                const textElem = child.getElementsByTagNameNS(nsA, 't')[0] || child.getElementsByTagName('a:t')[0];
+                if (textElem && textElem.textContent) {
+                    let bold = false;
+                    let color = null;
+                    
+                    const rPr = child.getElementsByTagNameNS(nsA, 'rPr')[0] || child.getElementsByTagName('a:rPr')[0];
+                    if (rPr) {
+                        const bVal = rPr.getAttribute('b');
+                        if (bVal === '1' || bVal === 'true') {
+                            bold = true;
+                        }
+                        const solidFill = rPr.getElementsByTagNameNS(nsA, 'solidFill')[0] || rPr.getElementsByTagName('a:solidFill')[0];
+                        if (solidFill) {
+                            const srgbClr = solidFill.getElementsByTagNameNS(nsA, 'srgbClr')[0] || solidFill.getElementsByTagName('a:srgbClr')[0];
+                            if (srgbClr && srgbClr.hasAttribute('val')) {
+                                color = '#' + srgbClr.getAttribute('val');
+                            }
+                        }
+                    }
+                    pRuns.push({
+                        text: textElem.textContent,
+                        bold,
+                        color
+                    });
+                }
+            } else if (tagName === 'br') {
+                pRuns.push({
+                    text: '\n',
+                    bold: false,
+                    color: null
+                });
+            }
+        }
+        paragraphs.push(pRuns);
+    }
+    return paragraphs;
+}
+
+/**
+ * 서식 정보가 있는 문단 리스트에서 순수 텍스트 줄글을 추출합니다.
+ */
+function getPptPlainStructuredText(paras) {
+    return paras.map(p => p.map(r => r.text).join('')).join('\n').trim();
+}
+
+/**
+ * 고유번호, 명칭, 정의 등 한 줄 평탄화 처리를 위한 자바스크립트 헬퍼 함수
+ */
+function flattenParagraphsToSingleLine(paragraphs) {
+    if (!paragraphs || paragraphs.length === 0) return [];
+    
+    let singleRunText = "";
+    let isBold = false;
+    let color = null;
+    
+    for (let i = 0; i < paragraphs.length; i++) {
+        const pRuns = paragraphs[i];
+        let pText = "";
+        for (let j = 0; j < pRuns.length; j++) {
+            const run = pRuns[j];
+            if (run.text === '• ') continue;
+            
+            const t = run.text.replace(/\n/g, ' ').replace(/\r/g, ' ').trim();
+            if (t) {
+                pText += t;
+                if (run.bold) isBold = true;
+                if (run.color) color = run.color;
+            }
+        }
+        if (pText) {
+            if (singleRunText) {
+                singleRunText += " " + pText;
+            } else {
+                singleRunText = pText;
+            }
+        }
+    }
+    
+    if (singleRunText) {
+        return [[{ text: singleRunText, bold: isBold, color: color }]];
+    }
+    return [];
+}
+
+/**
+ * HWPX header.xml 내 charProperties에 글자 모양을 동적 등록해주는 헬퍼 클래스
+ */
+class HwpxCharPrRegistry {
+    constructor(headerDoc) {
+        this.headerDoc = headerDoc;
+        this.hpNS = 'http://www.hancom.co.kr/hwpml/2011/paragraph';
+        this.hhNS = 'http://www.hancom.co.kr/hwpml/2011/head';
+        
+        this.charProperties = headerDoc.getElementsByTagNameNS(this.hhNS, 'charProperties')[0] 
+                           || headerDoc.getElementsByTagName('hh:charProperties')[0];
+                           
+        this.registry = new Map(); // key: baseId-bold-color -> charPrId
+        this.maxId = -1;
+        
+        if (this.charProperties) {
+            const charPrList = this.charProperties.getElementsByTagNameNS(this.hhNS, 'charPr')
+                            || this.charProperties.getElementsByTagName('hh:charPr');
+            for (let i = 0; i < charPrList.length; i++) {
+                const cId = parseInt(charPrList[i].getAttribute('id') || '-1');
+                if (cId > this.maxId) {
+                    this.maxId = cId;
+                }
+            }
+        }
+    }
+    
+    getOrCreateCharPr(baseCharPrId, bold, color) {
+        const charPrList = this.charProperties.getElementsByTagNameNS(this.hhNS, 'charPr')
+                        || this.charProperties.getElementsByTagName('hh:charPr');
+                        
+        let basePr = null;
+        for (let i = 0; i < charPrList.length; i++) {
+            if (charPrList[i].getAttribute('id') === String(baseCharPrId)) {
+                basePr = charPrList[i];
+                break;
+            }
+        }
+        
+        if (!basePr) {
+            for (let i = 0; i < charPrList.length; i++) {
+                if (charPrList[i].getAttribute('id') === '0') {
+                    basePr = charPrList[i];
+                    break;
+                }
+            }
+        }
+        
+        if (!basePr && charPrList.length > 0) {
+            basePr = charPrList[0];
+        }
+        
+        const targetColor = color || (basePr ? basePr.getAttribute('textColor') : '#000000') || '#000000';
+        
+        const cacheKey = `${baseCharPrId}-${bold}-${targetColor}`;
+        if (this.registry.has(cacheKey)) {
+            return this.registry.get(cacheKey);
+        }
+        
+        const parentHasBold = basePr ? (basePr.getElementsByTagNameNS(this.hhNS, 'bold')[0] || basePr.getElementsByTagName('hh:bold')[0]) !== undefined : false;
+        const parentColor = basePr ? basePr.getAttribute('textColor') : '#000000';
+        
+        if (parentHasBold === bold && parentColor === targetColor) {
+            return baseCharPrId;
+        }
+        
+        this.maxId++;
+        const newId = String(this.maxId);
+        
+        const newPr = basePr.cloneNode(true);
+        newPr.setAttribute('id', newId);
+        newPr.setAttribute('textColor', targetColor);
+        
+        let boldElem = newPr.getElementsByTagNameNS(this.hhNS, 'bold')[0] 
+                    || newPr.getElementsByTagName('hh:bold')[0];
+                    
+        if (bold) {
+            if (!boldElem) {
+                boldElem = this.headerDoc.createElementNS(this.hhNS, 'hh:bold');
+                
+                let inserted = false;
+                const childNodes = Array.from(newPr.childNodes);
+                for (let i = 0; i < childNodes.length; i++) {
+                    const tag = childNodes[i].localName || childNodes[i].tagName?.split(':').pop();
+                    if (['underline', 'strikeout', 'outline', 'shadow'].includes(tag)) {
+                        newPr.insertBefore(boldElem, childNodes[i]);
+                        inserted = true;
+                        break;
+                    }
+                }
+                if (!inserted) {
+                    newPr.appendChild(boldElem);
+                }
+            }
+        } else {
+            if (boldElem) {
+                newPr.removeChild(boldElem);
+            }
+        }
+        
+        this.charProperties.appendChild(newPr);
+        this.charProperties.setAttribute('itemCnt', String(this.charProperties.getElementsByTagNameNS(this.hhNS, 'charPr').length || charPrList.length + 1));
+        
+        this.registry.set(cacheKey, newId);
+        return newId;
+    }
 }
 
 /**
@@ -286,10 +499,11 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
 
     const parser = new DOMParser();
     const nsA = 'http://schemas.openxmlformats.org/drawingml/2006/main';
-    const nsP = 'http://schemas.openxmlformats.org/presentationml/2006/main';
 
-    const requirements = [];
+    const requirementsMap = new Map();
+    const requirementsOrder = [];
     const idPattern = /^[A-Za-z0-9]+[\-_][A-Za-z0-9]+$/;
+    const cleanPattern = /^(.*?)\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/; // (1/2) 괄호 검출 정규식
 
     for (const slidePath of slideFiles) {
         const slideXmlStr = await pptxZip.files[slidePath].async('text');
@@ -301,10 +515,45 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
             const trList = tbl.getElementsByTagNameNS(nsA, 'tr');
             if (trList.length === 0) continue;
             
-            // 기본 열 매칭 인덱스 세팅 (백업용)
-            let idIdx = 0, nameIdx = 1, descIdx = 2, detailIdx = 3;
+            // 💡 [비즈니스 룰 2] 2번째 행이 1개의 열로 가로 병합된 표 스킵
+            if (trList.length > 1) {
+                const secondRowCells = trList[1].getElementsByTagNameNS(nsA, 'tc');
+                let isMerged = false;
+                
+                if (secondRowCells.length === 1) {
+                    isMerged = true;
+                } else if (secondRowCells.length > 1) {
+                    const firstCell = secondRowCells[0];
+                    const gridSpan = firstCell.getAttribute('gridSpan');
+                    if (gridSpan && parseInt(gridSpan) >= 4) {
+                        isMerged = true;
+                    } else {
+                        const cellTexts = [];
+                        for (let k = 0; k < secondRowCells.length; k++) {
+                            const tc = secondRowCells[k];
+                            const tList = tc.getElementsByTagNameNS(nsA, 't');
+                            let tTxt = '';
+                            for (let tIdx = 0; tIdx < tList.length; tIdx++) {
+                                tTxt += tList[tIdx].textContent || '';
+                            }
+                            cellTexts.push(tTxt.trim());
+                        }
+                        const nonEmptyTexts = cellTexts.filter(t => t);
+                        if (nonEmptyTexts.length <= 1 && cellTexts[0].length > 0) {
+                            const firstTxt = cellTexts[0];
+                            if (firstTxt.length > 40 || firstTxt.includes('※') || firstTxt.includes('■') || firstTxt.includes('요건')) {
+                                isMerged = true;
+                            }
+                        }
+                    }
+                }
+                
+                if (isMerged) {
+                    console.log(`[스킵] ${slidePath}의 표는 2번째 행이 1개 열로 병합되어 있어 작성을 건너뜁니다.`);
+                    continue;
+                }
+            }
             
-            // 1단계: 첫 번째 행(헤더 행)을 검사하여 각 매핑 열의 실제 인덱스 감지
             const firstRowCells = trList[0].getElementsByTagNameNS(nsA, 'tc');
             const headerTexts = [];
             for (let k = 0; k < firstRowCells.length; k++) {
@@ -317,116 +566,158 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
                 headerTexts.push(hText.trim());
             }
             
-            // 지능형 열 헤더 퍼지 매칭 가동 ("세부내용", "시스템 요건 세부내용", "* 요건 세부내용" 등 수용)
-            for (let cIdx = 0; cIdx < headerTexts.length; cIdx++) {
-                const hText = headerTexts[cIdx];
-                if (hText.includes('고유번호') || hText.includes('ID')) {
-                    idIdx = cIdx;
-                } else if (hText.includes('명칭') || hText.includes('요구사항명')) {
-                    nameIdx = cIdx;
-                } else if (hText.includes('정의') || hText.includes('개요')) {
-                    descIdx = cIdx;
-                } else if (hText.includes('세부내용') || hText.includes('요건') || hText.includes('상세설명')) {
-                    detailIdx = cIdx;
+            const firstColText = headerTexts[0] || '';
+            const isFirstRowData = idPattern.test(firstColText) || (
+                firstColText.length >= 3 && firstColText.length <= 15 &&
+                !["고유번호", "요구사항", "분류", "No", "ID"].some(kw => firstColText.includes(kw))
+            );
+            
+            let idIdx = 0, nameIdx = 1, descIdx = 2, detailIdx = 3;
+            
+            if (!isFirstRowData) {
+                for (let cIdx = 0; cIdx < headerTexts.length; cIdx++) {
+                    const hText = headerTexts[cIdx];
+                    if (hText.length > 30) continue;
+                    
+                    if (hText.includes('고유번호') || hText.includes('ID')) {
+                        idIdx = cIdx;
+                    } else if (hText.includes('명칭') || hText.includes('요구사항명')) {
+                        nameIdx = cIdx;
+                    } else if (hText.includes('정의') || hText.includes('개요')) {
+                        descIdx = cIdx;
+                    } else if (hText.includes('세부내용') || hText.includes('요건') || hText.includes('상세설명')) {
+                        detailIdx = cIdx;
+                    }
                 }
             }
             
-            // 2단계: 행 순회 가동 및 매핑 데이터 수집
             for (let j = 0; j < trList.length; j++) {
                 const tr = trList[j];
                 const tcList = tr.getElementsByTagNameNS(nsA, 'tc');
-                const rowCells = [];
                 
-                for (let k = 0; k < tcList.length; k++) {
-                    const tc = tcList[k];
-                    const tList = tc.getElementsByTagNameNS(nsA, 't');
-                    let cellText = '';
-                    for (let tIdx = 0; tIdx < tList.length; tIdx++) {
-                        cellText += tList[tIdx].textContent || '';
-                    }
-                    rowCells.push(cellText.trim());
-                }
-                
-                // 데이터 열 개수가 4개 이상인 경우에 매핑 적용
-                if (rowCells.length >= 4) {
-                    const safeIdIdx = idIdx < rowCells.length ? idIdx : 0;
-                    const safeNameIdx = nameIdx < rowCells.length ? nameIdx : 1;
-                    const safeDescIdx = descIdx < rowCells.length ? descIdx : 2;
-                    const safeDetailIdx = detailIdx < rowCells.length ? detailIdx : (rowCells.length > 3 ? 3 : rowCells.length - 1);
+                if (tcList.length >= 4) {
+                    const safeIdIdx = idIdx < tcList.length ? idIdx : 0;
+                    const safeNameIdx = nameIdx < tcList.length ? nameIdx : 1;
+                    const safeDescIdx = descIdx < tcList.length ? descIdx : 2;
+                    const safeDetailIdx = detailIdx < tcList.length ? detailIdx : (tcList.length > 3 ? 3 : tcList.length - 1);
                     
-                    const col0 = rowCells[safeIdIdx];
-                    const col1 = rowCells[safeNameIdx];
-                    const col2 = rowCells[safeDescIdx];
-                    const col3 = rowCells[safeDetailIdx];
+                    const idParas = extractPptCellStyledText(tcList[safeIdIdx], nsA);
+                    const nameParas = extractPptCellStyledText(tcList[safeNameIdx], nsA);
+                    const descParas = extractPptCellStyledText(tcList[safeDescIdx], nsA);
+                    const detailParas = extractPptCellStyledText(tcList[safeDetailIdx], nsA);
+                    
+                    const col0 = getPptPlainStructuredText(idParas).replace(/\n/g, ' ').replace(/\r/g, ' ').trim();
                     
                     const isHeader = col0.includes('고유번호') || col0.includes('요구사항') || col0.includes('분류') || col0.includes('No');
-                    const hasValidId = idPattern.test(col0) || (col0.length >= 3 && col0.length <= 15 && !isHeader);
+                    const hasValidId = idPattern.test(col0) || (col0.length >= 3 && col0.length <= 15 && !isHeader) || cleanPattern.test(col0);
                     
                     if (hasValidId && !isHeader) {
-                        requirements.push({
-                            id: col0,
-                            name: col1,
-                            desc: col2,
-                            detail: col3
-                        });
+                        // 💡 [비즈니스 룰 1] (1/2) 괄호 패턴 동일 고유번호 병합 처리
+                        let col0Clean = col0;
+                        const match = cleanPattern.exec(col0);
+                        if (match) {
+                            col0Clean = match[1].trim();
+                        }
+                        
+                        if (requirementsMap.has(col0Clean)) {
+                            const existing = requirementsMap.get(col0Clean);
+                            existing.detail_styled.push(...detailParas);
+                            
+                            const existingName = getPptPlainStructuredText(existing.name_styled).replace(/\n/g, ' ').replace(/\r/g, ' ').trim();
+                            const newName = getPptPlainStructuredText(nameParas).replace(/\n/g, ' ').replace(/\r/g, ' ').trim();
+                            if (existingName !== newName) {
+                                existing.name_styled.push(...nameParas);
+                            }
+                            
+                            const existingDesc = getPptPlainStructuredText(existing.desc_styled).replace(/\n/g, ' ').replace(/\r/g, ' ').trim();
+                            const newDesc = getPptPlainStructuredText(descParas).replace(/\n/g, ' ').replace(/\r/g, ' ').trim();
+                            if (existingDesc !== newDesc) {
+                                existing.desc_styled.push(...descParas);
+                            }
+                        } else {
+                            const reqItem = {
+                                id: col0Clean,
+                                // 고유번호용 id_styled 는 중복 치환 버그 예방 위해 깨끗한 단일 런 구조로 재정의
+                                id_styled: [[{ text: col0Clean, bold: false, color: null }]],
+                                name_styled: nameParas,
+                                desc_styled: descParas,
+                                detail_styled: detailParas
+                            };
+                            
+                            requirementsMap.set(col0Clean, reqItem);
+                            requirementsOrder.push(col0Clean);
+                        }
                     }
                 }
             }
         }
     }
 
+    const requirements = requirementsOrder.map(k => requirementsMap.get(k));
     if (requirements.length === 0) {
-        throw new Error('PPTX 파일 내에서 규격에 맞는 요구사항 기술서 표 데이터를 추출할 수 없습니다. (첫 번째 열이 ECR-XXX 같은 고유번호인 4개 열 구조의 표를 확인해주세요)');
+        throw new Error('PPTX 파일 내에서 규격에 맞는 요구사항 기술서 표 데이터를 추출할 수 없습니다.');
     }
 
     const hpNS = 'http://www.hancom.co.kr/hwpml/2011/paragraph';
 
     // 셀 내용 치환 헬퍼 함수
-    function fillHwpxCell(tc, text) {
+    function fillHwpxCell(tc, paragraphs, registry) {
         const subList = tc.getElementsByTagNameNS(hpNS, 'subList')[0] || tc.getElementsByTagName('hp:subList')[0];
         if (!subList) return;
         
-        // 템플릿 문단 복제용 확보
-        const existingPs = subList.getElementsByTagNameNS(hpNS, 'p');
-        const templateP = existingPs.length > 0 ? existingPs[0].cloneNode(true) : null;
+        const existingPs = tc.getElementsByTagNameNS(hpNS, 'p') || tc.getElementsByTagName('hp:p');
+        const firstP = existingPs.length > 0 ? existingPs[0] : null;
         
-        // subList 안의 기존 단락 전수 제거
+        const paraPrIDRef = firstP ? firstP.getAttribute('paraPrIDRef') : null;
+        const styleIDRef = firstP ? firstP.getAttribute('styleIDRef') : null;
+        
+        let baseCharPrIDRef = '0';
+        if (firstP) {
+            const firstRun = firstP.getElementsByTagNameNS(hpNS, 'run')[0] || firstP.getElementsByTagName('hp:run')[0];
+            if (firstRun) {
+                baseCharPrIDRef = firstRun.getAttribute('charPrIDRef') || '0';
+            }
+        }
+        
         while (subList.firstChild) {
             subList.removeChild(subList.firstChild);
         }
         
-        if (!text) {
-            if (templateP) {
-                const t = templateP.getElementsByTagNameNS(hpNS, 't')[0];
-                if (t) t.textContent = '';
-                subList.appendChild(templateP);
-            }
-            return;
-        }
-        
-        // 줄바꿈 단위로 쪼개서 개별 문단으로 복제 삽입
-        const lines = text.split('\n');
-        lines.forEach(line => {
-            if (templateP) {
-                const newP = templateP.cloneNode(true);
-                newP.removeAttribute('id'); // ID 중복 방지
-                const t = newP.getElementsByTagNameNS(hpNS, 't')[0];
-                if (t) t.textContent = line;
-                subList.appendChild(newP);
-            } else {
-                const newP = document.createElementNS(hpNS, 'hp:p');
+        paragraphs.forEach(pRuns => {
+            const newP = document.createElementNS(hpNS, 'hp:p');
+            if (paraPrIDRef) newP.setAttribute('paraPrIDRef', paraPrIDRef);
+            if (styleIDRef) newP.setAttribute('styleIDRef', styleIDRef);
+            
+            if (pRuns.length === 0) {
                 const run = document.createElementNS(hpNS, 'hp:run');
+                run.setAttribute('charPrIDRef', baseCharPrIDRef);
                 const t = document.createElementNS(hpNS, 'hp:t');
-                t.textContent = line;
+                t.textContent = '';
                 run.appendChild(t);
                 newP.appendChild(run);
-                subList.appendChild(newP);
+            } else {
+                pRuns.forEach(runData => {
+                    if (runData.text === '\n') {
+                        const run = document.createElementNS(hpNS, 'hp:run');
+                        run.setAttribute('charPrIDRef', baseCharPrIDRef);
+                        const br = document.createElementNS(hpNS, 'hp:br');
+                        run.appendChild(br);
+                        newP.appendChild(run);
+                    } else {
+                        const run = document.createElementNS(hpNS, 'hp:run');
+                        run.setAttribute('charPrIDRef', baseCharPrIDRef);
+                        const t = document.createElementNS(hpNS, 'hp:t');
+                        t.textContent = runData.text;
+                        run.appendChild(t);
+                        newP.appendChild(run);
+                    }
+                });
             }
+            subList.appendChild(newP);
         });
     }
 
-    // 템플릿 표 치환 핵심 함수 (지능형 플레이스홀더 감지 치환)
-    function applyRequirementToP(pNode, req) {
+    function applyRequirementToP(pNode, req, registry) {
         const tbl = pNode.getElementsByTagNameNS(hpNS, 'tbl')[0] || pNode.getElementsByTagName('hp:tbl')[0];
         if (!tbl) return;
         
@@ -441,28 +732,36 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
             cellText = cellText.trim();
             
             if (cellText.includes('{고유번호}') || cellText.includes('{요구사항 고유번호}')) {
-                fillHwpxCell(tc, req.id);
+                let cleanIdStyled = flattenParagraphsToSingleLine(req.id_styled);
+                if (cleanIdStyled.length === 0) {
+                    cleanIdStyled = [[{ text: req.id, bold: false, color: null }]];
+                }
+                fillHwpxCell(tc, cleanIdStyled, registry);
             } else if (cellText.includes('{요구사항 명칭}')) {
-                fillHwpxCell(tc, req.name);
+                const cleanNameStyled = flattenParagraphsToSingleLine(req.name_styled);
+                fillHwpxCell(tc, cleanNameStyled, registry);
             } else if (cellText.includes('{정의}')) {
-                fillHwpxCell(tc, req.desc);
+                const cleanDescStyled = flattenParagraphsToSingleLine(req.desc_styled);
+                fillHwpxCell(tc, cleanDescStyled, registry);
             } else if (cellText.includes('{세부내용}')) {
-                fillHwpxCell(tc, req.detail);
+                fillHwpxCell(tc, req.detail_styled, registry);
             }
         }
     }
 
     const serializer = new XMLSerializer();
 
-    // 💡 하나의 HWPX 파일로 병합(페이지 나누기 연속 적용)
     if (mergeMode) {
         const hwpxZip = new JSZip();
         await hwpxZip.loadAsync(hwpxBuffer);
         
+        const headerXmlStr = await hwpxZip.files['Contents/header.xml'].async('text');
+        const headerDoc = parser.parseFromString(headerXmlStr, 'application/xml');
+        const registry = new HwpxCharPrRegistry(headerDoc);
+        
         const sectionXmlStr = await hwpxZip.files['Contents/section0.xml'].async('text');
         const sectionDoc = parser.parseFromString(sectionXmlStr, 'application/xml');
         
-        // 본문 리스트에서 표를 가진 최외곽 hp:p 찾기
         const allPs = sectionDoc.getElementsByTagNameNS(hpNS, 'p');
         let templateP = null;
         for (let i = 0; i < allPs.length; i++) {
@@ -479,30 +778,26 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         }
         
         const parentNode = templateP.parentNode;
-        
-        // 기존 템플릿 표는 삭제하고, 고유번호만큼 복제하여 주입
         const fragment = sectionDoc.createDocumentFragment();
         
         requirements.forEach((req, idx) => {
             const clonedP = templateP.cloneNode(true);
-            clonedP.removeAttribute('id'); // 중복 ID 리셋
+            clonedP.removeAttribute('id');
             
-            // 병합 시 두 번째 요구사항부터 강제 페이지 나누기 적용해 가독성 극대화
             if (idx > 0) {
                 clonedP.setAttribute('pageBreak', '1');
             } else {
                 clonedP.setAttribute('pageBreak', '0');
             }
             
-            applyRequirementToP(clonedP, req);
+            applyRequirementToP(clonedP, req, registry);
             fragment.appendChild(clonedP);
             
-            // 표 간의 살짝의 빈 여백을 주기 위해 페이지 나누기가 아닌 한 칸의 빈 단락 삽입
             if (idx < requirements.length - 1) {
-                const spacerP = document.createElementNS(hpNS, 'hp:p');
+                const spacerP = sectionDoc.createElementNS(hpNS, 'hp:p');
                 spacerP.setAttribute('pageBreak', '0');
-                const run = document.createElementNS(hpNS, 'hp:run');
-                const t = document.createElementNS(hpNS, 'hp:t');
+                const run = sectionDoc.createElementNS(hpNS, 'hp:run');
+                const t = sectionDoc.createElementNS(hpNS, 'hp:t');
                 t.textContent = '';
                 run.appendChild(t);
                 spacerP.appendChild(run);
@@ -512,26 +807,29 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         
         parentNode.replaceChild(fragment, templateP);
         
-        // XML 문자열 복원 및 덮어쓰기
-        const finalXmlStr = serializer.serializeToString(sectionDoc);
-        hwpxZip.file('Contents/section0.xml', finalXmlStr);
+        const finalSectionXmlStr = serializer.serializeToString(sectionDoc);
+        const finalHeaderXmlStr = serializer.serializeToString(headerDoc);
+        
+        hwpxZip.file('Contents/section0.xml', finalSectionXmlStr);
+        hwpxZip.file('Contents/header.xml', finalHeaderXmlStr);
         
         const finalBuffer = await hwpxZip.generateAsync({ type: 'uint8array' });
         const finalBlob = new Blob([finalBuffer], { type: 'application/x-hwp-hwpx' });
         
-        // 통계 바인딩
         finalBlob.fusedCount = requirements.length;
         finalBlob.requirementsList = requirements;
         finalBlob.mode = 'merge';
         return finalBlob;
-    } 
-    // 💡 개별 HWPX 파일로 분할 생성 후 하나의 ZIP 파일로 압축
-    else {
+    } else {
         const outZip = new JSZip();
         
         for (const req of requirements) {
             const hwpxZip = new JSZip();
             await hwpxZip.loadAsync(hwpxBuffer);
+            
+            const headerXmlStr = await hwpxZip.files['Contents/header.xml'].async('text');
+            const headerDoc = parser.parseFromString(headerXmlStr, 'application/xml');
+            const registry = new HwpxCharPrRegistry(headerDoc);
             
             const sectionXmlStr = await hwpxZip.files['Contents/section0.xml'].async('text');
             const sectionDoc = parser.parseFromString(sectionXmlStr, 'application/xml');
@@ -552,16 +850,18 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
                 clonedP.removeAttribute('id');
                 clonedP.setAttribute('pageBreak', '0');
                 
-                applyRequirementToP(clonedP, req);
+                applyRequirementToP(clonedP, req, registry);
                 templateP.parentNode.replaceChild(clonedP, templateP);
             }
             
-            const finalXmlStr = serializer.serializeToString(sectionDoc);
-            hwpxZip.file('Contents/section0.xml', finalXmlStr);
+            const finalSectionXmlStr = serializer.serializeToString(sectionDoc);
+            const finalHeaderXmlStr = serializer.serializeToString(headerDoc);
+            
+            hwpxZip.file('Contents/section0.xml', finalSectionXmlStr);
+            hwpxZip.file('Contents/header.xml', finalHeaderXmlStr);
             
             const fileBuffer = await hwpxZip.generateAsync({ type: 'uint8array' });
             
-            // 파일명에 특수문자 제거 후 안전한 파일명 생성
             const safeId = req.id.replace(/[\\/:*?"<>|]/g, '_');
             const safeName = req.name.replace(/[\\/:*?"<>|]/g, '_').substring(0, 20);
             const fileName = `요구사항_${safeId}_${safeName}.hwpx`;
