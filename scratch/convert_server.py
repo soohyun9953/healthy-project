@@ -1,7 +1,9 @@
 import os
 import sys
 import tempfile
-from flask import Flask, request, jsonify, send_file
+import shutil
+import uuid
+from flask import Flask, request, jsonify, send_file, after_this_request
 
 # 플라스크 인스턴스 생성 (한글 설명 및 스네이크 케이스 준수)
 app = Flask(__name__)
@@ -29,7 +31,19 @@ def convert_ppt_to_pdf_local(input_file_path):
     base_name = os.path.splitext(abs_input_path)[0]
     output_pdf_path = base_name + ".pdf"
 
-    # PowerPoint OLE 엔진 초기화 및 변환 (백그라운드 실행)
+    # 💡 [유니코드 경로 크래시 완전 해결]
+    # 파일명에 한글, 공백, 유니코드 특수기호(Ⅳ 등)가 섞여 있으면 PowerPoint COM OLE 엔진이 경로 연산에 폭사합니다.
+    # 이를 원천 방지하기 위해 파일 사본을 시스템 Temp 폴더에 단순 영문명(UUID)으로 임시 복제하여 변환 후 최종 이동시킵니다.
+    temp_dir = tempfile.gettempdir()
+    unique_id = uuid.uuid4().hex
+    safe_temp_pptx = os.path.join(temp_dir, f"ole_in_{unique_id}.pptx")
+    safe_temp_pdf = os.path.join(temp_dir, f"ole_out_{unique_id}.pdf")
+
+    try:
+        shutil.copy2(abs_input_path, safe_temp_pptx)
+    except Exception as e:
+        return False, f"임시 유니코드 안전 사본 복제 에러: {str(e)}"
+
     powerpoint = None
     presentation = None
     try:
@@ -41,13 +55,18 @@ def convert_ppt_to_pdf_local(input_file_path):
         # win32com PPT 변환 시 Visible=True 상태여야 폰트/표 스타일 레이아웃이 원본과 100% 동일하게 완벽 렌더링됨
         powerpoint.Visible = True 
         
-        # WithWindow=False를 제거하여 OLE 창 충돌로 인한 렌더링 에러를 완전히 우회합니다.
-        presentation = powerpoint.Presentations.Open(abs_input_path)
+        # 유니코드 안전 사본 경로로 OLE 로드
+        presentation = powerpoint.Presentations.Open(safe_temp_pptx)
         # 32는 ppSaveAsPDF 상수값
-        presentation.SaveAs(output_pdf_path, 32)
+        presentation.SaveAs(safe_temp_pdf, 32)
         presentation.Close()
         
-        return True, output_pdf_path
+        # 생성된 임시 PDF를 원래 타겟 경로로 이송
+        if os.path.exists(safe_temp_pdf):
+            shutil.copy2(safe_temp_pdf, output_pdf_path)
+            return True, output_pdf_path
+        else:
+            return False, "PDF 변환 파일이 생성되지 않았습니다."
     except Exception as e:
         return False, f"PowerPoint 렌더러 변환 에러: {str(e)}"
     finally:
@@ -62,6 +81,11 @@ def convert_ppt_to_pdf_local(input_file_path):
             pythoncom.CoUninitialize()
         except:
             pass
+        # 임시 사본 청소
+        for temp_file in [safe_temp_pptx, safe_temp_pdf]:
+            if os.path.exists(temp_file):
+                try: os.remove(temp_file)
+                except: pass
 
 # API 1: 서버 구동 여부 확인 (CORS 연동용)
 @app.route("/status", methods=["GET", "OPTIONS"])
@@ -112,9 +136,10 @@ def handle_upload_conversion():
     if uploaded_file.filename == "":
         return jsonify({"success": False, "message": "파일명이 유효하지 않습니다."}), 400
         
-    # 임시 폴더에 파일 저장 후 변환
+    # 💡 [유니코드 뇌관 완전 해결] 처음 임시 파일 저장 시 한글/특수문자가 OLE 파싱 경로에 엉키지 않도록 완전한 ASCII로 임시 세이브
     temp_dir = tempfile.gettempdir()
-    temp_input_path = os.path.join(temp_dir, uploaded_file.filename)
+    unique_id = uuid.uuid4().hex
+    temp_input_path = os.path.join(temp_dir, f"upload_in_{unique_id}.pptx")
     uploaded_file.save(temp_input_path)
     
     success, result_msg = convert_ppt_to_pdf_local(temp_input_path)
@@ -126,8 +151,22 @@ def handle_upload_conversion():
         
     if success:
         pdf_path = result_msg
-        # 변환된 PDF를 브라우저로 직접 전송
-        return send_file(pdf_path, as_attachment=True, download_name=os.path.basename(pdf_path))
+        
+        # 원래 업로드한 파일명의 확장자를 .pdf로 매핑하여 안전한 다운로드 제공
+        original_base = os.path.splitext(uploaded_file.filename)[0]
+        download_pdf_name = f"{original_base}.pdf"
+        
+        # 💡 [리소스 무결성 청소] 응답 전송이 완료된 후 백그라운드에서 임시 생성되었던 PDF를 소거해 디스크 오염 원천 방어
+        @after_this_request
+        def remove_temporary_pdf(response):
+            try:
+                if os.path.exists(pdf_path):
+                    os.remove(pdf_path)
+            except Exception as e:
+                app.logger.error(f"Error removing temp pdf file: {e}")
+            return response
+
+        return send_file(pdf_path, as_attachment=True, download_name=download_pdf_name)
     else:
         return jsonify({
             "success": False,
