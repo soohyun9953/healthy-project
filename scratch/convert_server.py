@@ -97,7 +97,7 @@ def check_server_status():
         "message": "로컬 PPT PDF 변환 헬퍼 서버가 원활하게 작동 중입니다."
     }), 200
 
-# API 2: 로컬 절대 경로를 통한 변환 및 동일 디렉토리 저장
+# API 2: 로컬 절대 경로를 통한 변환 및 동일 디렉토리 저장 (폴더 일괄 변환 및 단일 파일 변환 다중 지원)
 @app.route("/convert-local", methods=["POST", "OPTIONS"])
 def handle_local_conversion():
     if request.method == "OPTIONS":
@@ -106,22 +106,73 @@ def handle_local_conversion():
     request_data = request.get_json() or {}
     local_path = request_data.get("local_file_path", "").strip()
     
-    if not local_path:
-        return jsonify({"success": False, "message": "로컬 파일 절대 경로가 누락되었습니다."}), 400
-        
-    success, result_msg = convert_ppt_to_pdf_local(local_path)
+    # 💡 사용자가 윈도우 "경로로 복사"를 눌러 앞뒤에 큰따옴표(")가 묻어있을 경우 자동 제거
+    local_path = local_path.strip('"').strip("'").strip()
     
-    if success:
-        return jsonify({
-            "success": True,
-            "message": f"동일 디렉토리에 PDF 파일이 성공적으로 생성되었습니다!",
-            "pdf_path": result_msg
-        }), 200
+    if not local_path:
+        return jsonify({"success": False, "message": "로컬 파일 또는 폴더의 절대 경로가 누락되었습니다."}), 400
+        
+    if not os.path.exists(local_path):
+        return jsonify({"success": False, "message": f"입력한 경로를 찾을 수 없습니다: {local_path}"}), 404
+
+    # 💡 [폴더 일괄 변환 기능 구현]
+    if os.path.isdir(local_path):
+        import glob
+        # .pptx 및 .ppt 파일 모두 수집
+        pptx_pattern = os.path.join(local_path, "*.pptx")
+        ppt_pattern = os.path.join(local_path, "*.ppt")
+        
+        files_to_convert = glob.glob(pptx_pattern) + glob.glob(ppt_pattern)
+        
+        if not files_to_convert:
+            return jsonify({
+                "success": False, 
+                "message": f"해당 폴더 내부에서 PPTX 또는 PPT 파일을 찾을 수 없습니다: {local_path}"
+            }), 404
+            
+        success_list = []
+        fail_list = []
+        
+        for file_path in files_to_convert:
+            success, result_msg = convert_ppt_to_pdf_local(file_path)
+            if success:
+                success_list.append(os.path.basename(file_path))
+            else:
+                fail_list.append(f"{os.path.basename(file_path)} (오류: {result_msg})")
+                
+        total_count = len(files_to_convert)
+        success_count = len(success_list)
+        fail_count = len(fail_list)
+        
+        if success_count > 0:
+            msg = f"폴더 내 {total_count}개 중 {success_count}개 PPT 파일이 성공적으로 PDF로 일괄 변환되었습니다!"
+            if fail_count > 0:
+                msg += f" (실패 {fail_count}건: {', '.join(fail_list)})"
+            return jsonify({
+                "success": True,
+                "message": msg,
+                "pdf_path": f"{local_path} (성공 {success_count}건 / 전체 {total_count}건)"
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "message": f"폴더 내 모든 PPT 파일 변환에 실패했습니다: {', '.join(fail_list)}"
+            }), 500
+
+    # 💡 [단일 파일 기존 변환 유지]
     else:
-        return jsonify({
-            "success": False,
-            "message": result_msg
-        }), 500
+        success, result_msg = convert_ppt_to_pdf_local(local_path)
+        if success:
+            return jsonify({
+                "success": True,
+                "message": f"동일 디렉토리에 PDF 파일이 성공적으로 생성되었습니다!",
+                "pdf_path": result_msg
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "message": result_msg
+            }), 500
 
 # API 3: 브라우저 드래그앤드롭 업로드 변환 후 바이너리로 직접 응답
 @app.route("/convert-upload", methods=["POST", "OPTIONS"])
