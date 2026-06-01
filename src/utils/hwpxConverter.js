@@ -388,34 +388,31 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         });
     }
 
-    // 템플릿 표 치환 핵심 함수
+    // 템플릿 표 치환 핵심 함수 (지능형 플레이스홀더 감지 치환)
     function applyRequirementToP(pNode, req) {
         const tbl = pNode.getElementsByTagNameNS(hpNS, 'tbl')[0] || pNode.getElementsByTagName('hp:tbl')[0];
         if (!tbl) return;
         
-        const trList = tbl.getElementsByTagNameNS(hpNS, 'tr') || tbl.getElementsByTagName('hp:tr');
-        if (trList.length < 6) return; // 양식의 행 개수가 6개 미만이면 무시
-        
-        // tr 리스트 매핑 적용 (1-based index)
-        // Row 2 (인덱스 1): 요구사항 고유번호 -> 두 번째 tc
-        const tr2 = trList[1];
-        const tcList2 = tr2.getElementsByTagNameNS(hpNS, 'tc') || tr2.getElementsByTagName('hp:tc');
-        if (tcList2.length >= 2) fillHwpxCell(tcList2[1], req.id);
-        
-        // Row 3 (인덱스 2): 요구사항 명칭 -> 두 번째 tc
-        const tr3 = trList[2];
-        const tcList3 = tr3.getElementsByTagNameNS(hpNS, 'tc') || tr3.getElementsByTagName('hp:tc');
-        if (tcList3.length >= 2) fillHwpxCell(tcList3[1], req.name);
-        
-        // Row 4 (인덱스 3): 정의 -> 세 번째 tc
-        const tr4 = trList[3];
-        const tcList4 = tr4.getElementsByTagNameNS(hpNS, 'tc') || tr4.getElementsByTagName('hp:tc');
-        if (tcList4.length >= 3) fillHwpxCell(tcList4[2], req.desc);
-        
-        // Row 5 (인덱스 4): 세부내용 -> 두 번째 tc
-        const tr5 = trList[4];
-        const tcList5 = tr5.getElementsByTagNameNS(hpNS, 'tc') || tr5.getElementsByTagName('hp:tc');
-        if (tcList5.length >= 2) fillHwpxCell(tcList5[1], req.detail);
+        const tcList = tbl.getElementsByTagNameNS(hpNS, 'tc') || tbl.getElementsByTagName('hp:tc');
+        for (let i = 0; i < tcList.length; i++) {
+            const tc = tcList[i];
+            const tNodes = tc.getElementsByTagNameNS(hpNS, 't') || tc.getElementsByTagName('hp:t');
+            let cellText = '';
+            for (let j = 0; j < tNodes.length; j++) {
+                cellText += tNodes[j].textContent || '';
+            }
+            cellText = cellText.trim();
+            
+            if (cellText.includes('{고유번호}') || cellText.includes('{요구사항 고유번호}')) {
+                fillHwpxCell(tc, req.id);
+            } else if (cellText.includes('{요구사항 명칭}')) {
+                fillHwpxCell(tc, req.name);
+            } else if (cellText.includes('{정의}')) {
+                fillHwpxCell(tc, req.desc);
+            } else if (cellText.includes('{세부내용}')) {
+                fillHwpxCell(tc, req.detail);
+            }
+        }
     }
 
     const serializer = new XMLSerializer();
