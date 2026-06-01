@@ -299,7 +299,39 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         for (let i = 0; i < tblList.length; i++) {
             const tbl = tblList[i];
             const trList = tbl.getElementsByTagNameNS(nsA, 'tr');
+            if (trList.length === 0) continue;
             
+            // 기본 열 매칭 인덱스 세팅 (백업용)
+            let idIdx = 0, nameIdx = 1, descIdx = 2, detailIdx = 3;
+            
+            // 1단계: 첫 번째 행(헤더 행)을 검사하여 각 매핑 열의 실제 인덱스 감지
+            const firstRowCells = trList[0].getElementsByTagNameNS(nsA, 'tc');
+            const headerTexts = [];
+            for (let k = 0; k < firstRowCells.length; k++) {
+                const tc = firstRowCells[k];
+                const tList = tc.getElementsByTagNameNS(nsA, 't');
+                let hText = '';
+                for (let tIdx = 0; tIdx < tList.length; tIdx++) {
+                    hText += tList[tIdx].textContent || '';
+                }
+                headerTexts.push(hText.trim());
+            }
+            
+            // 지능형 열 헤더 퍼지 매칭 가동 ("세부내용", "시스템 요건 세부내용", "* 요건 세부내용" 등 수용)
+            for (let cIdx = 0; cIdx < headerTexts.length; cIdx++) {
+                const hText = headerTexts[cIdx];
+                if (hText.includes('고유번호') || hText.includes('ID')) {
+                    idIdx = cIdx;
+                } else if (hText.includes('명칭') || hText.includes('요구사항명')) {
+                    nameIdx = cIdx;
+                } else if (hText.includes('정의') || hText.includes('개요')) {
+                    descIdx = cIdx;
+                } else if (hText.includes('세부내용') || hText.includes('요건') || hText.includes('상세설명')) {
+                    detailIdx = cIdx;
+                }
+            }
+            
+            // 2단계: 행 순회 가동 및 매핑 데이터 수집
             for (let j = 0; j < trList.length; j++) {
                 const tr = trList[j];
                 const tcList = tr.getElementsByTagNameNS(nsA, 'tc');
@@ -315,12 +347,17 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
                     rowCells.push(cellText.trim());
                 }
                 
-                // 데이터 열 개수가 4개이고 첫 번째 셀에 고유번호가 존재하는지 감지
+                // 데이터 열 개수가 4개 이상인 경우에 매핑 적용
                 if (rowCells.length >= 4) {
-                    const col0 = rowCells[0];
-                    const col1 = rowCells[1];
-                    const col2 = rowCells[2];
-                    const col3 = rowCells[3];
+                    const safeIdIdx = idIdx < rowCells.length ? idIdx : 0;
+                    const safeNameIdx = nameIdx < rowCells.length ? nameIdx : 1;
+                    const safeDescIdx = descIdx < rowCells.length ? descIdx : 2;
+                    const safeDetailIdx = detailIdx < rowCells.length ? detailIdx : (rowCells.length > 3 ? 3 : rowCells.length - 1);
+                    
+                    const col0 = rowCells[safeIdIdx];
+                    const col1 = rowCells[safeNameIdx];
+                    const col2 = rowCells[safeDescIdx];
+                    const col3 = rowCells[safeDetailIdx];
                     
                     const isHeader = col0.includes('고유번호') || col0.includes('요구사항') || col0.includes('분류') || col0.includes('No');
                     const hasValidId = idPattern.test(col0) || (col0.length >= 3 && col0.length <= 15 && !isHeader);
