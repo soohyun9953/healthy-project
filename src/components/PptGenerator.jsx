@@ -8,6 +8,7 @@ import {
     parseExcelData, generatePptFromTemplate, processPptBatch, 
     addSmartAnimationsToPpt, saveFileWithLocationPicker, getPptSlideCount 
 } from '../utils/pptExporter';
+import { convertPptxToHwpx } from '../utils/hwpxConverter';
 import JSZip from 'jszip';
 
 export default function PptGenerator() {
@@ -74,6 +75,13 @@ export default function PptGenerator() {
     const [useGrouping, setUseGrouping] = useState(true); 
     const [slideAnimations, setSlideAnimations] = useState([]); // [{ enabled: true, type: 'transition', useGrouping: true }, ...]
     const animInputRef = useRef(null);
+
+    // PPT ➜ HWPX 스마트 변환 관련 State
+    const [hwpxPptFile, setHwpxPptFile] = useState(null);
+    const [isConvertingHwpx, setIsConvertingHwpx] = useState(false);
+    const [isDraggingHwpx, setIsDraggingHwpx] = useState(false);
+    const [hwpxResultStats, setHwpxResultStats] = useState(null);
+    const hwpxInputRef = useRef(null);
 
     const [errorMsg, setErrorMsg] = useState(null);
     const [successMsg, setSuccessMsg] = useState(null);
@@ -283,6 +291,35 @@ export default function PptGenerator() {
             next[index] = { ...next[index], ...updates };
             return next;
         });
+    };
+
+    const handleHwpxConversion = async () => {
+        if (!hwpxPptFile) return;
+        setIsConvertingHwpx(true);
+        setErrorMsg(null);
+        setSuccessMsg(null);
+        setHwpxResultStats(null);
+        try {
+            const hwpxBlob = await convertPptxToHwpx(hwpxPptFile);
+            
+            const defaultFileName = `변환_${hwpxPptFile.name.replace(/\.[^/.]+$/, "")}.hwpx`;
+            const saved = await saveFileWithLocationPicker(hwpxBlob, defaultFileName);
+            
+            if (saved) {
+                setSuccessMsg(`성공적으로 HWPX 한글 표준 문서로 스마트 변환 및 저장을 마쳤습니다!`);
+                setHwpxResultStats({
+                    slidesCount: hwpxBlob.totalSlidesCount,
+                    paragraphsCount: hwpxBlob.totalParagraphsCount,
+                    tablesCount: hwpxBlob.totalTablesCount,
+                    imagesCount: hwpxBlob.totalImagesCount
+                });
+            }
+        } catch (err) {
+            console.error("HWPX 변환 실패:", err);
+            setErrorMsg(`HWPX 변환에 실패했습니다: ${err.message || 'PPT 내부 구조 분석 오류'}`);
+        } finally {
+            setIsConvertingHwpx(false);
+        }
     };
 
     const buildBatchReportDetail = (modifiedBlob, options) => {
@@ -698,6 +735,20 @@ export default function PptGenerator() {
                         }}
                     >
                         PPT 스마트 애니메이션
+                    </button>
+                    <button 
+                        id="tab-pptx-to-hwpx"
+                        onClick={() => { setActiveTab('pptx_to_hwpx'); setErrorMsg(null); setSuccessMsg(null); setHwpxResultStats(null); }}
+                        className="interactive"
+                        style={{
+                            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
+                            background: activeTab === 'pptx_to_hwpx' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                            border: '1px solid ' + (activeTab === 'pptx_to_hwpx' ? 'var(--success-color)' : 'transparent'),
+                            color: activeTab === 'pptx_to_hwpx' ? 'var(--success-color)' : 'var(--text-secondary)',
+                            fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
+                        }}
+                    >
+                        PPT ➜ HWPX 스마트 변환
                     </button>
                 </div>
 
@@ -1673,6 +1724,164 @@ export default function PptGenerator() {
                                     <><Loader2 size={22} className="animate-spin" /> 전 슬라이드 객체 분석 및 애니메이션 주입 중...</>
                                 ) : (
                                     <><Play size={22} /> 스마트 애니메이션 적용 및 저장</>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                ) : activeTab === 'pptx_to_hwpx' ? (
+                    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                        {/* 1. PPTX 파일 등록 드롭존 */}
+                        <div style={{ background: 'var(--bg-secondary)', padding: '24px', borderRadius: '12px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ padding: '6px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '6px' }}>
+                                    <Sparkles size={16} color="var(--success-color)" />
+                                </div>
+                                <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)' }}>1. 변환할 PPTX 파일 등록</h3>
+                            </div>
+                            
+                            <div 
+                                onDragOver={(e) => { e.preventDefault(); setIsDraggingHwpx(true); }}
+                                onDragLeave={() => setIsDraggingHwpx(false)}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    setIsDraggingHwpx(false);
+                                    const file = e.dataTransfer.files[0];
+                                    if (file && (file.name.endsWith('.pptx') || file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation')) {
+                                        setHwpxPptFile(file);
+                                        setHwpxResultStats(null);
+                                        setErrorMsg(null);
+                                        setSuccessMsg(null);
+                                    } else {
+                                        setErrorMsg('파워포인트 파일(.pptx)만 업로드할 수 있습니다.');
+                                    }
+                                }}
+                                onClick={() => hwpxInputRef.current?.click()}
+                                style={{
+                                    border: `2px dashed ${isDraggingHwpx ? 'var(--success-color)' : 'var(--panel-border)'}`,
+                                    borderRadius: '10px',
+                                    padding: '32px 20px',
+                                    textAlign: 'center',
+                                    cursor: 'pointer',
+                                    background: isDraggingHwpx ? 'rgba(16, 185, 129, 0.05)' : 'rgba(0,0,0,0.15)',
+                                    transition: 'all 0.2s',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '12px'
+                                }}
+                            >
+                                <input 
+                                    type="file"
+                                    ref={hwpxInputRef}
+                                    onChange={(e) => {
+                                        const file = e.target.files[0];
+                                        if (file) {
+                                            setHwpxPptFile(file);
+                                            setHwpxResultStats(null);
+                                            setErrorMsg(null);
+                                            setSuccessMsg(null);
+                                        }
+                                    }}
+                                    accept=".pptx"
+                                    style={{ display: 'none' }}
+                                />
+                                <div style={{ padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '50%' }}>
+                                    <Upload size={32} color={hwpxPptFile ? 'var(--success-color)' : 'var(--text-muted)'} />
+                                </div>
+                                <div>
+                                    <p style={{ margin: 0, fontSize: '14.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                        {hwpxPptFile ? hwpxPptFile.name : '파워포인트 파일 드래그 또는 클릭하여 찾기'}
+                                    </p>
+                                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                                        {hwpxPptFile ? `${(hwpxPptFile.size / 1024 / 1024).toFixed(2)} MB` : '변환할 단일 .pptx 파일 등록'}
+                                    </p>
+                                </div>
+                                {hwpxPptFile && (
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setHwpxPptFile(null);
+                                            setHwpxResultStats(null);
+                                            setErrorMsg(null);
+                                            setSuccessMsg(null);
+                                        }}
+                                        className="interactive"
+                                        style={{
+                                            padding: '4px 8px', background: 'rgba(239,68,68,0.1)', color: 'var(--danger-color)',
+                                            border: '1px solid rgba(239,68,68,0.2)', borderRadius: '4px', fontSize: '11.5px',
+                                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                                        }}
+                                    >
+                                        <X size={12} /> 파일 제거
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* 2. 변환 주의사항 및 가이드 */}
+                        <div style={{ background: 'rgba(250,204,21,0.03)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(250,204,21,0.15)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-gold)' }}>
+                                <Info size={16} />
+                                <span style={{ fontSize: '13.5px', fontWeight: 700 }}>스마트 변환(좌표-문단 흐름 매핑) 안내 가이드</span>
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                                <li>파워포인트의 절대 좌표 기반 레이아웃을 한글의 흐르는 문단 구조로 지능적 변환합니다.</li>
+                                <li>슬라이드 내 글상자들을 **위에서 아래, 왼쪽에서 오른쪽** 순서로 자동 분석 정렬하여 수려하게 정돈합니다.</li>
+                                <li>슬라이드 내의 **표(Table)** 데이터 및 **삽입 그림(Image)** 리소스도 한글 표와 인라인 그림으로 자동 변환해 줍니다.</li>
+                            </ul>
+                        </div>
+
+                        {/* 3. 성공 후 통계 피드백 리포트 */}
+                        {hwpxResultStats && (
+                            <div className="animate-scale-in" style={{ background: 'rgba(16,185,129,0.03)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.2)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <h4 style={{ margin: 0, fontSize: '14.5px', color: 'var(--success-color)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <CheckCircle2 size={16} /> HWPX 스마트 변환 통계 결과 리포트
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginTop: '4px' }}>
+                                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', textAlign: 'center', border: '1px solid var(--panel-border)' }}>
+                                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>변환된 슬라이</div>
+                                        <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>{hwpxResultStats.slidesCount}개</div>
+                                    </div>
+                                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', textAlign: 'center', border: '1px solid var(--panel-border)' }}>
+                                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>추출된 문단 수</div>
+                                        <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--success-color)', marginTop: '4px' }}>{hwpxResultStats.paragraphsCount}개</div>
+                                    </div>
+                                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', textAlign: 'center', border: '1px solid var(--panel-border)' }}>
+                                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>한글 표(Table) 수</div>
+                                        <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--accent-blue)', marginTop: '4px' }}>{hwpxResultStats.tablesCount}개</div>
+                                    </div>
+                                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', textAlign: 'center', border: '1px solid var(--panel-border)' }}>
+                                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>인라인 삽입 이미지</div>
+                                        <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--accent-purple)', marginTop: '4px' }}>{hwpxResultStats.imagesCount}개</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 4. 변환 가동 실행 버튼 */}
+                        <div style={{ marginTop: '10px' }}>
+                            <button
+                                className="interactive"
+                                onClick={handleHwpxConversion}
+                                disabled={!hwpxPptFile || isConvertingHwpx}
+                                style={{
+                                    width: '100%',
+                                    padding: '18px',
+                                    background: (!hwpxPptFile || isConvertingHwpx) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #10b981, #3b82f6)',
+                                    color: (!hwpxPptFile || isConvertingHwpx) ? 'var(--text-muted)' : 'white',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    fontSize: '17px',
+                                    fontWeight: 800,
+                                    cursor: (!hwpxPptFile || isConvertingHwpx) ? 'not-allowed' : 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px',
+                                    boxShadow: (!hwpxPptFile || isConvertingHwpx) ? 'none' : '0 8px 20px rgba(16, 185, 129, 0.2)'
+                                }}
+                            >
+                                {isConvertingHwpx ? (
+                                    <><Loader2 size={22} className="animate-spin" /> PPTX 구조 정밀 분석 및 HWPX 한글 변환 중...</>
+                                ) : (
+                                    <><Sparkles size={22} /> HWPX 한글 표준 문서로 스마트 변환 실행</>
                                 )}
                             </button>
                         </div>

@@ -17,6 +17,7 @@
     "docxtemplater": "^3.68.4",
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
+    "hwpx-js": "^0.1.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.577.0",
     "mermaid": "^11.14.0",
