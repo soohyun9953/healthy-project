@@ -747,20 +747,51 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
             }
             cellText = cellText.trim();
             
+            let isFilled = false;
+            
             if (cellText.includes('{고유번호}') || cellText.includes('{요구사항 고유번호}')) {
                 let cleanIdStyled = flattenParagraphsToSingleLine(req.id_styled);
                 if (cleanIdStyled.length === 0) {
                     cleanIdStyled = [[{ text: req.id, bold: false, color: null }]];
                 }
                 fillHwpxCell(tc, cleanIdStyled, registry, getNextId);
+                isFilled = true;
             } else if (cellText.includes('{요구사항 명칭}')) {
                 const cleanNameStyled = flattenParagraphsToSingleLine(req.name_styled);
                 fillHwpxCell(tc, cleanNameStyled, registry, getNextId);
+                isFilled = true;
             } else if (cellText.includes('{정의}')) {
                 const cleanDescStyled = flattenParagraphsToSingleLine(req.desc_styled);
                 fillHwpxCell(tc, cleanDescStyled, registry, getNextId);
+                isFilled = true;
             } else if (cellText.includes('{세부내용}')) {
                 fillHwpxCell(tc, req.detail_styled, registry, getNextId);
+                isFilled = true;
+            }
+            
+            // 💡 [무결성 보완 필터] 치환 대상 외의 빈 셀(세부내용 등)에 적힌 원본 템플릿 문단들의 고유 ID가 누락/중복되거나 run 내부 태그가 꼬여있으면 강제 교정 및 복구
+            if (!isFilled) {
+                const ownerDoc = tc.ownerDocument;
+                const existingPs = tc.getElementsByTagNameNS(hpNS, 'p') || tc.getElementsByTagName('hp:p');
+                for (let pIdx = 0; pIdx < existingPs.length; pIdx++) {
+                    const p = existingPs[pIdx];
+                    if (getNextId) {
+                        p.setAttributeNS(null, 'id', getNextId());
+                    }
+                    
+                    // 텅 빈 run 내부에 빈 hp:t를 자동 주입하여 한글 렌더러의 정밀 줄 나눔 연산 크래시 차단
+                    const runs = p.getElementsByTagNameNS(hpNS, 'run') || p.getElementsByTagName('hp:run');
+                    for (let rIdx = 0; rIdx < runs.length; rIdx++) {
+                        const run = runs[rIdx];
+                        const hasT = (run.getElementsByTagNameNS(hpNS, 't').length > 0 || run.getElementsByTagName('hp:t').length > 0);
+                        const hasBr = (run.getElementsByTagNameNS(hpNS, 'br').length > 0 || run.getElementsByTagName('hp:br').length > 0);
+                        if (!hasT && !hasBr) {
+                            const t = ownerDoc.createElementNS(hpNS, 'hp:t');
+                            t.textContent = '';
+                            run.appendChild(t);
+                        }
+                    }
+                }
             }
         }
     }
@@ -844,6 +875,12 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         
         parentNode.replaceChild(fragment, templateP);
         
+        // 💡 [어절 렌더러 크래시 영구 봉쇄] 기존의 잘못된 렌더러 세그먼트 캐시(linesegarray)가 문서에 남아있으면 한글 어절 연산 시 폭사하므로 전량 영구 삭제
+        const segsToPurge = sectionDoc.getElementsByTagNameNS(hpNS, 'linesegarray') || sectionDoc.getElementsByTagName('hp:linesegarray');
+        while (segsToPurge.length > 0) {
+            segsToPurge[0].parentNode.removeChild(segsToPurge[0]);
+        }
+        
         const finalSectionXmlStr = serializer.serializeToString(sectionDoc);
         const finalHeaderXmlStr = serializer.serializeToString(headerDoc);
         
@@ -902,6 +939,12 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
                 
                 applyRequirementToP(clonedP, req, registry, getNextId);
                 templateP.parentNode.replaceChild(clonedP, templateP);
+            }
+            
+            // 💡 [어절 렌더러 크래시 영구 봉쇄] 개별 파일 모드에서도 linesegarray 전량 영구 삭제
+            const segsToPurge = sectionDoc.getElementsByTagNameNS(hpNS, 'linesegarray') || sectionDoc.getElementsByTagName('hp:linesegarray');
+            while (segsToPurge.length > 0) {
+                segsToPurge[0].parentNode.removeChild(segsToPurge[0]);
             }
             
             const finalSectionXmlStr = serializer.serializeToString(sectionDoc);
