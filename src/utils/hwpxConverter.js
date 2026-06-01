@@ -684,11 +684,9 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
             subList.removeChild(subList.firstChild);
         }
         
-        paragraphs.forEach(pRuns => {
-            const newP = ownerDoc.createElementNS(hpNS, 'hp:p'); // 💡 ownerDoc 사용
-            
+        if (paragraphs.length === 0) {
+            const newP = ownerDoc.createElementNS(hpNS, 'hp:p');
             if (firstP) {
-                // 기존 단락의 모든 속성(id, paraPrIDRef, styleIDRef, pageBreak, columnBreak, merged 등) 완벽 복사 상속
                 for (let i = 0; i < firstP.attributes.length; i++) {
                     const attr = firstP.attributes[i];
                     newP.setAttribute(attr.name, attr.value);
@@ -697,40 +695,66 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
                 if (paraPrIDRef) newP.setAttribute('paraPrIDRef', paraPrIDRef);
                 if (styleIDRef) newP.setAttribute('styleIDRef', styleIDRef);
             }
-            
-            // 💡 [크래시 해결의 핵심] 줄 나눔 기준이 "어절"일 때 문단의 id 속성이 없거나 중복되면 한글이 폭사하므로 무조건 고유 정수 ID로 덮어씀
-            // 💡 [Blink 엔진 XML 버그 우회] setAttributeNS(null, 'id', ...) 를 사용하여 속성 직렬화 유실 완벽 차단
             if (getNextId) {
                 newP.setAttributeNS(null, 'id', getNextId());
             }
             
-            if (pRuns.length === 0) {
-                const run = ownerDoc.createElementNS(hpNS, 'hp:run');
-                run.setAttribute('charPrIDRef', baseCharPrIDRef);
-                const t = ownerDoc.createElementNS(hpNS, 'hp:t');
-                t.textContent = '';
-                run.appendChild(t);
-                newP.appendChild(run);
-            } else {
-                pRuns.forEach(runData => {
-                    if (runData.text === '\n') {
-                        const run = ownerDoc.createElementNS(hpNS, 'hp:run');
-                        run.setAttribute('charPrIDRef', baseCharPrIDRef);
-                        const br = ownerDoc.createElementNS(hpNS, 'hp:br');
-                        run.appendChild(br);
-                        newP.appendChild(run);
-                    } else {
-                        const run = ownerDoc.createElementNS(hpNS, 'hp:run');
-                        run.setAttribute('charPrIDRef', baseCharPrIDRef);
-                        const t = ownerDoc.createElementNS(hpNS, 'hp:t');
-                        t.textContent = runData.text;
-                        run.appendChild(t);
-                        newP.appendChild(run);
-                    }
-                });
-            }
+            const run = ownerDoc.createElementNS(hpNS, 'hp:run');
+            run.setAttribute('charPrIDRef', baseCharPrIDRef);
+            const t = ownerDoc.createElementNS(hpNS, 'hp:t');
+            t.textContent = '';
+            run.appendChild(t);
+            newP.appendChild(run);
             subList.appendChild(newP);
-        });
+        } else {
+            paragraphs.forEach(pRuns => {
+                const newP = ownerDoc.createElementNS(hpNS, 'hp:p'); // 💡 ownerDoc 사용
+                
+                if (firstP) {
+                    // 기존 단락의 모든 속성(id, paraPrIDRef, styleIDRef, pageBreak, columnBreak, merged 등) 완벽 복사 상속
+                    for (let i = 0; i < firstP.attributes.length; i++) {
+                        const attr = firstP.attributes[i];
+                        newP.setAttribute(attr.name, attr.value);
+                    }
+                } else {
+                    if (paraPrIDRef) newP.setAttribute('paraPrIDRef', paraPrIDRef);
+                    if (styleIDRef) newP.setAttribute('styleIDRef', styleIDRef);
+                }
+                
+                // 💡 [크래시 해결의 핵심] 줄 나눔 기준이 "어절"일 때 문단의 id 속성이 없거나 중복되면 한글이 폭사하므로 무조건 고유 정수 ID로 덮어씀
+                // 💡 [Blink 엔진 XML 버그 우회] setAttributeNS(null, 'id', ...) 를 사용하여 속성 직렬화 유실 완벽 차단
+                if (getNextId) {
+                    newP.setAttributeNS(null, 'id', getNextId());
+                }
+                
+                if (pRuns.length === 0) {
+                    const run = ownerDoc.createElementNS(hpNS, 'hp:run');
+                    run.setAttribute('charPrIDRef', baseCharPrIDRef);
+                    const t = ownerDoc.createElementNS(hpNS, 'hp:t');
+                    t.textContent = '';
+                    run.appendChild(t);
+                    newP.appendChild(run);
+                } else {
+                    pRuns.forEach(runData => {
+                        if (runData.text === '\n') {
+                            const run = ownerDoc.createElementNS(hpNS, 'hp:run');
+                            run.setAttribute('charPrIDRef', baseCharPrIDRef);
+                            const br = ownerDoc.createElementNS(hpNS, 'hp:br');
+                            run.appendChild(br);
+                            newP.appendChild(run);
+                        } else {
+                            const run = ownerDoc.createElementNS(hpNS, 'hp:run');
+                            run.setAttribute('charPrIDRef', baseCharPrIDRef);
+                            const t = ownerDoc.createElementNS(hpNS, 'hp:t');
+                            t.textContent = runData.text;
+                            run.appendChild(t);
+                            newP.appendChild(run);
+                        }
+                    });
+                }
+                subList.appendChild(newP);
+            });
+        }
     }
 
     function applyRequirementToP(pNode, req, registry, getNextId) {
@@ -1344,7 +1368,7 @@ export async function fusePptToHwpxListTemplate(pptxFile, hwpxListTemplateFile) 
 
         const flatParas = flattenParagraphsToSingleLine(paragraphs);
 
-        flatParas.forEach(pRuns => {
+        if (flatParas.length === 0) {
             const newP = ownerDoc.createElementNS(hpNS, 'hp:p');
             if (firstP) {
                 for (let i = 0; i < firstP.attributes.length; i++) {
@@ -1355,28 +1379,50 @@ export async function fusePptToHwpxListTemplate(pptxFile, hwpxListTemplateFile) 
                 if (paraPrIDRef) newP.setAttribute('paraPrIDRef', paraPrIDRef);
                 if (styleIDRef) newP.setAttribute('styleIDRef', styleIDRef);
             }
-
             newP.setAttributeNS(null, 'id', getNextId());
+            
+            const run = ownerDoc.createElementNS(hpNS, 'hp:run');
+            run.setAttribute('charPrIDRef', baseCharPrIDRef);
+            const t = ownerDoc.createElementNS(hpNS, 'hp:t');
+            t.textContent = '';
+            run.appendChild(t);
+            newP.appendChild(run);
+            subList.appendChild(newP);
+        } else {
+            flatParas.forEach(pRuns => {
+                const newP = ownerDoc.createElementNS(hpNS, 'hp:p');
+                if (firstP) {
+                    for (let i = 0; i < firstP.attributes.length; i++) {
+                        const attr = firstP.attributes[i];
+                        newP.setAttribute(attr.name, attr.value);
+                    }
+                } else {
+                    if (paraPrIDRef) newP.setAttribute('paraPrIDRef', paraPrIDRef);
+                    if (styleIDRef) newP.setAttribute('styleIDRef', styleIDRef);
+                }
 
-            if (pRuns.length === 0) {
-                const run = ownerDoc.createElementNS(hpNS, 'hp:run');
-                run.setAttribute('charPrIDRef', baseCharPrIDRef);
-                const t = ownerDoc.createElementNS(hpNS, 'hp:t');
-                t.textContent = '';
-                run.appendChild(t);
-                newP.appendChild(run);
-            } else {
-                pRuns.forEach(runData => {
+                newP.setAttributeNS(null, 'id', getNextId());
+
+                if (pRuns.length === 0) {
                     const run = ownerDoc.createElementNS(hpNS, 'hp:run');
                     run.setAttribute('charPrIDRef', baseCharPrIDRef);
                     const t = ownerDoc.createElementNS(hpNS, 'hp:t');
-                    t.textContent = runData.text;
+                    t.textContent = '';
                     run.appendChild(t);
                     newP.appendChild(run);
-                });
-            }
-            subList.appendChild(newP);
-        });
+                } else {
+                    pRuns.forEach(runData => {
+                        const run = ownerDoc.createElementNS(hpNS, 'hp:run');
+                        run.setAttribute('charPrIDRef', baseCharPrIDRef);
+                        const t = ownerDoc.createElementNS(hpNS, 'hp:t');
+                        t.textContent = runData.text;
+                        run.appendChild(t);
+                        newP.appendChild(run);
+                    });
+                }
+                subList.appendChild(newP);
+            });
+        }
     }
 
     function setTcAddrAndSz(tc, col, row, colSpan = 1, rowSpan = 1, width = null, height = null) {
