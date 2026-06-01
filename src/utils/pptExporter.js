@@ -11,13 +11,31 @@ import * as XLSX from 'xlsx';
 export async function saveFileWithLocationPicker(blob, defaultFileName) {
     if ('showSaveFilePicker' in window) {
         try {
+            // defaultFileName의 확장자 분석하여 적절한 파일 타입 및 확장자 필터 지정
+            const ext = defaultFileName.split('.').pop().toLowerCase();
+            let types = [];
+            
+            if (ext === 'hwpx') {
+                types = [{
+                    description: 'Hancom HWPX Document',
+                    accept: { 'application/x-hwp-hwpx': ['.hwpx'] },
+                }];
+            } else if (ext === 'zip') {
+                types = [{
+                    description: 'ZIP Archive',
+                    accept: { 'application/zip': ['.zip'] },
+                }];
+            } else {
+                types = [{
+                    description: 'PowerPoint Presentation',
+                    accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
+                }];
+            }
+
             const handle = await window.showSaveFilePicker({
                 suggestedName: defaultFileName,
                 startIn: 'downloads',
-                types: [{
-                    description: 'PowerPoint Presentation',
-                    accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
-                }],
+                types: types,
             });
             const writable = await handle.createWritable();
             await writable.write(blob);
