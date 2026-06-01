@@ -662,6 +662,7 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
 
     // 셀 내용 치환 헬퍼 함수
     function fillHwpxCell(tc, paragraphs, registry, getNextId) {
+        const ownerDoc = tc.ownerDocument; // 💡 브라우저 고유 HTML 오염 방지를 위해 XML 소유 문서 컨텍스트 직접 획득
         const subList = tc.getElementsByTagNameNS(hpNS, 'subList')[0] || tc.getElementsByTagName('hp:subList')[0];
         if (!subList) return;
         
@@ -684,7 +685,7 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         }
         
         paragraphs.forEach(pRuns => {
-            const newP = document.createElementNS(hpNS, 'hp:p');
+            const newP = ownerDoc.createElementNS(hpNS, 'hp:p'); // 💡 ownerDoc 사용
             
             if (firstP) {
                 // 기존 단락의 모든 속성(id, paraPrIDRef, styleIDRef, pageBreak, columnBreak, merged 등) 완벽 복사 상속
@@ -698,29 +699,30 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
             }
             
             // 💡 [크래시 해결의 핵심] 줄 나눔 기준이 "어절"일 때 문단의 id 속성이 없거나 중복되면 한글이 폭사하므로 무조건 고유 정수 ID로 덮어씀
+            // 💡 [Blink 엔진 XML 버그 우회] setAttributeNS(null, 'id', ...) 를 사용하여 속성 직렬화 유실 완벽 차단
             if (getNextId) {
-                newP.setAttribute('id', getNextId());
+                newP.setAttributeNS(null, 'id', getNextId());
             }
             
             if (pRuns.length === 0) {
-                const run = document.createElementNS(hpNS, 'hp:run');
+                const run = ownerDoc.createElementNS(hpNS, 'hp:run');
                 run.setAttribute('charPrIDRef', baseCharPrIDRef);
-                const t = document.createElementNS(hpNS, 'hp:t');
+                const t = ownerDoc.createElementNS(hpNS, 'hp:t');
                 t.textContent = '';
                 run.appendChild(t);
                 newP.appendChild(run);
             } else {
                 pRuns.forEach(runData => {
                     if (runData.text === '\n') {
-                        const run = document.createElementNS(hpNS, 'hp:run');
+                        const run = ownerDoc.createElementNS(hpNS, 'hp:run');
                         run.setAttribute('charPrIDRef', baseCharPrIDRef);
-                        const br = document.createElementNS(hpNS, 'hp:br');
+                        const br = ownerDoc.createElementNS(hpNS, 'hp:br');
                         run.appendChild(br);
                         newP.appendChild(run);
                     } else {
-                        const run = document.createElementNS(hpNS, 'hp:run');
+                        const run = ownerDoc.createElementNS(hpNS, 'hp:run');
                         run.setAttribute('charPrIDRef', baseCharPrIDRef);
-                        const t = document.createElementNS(hpNS, 'hp:t');
+                        const t = ownerDoc.createElementNS(hpNS, 'hp:t');
                         t.textContent = runData.text;
                         run.appendChild(t);
                         newP.appendChild(run);
@@ -809,7 +811,7 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         requirements.forEach((req, idx) => {
             const clonedP = templateP.cloneNode(true);
             // 💡 표를 담고 있는 외곽 hp:p 단락에도 고유 ID를 부여하여 유실 방지
-            clonedP.setAttribute('id', getNextId());
+            clonedP.setAttributeNS(null, 'id', getNextId());
             
             if (idx > 0) {
                 clonedP.setAttribute('pageBreak', '1');
@@ -823,7 +825,7 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
             if (idx < requirements.length - 1) {
                 const spacerP = sectionDoc.createElementNS(hpNS, 'hp:p');
                 // 💡 문단 구분용 스페이서 문단에도 고유 ID를 부여
-                spacerP.setAttribute('id', getNextId());
+                spacerP.setAttributeNS(null, 'id', getNextId());
                 spacerP.setAttribute('paraPrIDRef', '62');
                 spacerP.setAttribute('styleIDRef', '0');
                 spacerP.setAttribute('pageBreak', '0');
@@ -895,7 +897,7 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
             if (templateP) {
                 const clonedP = templateP.cloneNode(true);
                 // 💡 표를 담고 있는 외곽 hp:p 단락에도 고유 ID를 부여하여 유실 방지
-                clonedP.setAttribute('id', getNextId());
+                clonedP.setAttributeNS(null, 'id', getNextId());
                 clonedP.setAttribute('pageBreak', '0');
                 
                 applyRequirementToP(clonedP, req, registry, getNextId);
