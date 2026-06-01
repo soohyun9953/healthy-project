@@ -661,7 +661,7 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
     const hpNS = 'http://www.hancom.co.kr/hwpml/2011/paragraph';
 
     // 셀 내용 치환 헬퍼 함수
-    function fillHwpxCell(tc, paragraphs, registry) {
+    function fillHwpxCell(tc, paragraphs, registry, getNextId) {
         const subList = tc.getElementsByTagNameNS(hpNS, 'subList')[0] || tc.getElementsByTagName('hp:subList')[0];
         if (!subList) return;
         
@@ -685,8 +685,22 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         
         paragraphs.forEach(pRuns => {
             const newP = document.createElementNS(hpNS, 'hp:p');
-            if (paraPrIDRef) newP.setAttribute('paraPrIDRef', paraPrIDRef);
-            if (styleIDRef) newP.setAttribute('styleIDRef', styleIDRef);
+            
+            if (firstP) {
+                // 기존 단락의 모든 속성(id, paraPrIDRef, styleIDRef, pageBreak, columnBreak, merged 등) 완벽 복사 상속
+                for (let i = 0; i < firstP.attributes.length; i++) {
+                    const attr = firstP.attributes[i];
+                    newP.setAttribute(attr.name, attr.value);
+                }
+            } else {
+                if (paraPrIDRef) newP.setAttribute('paraPrIDRef', paraPrIDRef);
+                if (styleIDRef) newP.setAttribute('styleIDRef', styleIDRef);
+            }
+            
+            // 💡 [크래시 해결의 핵심] 줄 나눔 기준이 "어절"일 때 문단의 id 속성이 없거나 중복되면 한글이 폭사하므로 무조건 고유 정수 ID로 덮어씀
+            if (getNextId) {
+                newP.setAttribute('id', getNextId());
+            }
             
             if (pRuns.length === 0) {
                 const run = document.createElementNS(hpNS, 'hp:run');
@@ -717,7 +731,7 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         });
     }
 
-    function applyRequirementToP(pNode, req, registry) {
+    function applyRequirementToP(pNode, req, registry, getNextId) {
         const tbl = pNode.getElementsByTagNameNS(hpNS, 'tbl')[0] || pNode.getElementsByTagName('hp:tbl')[0];
         if (!tbl) return;
         
@@ -736,15 +750,15 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
                 if (cleanIdStyled.length === 0) {
                     cleanIdStyled = [[{ text: req.id, bold: false, color: null }]];
                 }
-                fillHwpxCell(tc, cleanIdStyled, registry);
+                fillHwpxCell(tc, cleanIdStyled, registry, getNextId);
             } else if (cellText.includes('{요구사항 명칭}')) {
                 const cleanNameStyled = flattenParagraphsToSingleLine(req.name_styled);
-                fillHwpxCell(tc, cleanNameStyled, registry);
+                fillHwpxCell(tc, cleanNameStyled, registry, getNextId);
             } else if (cellText.includes('{정의}')) {
                 const cleanDescStyled = flattenParagraphsToSingleLine(req.desc_styled);
-                fillHwpxCell(tc, cleanDescStyled, registry);
+                fillHwpxCell(tc, cleanDescStyled, registry, getNextId);
             } else if (cellText.includes('{세부내용}')) {
-                fillHwpxCell(tc, req.detail_styled, registry);
+                fillHwpxCell(tc, req.detail_styled, registry, getNextId);
             }
         }
     }
@@ -762,6 +776,18 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         const sectionXmlStr = await hwpxZip.files['Contents/section0.xml'].async('text');
         const sectionDoc = parser.parseFromString(sectionXmlStr, 'application/xml');
         
+        // 💡 기존 문서에 존재하는 모든 hp:p 단락의 ID 중에서 최댓값을 수집하여 고유 ID 카운터 초기화
+        const existingPs = sectionDoc.getElementsByTagNameNS(hpNS, 'p');
+        let maxId = 0;
+        for (let i = 0; i < existingPs.length; i++) {
+            const idVal = parseInt(existingPs[i].getAttribute('id') || '0', 10);
+            if (!isNaN(idVal) && idVal > maxId) {
+                maxId = idVal;
+            }
+        }
+        let currentId = Math.max(maxId + 1, 3000000000);
+        const getNextId = () => String(currentId++);
+
         const allPs = sectionDoc.getElementsByTagNameNS(hpNS, 'p');
         let templateP = null;
         for (let i = 0; i < allPs.length; i++) {
@@ -782,7 +808,8 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
         
         requirements.forEach((req, idx) => {
             const clonedP = templateP.cloneNode(true);
-            clonedP.removeAttribute('id');
+            // 💡 표를 담고 있는 외곽 hp:p 단락에도 고유 ID를 부여하여 유실 방지
+            clonedP.setAttribute('id', getNextId());
             
             if (idx > 0) {
                 clonedP.setAttribute('pageBreak', '1');
@@ -790,13 +817,21 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
                 clonedP.setAttribute('pageBreak', '0');
             }
             
-            applyRequirementToP(clonedP, req, registry);
+            applyRequirementToP(clonedP, req, registry, getNextId);
             fragment.appendChild(clonedP);
             
             if (idx < requirements.length - 1) {
                 const spacerP = sectionDoc.createElementNS(hpNS, 'hp:p');
+                // 💡 문단 구분용 스페이서 문단에도 고유 ID를 부여
+                spacerP.setAttribute('id', getNextId());
+                spacerP.setAttribute('paraPrIDRef', '62');
+                spacerP.setAttribute('styleIDRef', '0');
                 spacerP.setAttribute('pageBreak', '0');
+                spacerP.setAttribute('columnBreak', '0');
+                spacerP.setAttribute('merged', '0');
+                
                 const run = sectionDoc.createElementNS(hpNS, 'hp:run');
+                run.setAttribute('charPrIDRef', '0');
                 const t = sectionDoc.createElementNS(hpNS, 'hp:t');
                 t.textContent = '';
                 run.appendChild(t);
@@ -834,6 +869,18 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
             const sectionXmlStr = await hwpxZip.files['Contents/section0.xml'].async('text');
             const sectionDoc = parser.parseFromString(sectionXmlStr, 'application/xml');
             
+            // 💡 기존 문서에 존재하는 모든 hp:p 단락의 ID 중에서 최댓값을 수집하여 고유 ID 카운터 초기화
+            const existingPs = sectionDoc.getElementsByTagNameNS(hpNS, 'p');
+            let maxId = 0;
+            for (let i = 0; i < existingPs.length; i++) {
+                const idVal = parseInt(existingPs[i].getAttribute('id') || '0', 10);
+                if (!isNaN(idVal) && idVal > maxId) {
+                    maxId = idVal;
+                }
+            }
+            let currentId = Math.max(maxId + 1, 3000000000);
+            const getNextId = () => String(currentId++);
+
             const allPs = sectionDoc.getElementsByTagNameNS(hpNS, 'p');
             let templateP = null;
             for (let i = 0; i < allPs.length; i++) {
@@ -847,10 +894,11 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
             
             if (templateP) {
                 const clonedP = templateP.cloneNode(true);
-                clonedP.removeAttribute('id');
+                // 💡 표를 담고 있는 외곽 hp:p 단락에도 고유 ID를 부여하여 유실 방지
+                clonedP.setAttribute('id', getNextId());
                 clonedP.setAttribute('pageBreak', '0');
                 
-                applyRequirementToP(clonedP, req, registry);
+                applyRequirementToP(clonedP, req, registry, getNextId);
                 templateP.parentNode.replaceChild(clonedP, templateP);
             }
             
