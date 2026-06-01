@@ -8,7 +8,7 @@ import {
     parseExcelData, generatePptFromTemplate, processPptBatch, 
     addSmartAnimationsToPpt, saveFileWithLocationPicker, getPptSlideCount 
 } from '../utils/pptExporter';
-import { convertPptxToHwpx, fusePptToHwpxTemplate } from '../utils/hwpxConverter';
+import { convertPptxToHwpx, fusePptToHwpxTemplate, fusePptToHwpxListTemplate } from '../utils/hwpxConverter';
 import JSZip from 'jszip';
 
 export default function PptGenerator() {
@@ -86,13 +86,16 @@ export default function PptGenerator() {
     // PPT ➜ HWPX 양식 융합 관련 State
     const [hwpxFusionPptFile, setHwpxFusionPptFile] = useState(null);
     const [hwpxFusionTemplateFile, setHwpxFusionTemplateFile] = useState(null);
+    const [hwpxFusionListTemplateFile, setHwpxFusionListTemplateFile] = useState(null); // 💡 목록표 양식 파일 추가!
     const [isFusingHwpx, setIsFusingHwpx] = useState(false);
     const [isDraggingFusionPpt, setIsDraggingFusionPpt] = useState(false);
     const [isDraggingFusionTemplate, setIsDraggingFusionTemplate] = useState(false);
+    const [isDraggingFusionListTemplate, setIsDraggingFusionListTemplate] = useState(false); // 💡 목록표 드래깅 state 추가!
     const [fusionMergeMode, setFusionMergeMode] = useState(true); // true: 하나의 HWPX 병합, false: ZIP 압축 분할
     const [fusionResultStats, setFusionResultStats] = useState(null);
     const fusionPptInputRef = useRef(null);
     const fusionTemplateInputRef = useRef(null);
+    const fusionListTemplateInputRef = useRef(null); // 💡 목록표 Ref 추가!
 
     const [errorMsg, setErrorMsg] = useState(null);
     const [successMsg, setSuccessMsg] = useState(null);
@@ -343,6 +346,7 @@ export default function PptGenerator() {
         setSuccessMsg(null);
         setFusionResultStats(null);
         try {
+            // 1. 상세명세서(표준양식) HWPX 융합 수행
             const resultBlob = await fusePptToHwpxTemplate(hwpxFusionPptFile, hwpxFusionTemplateFile, fusionMergeMode);
             
             const defaultFileName = fusionMergeMode 
@@ -351,11 +355,29 @@ export default function PptGenerator() {
                 
             const saved = await saveFileWithLocationPicker(resultBlob, defaultFileName);
             
+            // 2. 목록표 양식이 업로드되었으면 목록표 HWPX 융합 추가 수행
+            let listSaved = false;
+            if (hwpxFusionListTemplateFile) {
+                try {
+                    const listBlob = await fusePptToHwpxListTemplate(hwpxFusionPptFile, hwpxFusionListTemplateFile);
+                    const listFileName = `목록표_${hwpxFusionPptFile.name.replace(/\.[^/.]+$/, "")}.hwpx`;
+                    listSaved = await saveFileWithLocationPicker(listBlob, listFileName);
+                } catch (listErr) {
+                    console.error("목록표 HWPX 융합 실패:", listErr);
+                    setErrorMsg(`상세명세서는 완료되었으나, 목록표 HWPX 융합에는 실패했습니다: ${listErr.message}`);
+                }
+            }
+            
             if (saved) {
-                setSuccessMsg(fusionMergeMode 
+                let successTxt = fusionMergeMode 
                     ? `성공적으로 HWPX 표준 양식 융합 및 다운로드를 마쳤습니다! (1개 HWPX 파일 병합)`
-                    : `성공적으로 HWPX 양식 분할 융합 및 ZIP 파일 다운로드를 마쳤습니다! (개별 고유번호별 분할)`
-                );
+                    : `성공적으로 HWPX 양식 분할 융합 및 ZIP 파일 다운로드를 마쳤습니다! (개별 고유번호별 분할)`;
+                
+                if (hwpxFusionListTemplateFile && listSaved) {
+                    successTxt += ` + [목록표 HWPX 파일 추가 생성 완료]`;
+                }
+                
+                setSuccessMsg(successTxt);
                 setFusionResultStats({
                     fusedCount: resultBlob.fusedCount,
                     requirementsList: resultBlob.requirementsList,
@@ -1779,8 +1801,8 @@ export default function PptGenerator() {
                     </div>
                 ) : activeTab === 'pptx_hwpx_fusion' ? (
                     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                        {/* 1. 이중 파일 업로드 드롭존 (PPTX + HWPX) */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                        {/* 1. 삼중 파일 업로드 드롭존 (PPTX + HWPX 상세 + HWPX 목록표) */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
                             {/* PPTX 업로드 */}
                             <div style={{ background: 'var(--bg-secondary)', padding: '24px', borderRadius: '12px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1932,6 +1954,90 @@ export default function PptGenerator() {
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setHwpxFusionTemplateFile(null);
+                                                setFusionResultStats(null);
+                                                setErrorMsg(null);
+                                                setSuccessMsg(null);
+                                            }}
+                                            className="interactive"
+                                            style={{
+                                                padding: '4px 8px', background: 'rgba(239,68,68,0.1)', color: 'var(--danger-color)',
+                                                border: '1px solid rgba(239,68,68,0.2)', borderRadius: '4px', fontSize: '11.5px',
+                                                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                                            }}
+                                        >
+                                            <X size={12} /> 파일 제거
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* HWPX 목록표 양식 업로드 (선택) */}
+                            <div style={{ background: 'var(--bg-secondary)', padding: '24px', borderRadius: '12px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ padding: '6px', background: 'rgba(249, 115, 22, 0.1)', borderRadius: '6px' }}>
+                                        <Box size={16} color="#f97316" />
+                                    </div>
+                                    <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--text-primary)', fontWeight: 700 }}>3. HWPX 목록표 양식 (.hwpx) (선택)</h3>
+                                </div>
+                                <div 
+                                    onDragOver={(e) => { e.preventDefault(); setIsDraggingFusionListTemplate(true); }}
+                                    onDragLeave={() => setIsDraggingFusionListTemplate(false)}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        setIsDraggingFusionListTemplate(false);
+                                        const file = e.dataTransfer.files[0];
+                                        if (file && file.name.toLowerCase().endsWith('.hwpx')) {
+                                            setHwpxFusionListTemplateFile(file);
+                                            setFusionResultStats(null);
+                                            setErrorMsg(null);
+                                            setSuccessMsg(null);
+                                        } else {
+                                            setErrorMsg('한글 목록표 문서(.hwpx)만 업로드할 수 있습니다.');
+                                        }
+                                    }}
+                                    onClick={() => fusionListTemplateInputRef.current?.click()}
+                                    style={{
+                                        border: `2px dashed ${isDraggingFusionListTemplate ? '#f97316' : 'var(--panel-border)'}`,
+                                        borderRadius: '10px',
+                                        padding: '36px 20px',
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        background: isDraggingFusionListTemplate ? 'rgba(249, 115, 22, 0.05)' : 'rgba(0,0,0,0.15)',
+                                        transition: 'all 0.2s',
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px'
+                                    }}
+                                >
+                                    <input 
+                                        type="file"
+                                        ref={fusionListTemplateInputRef}
+                                        onChange={(e) => {
+                                            const file = e.target.files[0];
+                                            if (file) {
+                                                setHwpxFusionListTemplateFile(file);
+                                                setFusionResultStats(null);
+                                                setErrorMsg(null);
+                                                setSuccessMsg(null);
+                                            }
+                                        }}
+                                        accept=".hwpx"
+                                        style={{ display: 'none' }}
+                                    />
+                                    <div style={{ padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '50%' }}>
+                                        <Upload size={30} color={hwpxFusionListTemplateFile ? '#f97316' : 'var(--text-muted)'} />
+                                    </div>
+                                    <div>
+                                        <p style={{ margin: 0, fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                            {hwpxFusionListTemplateFile ? hwpxFusionListTemplateFile.name : 'HWPX 목록표 드래그 또는 클릭'}
+                                        </p>
+                                        <p style={{ margin: '4px 0 0', fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                                            {hwpxFusionListTemplateFile ? `${(hwpxFusionListTemplateFile.size / 1024).toFixed(2)} KB` : '데이터를 채워넣을 목록표 양식 등록 (선택)'}
+                                        </p>
+                                    </div>
+                                    {hwpxFusionListTemplateFile && (
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setHwpxFusionListTemplateFile(null);
                                                 setFusionResultStats(null);
                                                 setErrorMsg(null);
                                                 setSuccessMsg(null);
