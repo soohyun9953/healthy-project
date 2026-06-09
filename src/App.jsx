@@ -139,12 +139,12 @@ function App() {
   }, []);
 
   const tabs = [
+    { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316' },
     { id: 'main', label: 'AI 산출물 검증', icon: Shield, color: 'var(--accent-blue)' },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)' },
     { id: 'law', label: 'AI 법률 자문(제미나이)', icon: MessageSquare, color: 'var(--success-color)' },
     { id: 'law-mcp', label: 'AI 법률 자문(로컬 RAG)', icon: MessageSquare, color: 'var(--accent-purple)' },
     { id: 'erd', label: 'AI ERD 설계', icon: Database, color: 'var(--warning-color)' },
-    { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316' },
     { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6' },
     { id: 'library', label: '참고자료 라이브러리', icon: Activity, color: '#64748b' },
     { id: 'aippt', label: '(작업중)AI PPT 디자이너', icon: Presentation, color: '#ec4899' },
