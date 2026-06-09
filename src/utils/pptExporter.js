@@ -1277,12 +1277,13 @@ export async function processPptBatch(pptFile, options) {
                         // 역순 ['lnB', 'lnT', 'lnR', 'lnL'] 로 insertBefore(firstChild)를 하면
                         // 최종 tcPr 자식 순서는 [lnL, lnR, lnT, lnB, ...] 가 되어 XSD 스키마와 100% 정확하게 정렬됩니다!
                         const reversedBNames = ['lnB', 'lnT', 'lnR', 'lnL'];
+                        const useHeaderStyle = applyFirstRowHeaderStyle !== false;
                         reversedBNames.forEach(bName => {
                             // 💡 정밀 렌더링 설계: 두께를 0.5pt (w="6350")로 통일하되, 상하 충돌 방지를 위해 색상만 흰색으로 적용
                             let border_color = '7F7F7F';
                             const border_width = '6350'; // 모든 표 테두리 실선 0.5pt로 통일
                             
-                            if (rIdx === 0) {
+                            if (useHeaderStyle && rIdx === 0) {
                                 const is_left_edge = (bName === 'lnL' && cIdx === 0);
                                 const is_right_edge = (bName === 'lnR' && cIdx === tcs.length - 1);
                                 const is_top_edge = (bName === 'lnT');
@@ -1292,7 +1293,7 @@ export async function processPptBatch(pptFile, options) {
                                 } else {
                                     border_color = 'FFFFFF'; // 첫 행 내부 실선만 흰색 적용
                                 }
-                            } else if (rIdx === 1) {
+                            } else if (useHeaderStyle && rIdx === 1) {
                                 // 💡 상하 충돌 방지: 두 번째 행의 상단 테두리(lnT)는 첫 번째 행의 하단(lnB)과 만나므로 동일하게 흰색 적용!
                                 if (bName === 'lnT') {
                                     border_color = 'FFFFFF';
