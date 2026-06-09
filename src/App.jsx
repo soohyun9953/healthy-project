@@ -140,7 +140,6 @@ function App() {
 
   const tabs = [
     { id: 'main', label: 'AI 산출물 검증', icon: Shield, color: 'var(--accent-blue)' },
-    { id: 'ismpda', label: '(작업중)ISMP DA 검증 대시보드', icon: Sliders, color: 'var(--accent-purple)' },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)' },
     { id: 'law', label: 'AI 법률 자문(제미나이)', icon: MessageSquare, color: 'var(--success-color)' },
     { id: 'law-mcp', label: 'AI 법률 자문(로컬 RAG)', icon: MessageSquare, color: 'var(--accent-purple)' },
@@ -150,6 +149,7 @@ function App() {
     { id: 'library', label: '참고자료 라이브러리', icon: Activity, color: '#64748b' },
     { id: 'aippt', label: '(작업중)AI PPT 디자이너', icon: Presentation, color: '#ec4899' },
     { id: 'rag', label: '프로젝트 RAG 지식베이스', icon: Database, color: 'var(--accent-blue)' },
+    { id: 'ismpda', label: '(작업중)ISMP DA 검증 대시보드', icon: Sliders, color: 'var(--accent-purple)' },
   ];
 
   const activeTabData = tabs.find(t => t.id === activeTab);
