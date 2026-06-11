@@ -598,7 +598,7 @@ export default function PptValidator({ apiKey }) {
                     area: '우측 페이지',
                     text,
                     error: `우측 페이지 번호 시퀀스 단절 (이전 페이지: ${lastPageNum} ➜ 현재 표기: ${pageNum})`,
-                    guide: `페이지 번호가 순차적으로 증가하지 않았습니다. 슬라이드 번호 흐름을 점검해 주세요.`
+                    guide: `페이지 번호가 순차적으로 증가하지 않았습니다. 페이지수 흐름을 점검해 주세요.`
                   });
                   fileNumErrorsCount++;
                 }
@@ -651,7 +651,7 @@ export default function PptValidator({ apiKey }) {
       const typoRows = typoResults.map((t, idx) => ({
         '순번': idx + 1,
         '대상 파일명': t.fileName,
-        '슬라이드 번호': `${t.slideNum}번 슬라이드`,
+        '페이지수': `${t.slideNum} 페이지`,
         '의심 단어': t.typo,
         '추천 교정안': t.correction,
         '검증 구분': t.type,
@@ -667,7 +667,7 @@ export default function PptValidator({ apiKey }) {
       const numberingRows = numberingResults.map((n, idx) => ({
         '순번': idx + 1,
         '대상 파일명': n.fileName,
-        '슬라이드 번호': `${n.slideNum}번 슬라이드`,
+        '페이지수': `${n.slideNum} 페이지`,
         '검증 영역': n.area,
         '표기 텍스트': n.text,
         '검출 오류': n.error,
@@ -682,7 +682,7 @@ export default function PptValidator({ apiKey }) {
       const altRows = altTextResults.map((a, idx) => ({
         '순번': idx + 1,
         '대상 파일명': a.fileName,
-        '슬라이드 번호': `${a.slideNum}번 슬라이드`,
+        '페이지수': `${a.slideNum} 페이지`,
         '대상 개체명': a.objName,
         '대체텍스트 내용': a.descr,
         '참고': a.guide
@@ -696,7 +696,7 @@ export default function PptValidator({ apiKey }) {
       const forbiddenRows = forbiddenResults.map((f, idx) => ({
         '순번': idx + 1,
         '대상 파일명': f.fileName,
-        '슬라이드 번호': `${f.slideNum}번 슬라이드`,
+        '페이지수': `${f.slideNum} 페이지`,
         '검출 지정 단어': f.word,
         '검출 오류': f.error,
         '올바른 규칙 가이드': f.guide,
@@ -1284,7 +1284,7 @@ TBD
                       <thead>
                         <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
-                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>위치</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>페이지수</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '110px' }}>의심 단어</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '110px' }}>교정 추천</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '80px' }}>유형</th>
@@ -1298,7 +1298,7 @@ TBD
                               {t.fileName}
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                              {t.slideNum}번 슬라이드
+                              {t.slideNum} 페이지
                             </td>
                             <td style={{ padding: '12px 8px', color: '#ef4444', fontWeight: 700 }}>{t.typo}</td>
                             <td style={{ padding: '12px 8px', color: 'var(--success-color)', fontWeight: 700 }}>
@@ -1338,7 +1338,7 @@ TBD
                       <thead>
                         <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
-                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>위치</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>페이지수</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>영역</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>표기 텍스트</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>검출된 오류</th>
@@ -1352,7 +1352,7 @@ TBD
                               {n.fileName}
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                              {n.slideNum}번 슬라이드
+                              {n.slideNum} 페이지
                             </td>
                             <td style={{ padding: '12px 8px' }}>
                               <span style={{ 
@@ -1397,7 +1397,7 @@ TBD
                       <thead>
                         <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
-                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>위치</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>페이지수</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>대상 개체명</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '250px' }}>대체텍스트 내용</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700 }}>참고 사항</th>
@@ -1410,7 +1410,7 @@ TBD
                               {alt.fileName}
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                              {alt.slideNum}번 슬라이드
+                              {alt.slideNum} 페이지
                             </td>
                             <td style={{ padding: '12px 8px', color: '#06b6d4', fontWeight: 700 }}>
                               {alt.objName}
@@ -1443,7 +1443,7 @@ TBD
                       <thead>
                         <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
-                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>위치</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>페이지수</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>검출된 단어</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>상태</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700 }}>검출 문장(하이라이트)</th>
@@ -1456,7 +1456,7 @@ TBD
                               {forb.fileName}
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                              {forb.slideNum}번 슬라이드
+                              {forb.slideNum} 페이지
                             </td>
                             <td style={{ padding: '12px 8px', color: '#ec4899', fontWeight: 700 }}>
                               {forb.word}
