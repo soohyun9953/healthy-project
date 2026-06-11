@@ -62,14 +62,19 @@ export default function PptValidator({ apiKey }) {
   // 검증 옵션 분리 상태
   const [checkTypos, setCheckTypos] = useState(true);
   const [checkNumbering, setCheckNumbering] = useState(true);
+  const [checkAltText, setCheckAltText] = useState(true);
+  const [checkForbiddenWords, setCheckForbiddenWords] = useState(true);
   
   // 결과 데이터 저장
   const [typoResults, setTypoResults] = useState([]);
   const [numberingResults, setNumberingResults] = useState([]);
-  const [fileStats, setFileStats] = useState([]); // [{ name: '', typos: 0, numberingErrors: 0 }]
+  const [altTextResults, setAltTextResults] = useState([]);
+  const [forbiddenResults, setForbiddenResults] = useState([]);
+  const [fileStats, setFileStats] = useState([]); // [{ name: '', typos: 0, numberingErrors: 0, altTextErrors: 0, forbiddenErrors: 0 }]
   
-  const [activeResultTab, setActiveResultTab] = useState('summary'); // summary, typo, numbering
+  const [activeResultTab, setActiveResultTab] = useState('summary'); // summary, typo, numbering, altText, forbidden
   const [userDictText, setUserDictText] = useState(''); // 사용자 정의 사전 입력란
+  const [forbiddenWordsText, setForbiddenWordsText] = useState("미정\n임시\nTBD\n검토필요\n작성중"); // 특정 점검 단어 입력란
   const fileInputRef = useRef(null);
 
   // 파일 업로드 핸들러
@@ -104,6 +109,8 @@ export default function PptValidator({ apiKey }) {
     setIsValidated(false);
     setTypoResults([]);
     setNumberingResults([]);
+    setAltTextResults([]);
+    setForbiddenResults([]);
     setFileStats([]);
   };
 
@@ -133,14 +140,16 @@ export default function PptValidator({ apiKey }) {
   // PPTX 검증 핵심 프로세스
   const handleValidate = async () => {
     if (pptFiles.length === 0) return;
-    if (!checkTypos && !checkNumbering) {
-      alert('오탈자 또는 넘버링 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
+    if (!checkTypos && !checkNumbering && !checkAltText && !checkForbiddenWords) {
+      alert('오탈자, 넘버링, 대체텍스트, 특정 단어 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
       return;
     }
     setIsProcessing(true);
     
     const allTypos = [];
     const allNumberings = [];
+    const allAltTexts = [];
+    const allForbiddens = [];
     const stats = [];
     const userDict = parseUserDictionary();
     const mergedDict = { ...TYPO_DICTIONARY, ...userDict };
@@ -149,6 +158,8 @@ export default function PptValidator({ apiKey }) {
       for (const file of pptFiles) {
         let fileTyposCount = 0;
         let fileNumErrorsCount = 0;
+        let fileAltErrorsCount = 0;
+        let fileForbiddenCount = 0;
 
         const arrayBuffer = await file.arrayBuffer();
         const zip = await JSZip.loadAsync(arrayBuffer);
@@ -266,6 +277,78 @@ export default function PptValidator({ apiKey }) {
                       desc: info.desc
                     });
                     fileTyposCount++;
+                  }
+                }
+              });
+            });
+          }
+
+          // 3-2. 대체텍스트 검증 수행
+          if (checkAltText) {
+            const cNvPrs = xmlDoc.getElementsByTagName('*');
+            for (let i = 0; i < cNvPrs.length; i++) {
+              const node = cNvPrs[i];
+              const localName = node.localName || node.tagName.split(':').pop();
+              if (localName === 'cNvPr') {
+                const name = node.getAttribute('name') || '';
+                const descr = node.getAttribute('descr') || '';
+                const parentNode = node.parentNode;
+                const parentName = parentNode ? (parentNode.localName || parentNode.tagName.split(':').pop()) : '';
+                
+                // 그림(pic), 비디오, 그룹, 스마트아트 등 대체텍스트가 필요한 성격의 개체들 체크
+                const isVisualElement = parentName === 'pic' || parentName === 'graphicFrame' || parentName === 'grpSp' || 
+                  name.toLowerCase().includes('picture') || name.toLowerCase().includes('그림') || 
+                  name.toLowerCase().includes('image') || name.toLowerCase().includes('이미지') ||
+                  name.toLowerCase().includes('chart') || name.toLowerCase().includes('차트') ||
+                  name.toLowerCase().includes('diagram') || name.toLowerCase().includes('다이어그램');
+                
+                if (isVisualElement && !descr.trim()) {
+                  const exists = allAltTexts.some(e => 
+                    e.fileName === file.name && 
+                    e.slideNum === slideNum && 
+                    e.objName === name
+                  );
+                  if (!exists) {
+                    allAltTexts.push({
+                      fileName: file.name,
+                      slideNum,
+                      objName: name,
+                      error: '대체텍스트 누락',
+                      guide: `시각 개체("${name}")에 대체텍스트(descr)가 설정되어 있지 않습니다. 웹 접근성(산출물 표준) 준수를 위해 대체텍스트를 입력해 주세요.`
+                    });
+                    fileAltErrorsCount++;
+                  }
+                }
+              }
+            }
+          }
+
+          // 3-3. 특정 단어 검증 수행
+          if (checkForbiddenWords && forbiddenWordsText.trim()) {
+            const targetWords = forbiddenWordsText.split('\n')
+              .map(w => w.trim())
+              .filter(w => w.length > 0);
+
+            shapes.forEach(shape => {
+              const text = shape.text;
+              targetWords.forEach(word => {
+                if (text.includes(word)) {
+                  const exists = allForbiddens.some(e => 
+                    e.fileName === file.name && 
+                    e.slideNum === slideNum && 
+                    e.sentence === text && 
+                    e.word === word
+                  );
+                  if (!exists) {
+                    allForbiddens.push({
+                      fileName: file.name,
+                      slideNum,
+                      sentence: text,
+                      word,
+                      error: `지정 단어 검출 (${word})`,
+                      guide: `문서 본문 내에 점검 지정 단어인 "${word}"가 포함되어 있습니다. 최종 제출 시 적절한 표현인지 확인해 주세요.`
+                    });
+                    fileForbiddenCount++;
                   }
                 }
               });
@@ -450,12 +533,16 @@ export default function PptValidator({ apiKey }) {
         stats.push({
           name: file.name,
           typos: fileTyposCount,
-          numberingErrors: fileNumErrorsCount
+          numberingErrors: fileNumErrorsCount,
+          altTextErrors: fileAltErrorsCount,
+          forbiddenErrors: fileForbiddenCount
         });
       }
 
       setTypoResults(allTypos);
       setNumberingResults(allNumberings);
+      setAltTextResults(allAltTexts);
+      setForbiddenResults(allForbiddens);
       setFileStats(stats);
       setIsValidated(true);
       setActiveResultTab('summary');
@@ -469,7 +556,12 @@ export default function PptValidator({ apiKey }) {
 
   // 점검 결과를 엑셀 파일로 추출
   const handleExportToExcel = () => {
-    if (typoResults.length === 0 && numberingResults.length === 0) {
+    if (
+      typoResults.length === 0 && 
+      numberingResults.length === 0 && 
+      altTextResults.length === 0 && 
+      forbiddenResults.length === 0
+    ) {
       alert('출력할 검증 결과 데이터가 존재하지 않습니다.');
       return;
     }
@@ -477,31 +569,64 @@ export default function PptValidator({ apiKey }) {
     const workbook = XLSX.utils.book_new();
 
     // 1. 오탈자 시트 데이터 구성
-    const typoRows = typoResults.map((t, idx) => ({
-      '순번': idx + 1,
-      '대상 파일명': t.fileName,
-      '슬라이드 번호': `${t.slideNum}번 슬라이드`,
-      '의심 단어': t.typo,
-      '추천 교정안': t.correction,
-      '검증 구분': t.type,
-      '교정 가이드': t.desc,
-      '검출 문장(전체)': t.sentence
-    }));
-    const typoSheet = XLSX.utils.json_to_sheet(typoRows);
-    XLSX.utils.book_append_sheet(workbook, typoSheet, '오탈자_점검결과');
+    if (checkTypos) {
+      const typoRows = typoResults.map((t, idx) => ({
+        '순번': idx + 1,
+        '대상 파일명': t.fileName,
+        '슬라이드 번호': `${t.slideNum}번 슬라이드`,
+        '의심 단어': t.typo,
+        '추천 교정안': t.correction,
+        '검증 구분': t.type,
+        '교정 가이드': t.desc,
+        '검출 문장(전체)': t.sentence
+      }));
+      const typoSheet = XLSX.utils.json_to_sheet(typoRows);
+      XLSX.utils.book_append_sheet(workbook, typoSheet, '오탈자_점검결과');
+    }
 
     // 2. 넘버링 시트 데이터 구성
-    const numberingRows = numberingResults.map((n, idx) => ({
-      '순번': idx + 1,
-      '대상 파일명': n.fileName,
-      '슬라이드 번호': `${n.slideNum}번 슬라이드`,
-      '검증 영역': n.area,
-      '표기 텍스트': n.text,
-      '검출 오류': n.error,
-      '올바른 규칙 가이드': n.guide
-    }));
-    const numberingSheet = XLSX.utils.json_to_sheet(numberingRows);
-    XLSX.utils.book_append_sheet(workbook, numberingSheet, '넘버링_점검결과');
+    if (checkNumbering) {
+      const numberingRows = numberingResults.map((n, idx) => ({
+        '순번': idx + 1,
+        '대상 파일명': n.fileName,
+        '슬라이드 번호': `${n.slideNum}번 슬라이드`,
+        '검증 영역': n.area,
+        '표기 텍스트': n.text,
+        '검출 오류': n.error,
+        '올바른 규칙 가이드': n.guide
+      }));
+      const numberingSheet = XLSX.utils.json_to_sheet(numberingRows);
+      XLSX.utils.book_append_sheet(workbook, numberingSheet, '넘버링_점검결과');
+    }
+
+    // 3. 대체텍스트 시트 데이터 구성
+    if (checkAltText) {
+      const altRows = altTextResults.map((a, idx) => ({
+        '순번': idx + 1,
+        '대상 파일명': a.fileName,
+        '슬라이드 번호': `${a.slideNum}번 슬라이드`,
+        '대상 개체명': a.objName,
+        '검출 오류': a.error,
+        '올바른 규칙 가이드': a.guide
+      }));
+      const altSheet = XLSX.utils.json_to_sheet(altRows);
+      XLSX.utils.book_append_sheet(workbook, altSheet, '대체텍스트_누락결과');
+    }
+
+    // 4. 지정 단어 시트 데이터 구성
+    if (checkForbiddenWords) {
+      const forbiddenRows = forbiddenResults.map((f, idx) => ({
+        '순번': idx + 1,
+        '대상 파일명': f.fileName,
+        '슬라이드 번호': `${f.slideNum}번 슬라이드`,
+        '검출 지정 단어': f.word,
+        '검출 오류': f.error,
+        '올바른 규칙 가이드': f.guide,
+        '검출 문장(전체)': f.sentence
+      }));
+      const forbiddenSheet = XLSX.utils.json_to_sheet(forbiddenRows);
+      XLSX.utils.book_append_sheet(workbook, forbiddenSheet, '지정단어_점검결과');
+    }
 
     // 엑셀 파일 다운로드 실행
     const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
@@ -590,7 +715,8 @@ export default function PptValidator({ apiKey }) {
             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
               <ShieldAlert size={17} color="#e11d48" /> 검증 옵션 설정
             </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* 1. 오탈자 검증 */}
               <div 
                 onClick={() => setCheckTypos(prev => !prev)}
                 style={{ 
@@ -601,7 +727,7 @@ export default function PptValidator({ apiKey }) {
                   cursor: 'pointer', 
                   display: 'flex', 
                   alignItems: 'center', 
-                  gap: '10px',
+                  gap: '12px',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -619,6 +745,8 @@ export default function PptValidator({ apiKey }) {
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>맞춤법 및 외래어 오류 검출</span>
                 </div>
               </div>
+
+              {/* 2. 넘버링 및 목차 검증 */}
               <div 
                 onClick={() => setCheckNumbering(prev => !prev)}
                 style={{ 
@@ -629,7 +757,7 @@ export default function PptValidator({ apiKey }) {
                   cursor: 'pointer', 
                   display: 'flex', 
                   alignItems: 'center', 
-                  gap: '10px',
+                  gap: '12px',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -645,6 +773,66 @@ export default function PptValidator({ apiKey }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>넘버링 및 목차 검증</span>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>페이지 순서 및 타이틀 중복 점검</span>
+                </div>
+              </div>
+
+              {/* 3. 대체텍스트 누락 검증 */}
+              <div 
+                onClick={() => setCheckAltText(prev => !prev)}
+                style={{ 
+                  background: checkAltText ? 'rgba(6, 182, 212, 0.05)' : 'rgba(255, 255, 255, 0.01)', 
+                  border: checkAltText ? '1px solid rgba(6, 182, 212, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px', 
+                  padding: '12px 16px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={checkAltText} 
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setCheckAltText(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#06b6d4' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>대체텍스트 누락 검증</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>시각 개체(그림/차트)의 대체텍스트(descr) 미기재 건수 점검</span>
+                </div>
+              </div>
+
+              {/* 4. 특정 단어(금지어) 포함 검증 */}
+              <div 
+                onClick={() => setCheckForbiddenWords(prev => !prev)}
+                style={{ 
+                  background: checkForbiddenWords ? 'rgba(236, 72, 153, 0.05)' : 'rgba(255, 255, 255, 0.01)', 
+                  border: checkForbiddenWords ? '1px solid rgba(236, 72, 153, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px', 
+                  padding: '12px 16px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={checkForbiddenWords} 
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setCheckForbiddenWords(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#ec4899' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>특정 단어(금지어) 포함 검증</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>지정한 검토 필요 단어가 문서 본문에 포함되어 있는지 점검</span>
                 </div>
               </div>
             </div>
@@ -715,40 +903,83 @@ export default function PptValidator({ apiKey }) {
           </div>
         </div>
 
-        {/* 우측: 사용자 정의 검증 사전 등록 */}
-        <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <HelpCircle size={17} color="var(--accent-purple)" /> 사용자 정의 검사 규칙 (선택)
-          </h3>
-          <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-            프로젝트 고유 명사나 내장 사전에 존재하지 않는 특정 오탈자를 추가할 수 있습니다. <strong>[오타단어 ➜ 바른단어]</strong> 형태로 한 줄씩 기재해 주세요.
-          </p>
-          <textarea
-            value={userDictText}
-            onChange={(e) => setUserDictText(e.target.value)}
-            placeholder={`예시 입력:
+        {/* 우측: 검사 사전 및 금지어/검색어 설정 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* 사용자 정의 검증 사전 등록 */}
+          <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <HelpCircle size={17} color="var(--accent-purple)" /> 사용자 정의 검사 규칙 (선택)
+            </h3>
+            <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+              프로젝트 고유 명사나 내장 사전에 존재하지 않는 특정 오탈자를 추가할 수 있습니다. <strong>[오타단어 ➜ 바른단어]</strong> 형태로 한 줄씩 기재해 주세요.
+            </p>
+            <textarea
+              value={userDictText}
+              onChange={(e) => setUserDictText(e.target.value)}
+              placeholder={`예시 입력:
 프로젝트명 ➜ 건강한 프로젝트
 아키택처 ➜ 아키텍처
 스프링부터 ➜ 스프링부트`}
-            style={{
-              width: '100%',
-              height: '190px',
-              padding: '12px',
-              background: 'rgba(0,0,0,0.2)',
-              border: '1px solid var(--panel-border)',
-              borderRadius: '10px',
-              color: 'var(--text-primary)',
-              fontSize: '13px',
-              fontFamily: 'monospace',
-              lineHeight: '1.6',
-              resize: 'none',
-              outline: 'none'
-            }}
-          />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-            <Info size={12} />
-            <span>내장 사전에 있는 규칙은 기본적으로 적용됩니다.</span>
+              style={{
+                width: '100%',
+                height: '140px',
+                padding: '12px',
+                background: 'rgba(0,0,0,0.2)',
+                border: '1px solid var(--panel-border)',
+                borderRadius: '10px',
+                color: 'var(--text-primary)',
+                fontSize: '13px',
+                fontFamily: 'monospace',
+                lineHeight: '1.6',
+                resize: 'none',
+                outline: 'none'
+              }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+              <Info size={12} />
+              <span>내장 사전에 있는 규칙은 기본적으로 적용됩니다.</span>
+            </div>
           </div>
+
+          {/* 특정 검색/금지 단어 지정 */}
+          <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <HelpCircle size={17} color="#ec4899" /> 특정 점검 단어 지정 (선택)
+            </h3>
+            <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+              문서 본문에 포함되면 안 되는 금지어나 검토가 필요한 단어들을 <strong>한 줄에 하나씩</strong> 입력해 주세요.
+            </p>
+            <textarea
+              value={forbiddenWordsText}
+              onChange={(e) => setForbiddenWordsText(e.target.value)}
+              placeholder={`예시 입력:
+미정
+임시
+TBD
+검토필요
+작성중`}
+              style={{
+                width: '100%',
+                height: '140px',
+                padding: '12px',
+                background: 'rgba(0,0,0,0.2)',
+                border: '1px solid var(--panel-border)',
+                borderRadius: '10px',
+                color: 'var(--text-primary)',
+                fontSize: '13px',
+                fontFamily: 'monospace',
+                lineHeight: '1.6',
+                resize: 'none',
+                outline: 'none'
+              }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+              <Info size={12} />
+              <span>'특정 단어(금지어) 포함 검증' 옵션이 켜져 있어야 작동합니다.</span>
+            </div>
+          </div>
+
         </div>
 
       </div>
@@ -788,18 +1019,26 @@ export default function PptValidator({ apiKey }) {
           </div>
 
           {/* 종합 요약 카드 */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>검증 파일 수</span>
               <span style={{ fontSize: '24px', fontWeight: 900, color: 'var(--text-primary)' }}>{pptFiles.length}개 파일</span>
             </div>
-            <div style={{ background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.15)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '13px', color: '#f87171', fontWeight: 600 }}>검출된 오탈자 의심 건수</span>
-              <span style={{ fontSize: '24px', fontWeight: 900, color: '#ef4444' }}>{typoResults.length}건</span>
+            <div style={{ background: checkTypos ? 'rgba(239, 68, 68, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkTypos ? '1px solid rgba(239, 68, 68, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: checkTypos ? '#f87171' : 'var(--text-muted)', fontWeight: 600 }}>검출된 오탈자 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: checkTypos ? '#ef4444' : 'var(--text-muted)' }}>{checkTypos ? `${typoResults.length}건` : '비활성'}</span>
             </div>
-            <div style={{ background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.15)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '13px', color: '#fbbf24', fontWeight: 600 }}>넘버링 규칙 위반 의심 건수</span>
-              <span style={{ fontSize: '24px', fontWeight: 900, color: '#f59e0b' }}>{numberingResults.length}건</span>
+            <div style={{ background: checkNumbering ? 'rgba(245, 158, 11, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkNumbering ? '1px solid rgba(245, 158, 11, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: checkNumbering ? '#fbbf24' : 'var(--text-muted)', fontWeight: 600 }}>넘버링 위반 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: checkNumbering ? '#f59e0b' : 'var(--text-muted)' }}>{checkNumbering ? `${numberingResults.length}건` : '비활성'}</span>
+            </div>
+            <div style={{ background: checkAltText ? 'rgba(6, 182, 212, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkAltText ? '1px solid rgba(6, 182, 212, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: checkAltText ? '#22d3ee' : 'var(--text-muted)', fontWeight: 600 }}>대체텍스트 누락 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: checkAltText ? '#06b6d4' : 'var(--text-muted)' }}>{checkAltText ? `${altTextResults.length}건` : '비활성'}</span>
+            </div>
+            <div style={{ background: checkForbiddenWords ? 'rgba(236, 72, 153, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkForbiddenWords ? '1px solid rgba(236, 72, 153, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: checkForbiddenWords ? '#f472b6' : 'var(--text-muted)', fontWeight: 600 }}>특정 단어 검출 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: checkForbiddenWords ? '#ec4899' : 'var(--text-muted)' }}>{checkForbiddenWords ? `${forbiddenResults.length}건` : '비활성'}</span>
             </div>
           </div>
 
@@ -861,6 +1100,46 @@ export default function PptValidator({ apiKey }) {
                   ⚠️ 넘버링 규칙성 ({numberingResults.length})
                 </button>
               )}
+              {checkAltText && (
+                <button 
+                  onClick={() => setActiveResultTab('altText')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'altText' ? 'rgba(6, 182, 212, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'altText' ? '#06b6d4' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  🖼️ 대체텍스트 누락 ({altTextResults.length})
+                </button>
+              )}
+              {checkForbiddenWords && (
+                <button 
+                  onClick={() => setActiveResultTab('forbidden')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'forbidden' ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'forbidden' ? '#ec4899' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  🔍 특정 단어 검출 ({forbiddenResults.length})
+                </button>
+              )}
             </div>
 
             {/* 탭 1: 파일별 점검 요약 */}
@@ -870,14 +1149,20 @@ export default function PptValidator({ apiKey }) {
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
                       <th style={{ padding: '12px 8px', fontWeight: 700 }}>파일명</th>
-                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>오탈자 의심</th>
-                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>넘버링 오류</th>
-                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>종합 상태</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>오탈자 의심</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>넘버링 오류</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>대체텍스트 누락</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>특정 단어 검출</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>종합 상태</th>
                     </tr>
                   </thead>
                   <tbody>
                     {fileStats.map((stat, idx) => {
-                      const totalErrors = (checkTypos ? stat.typos : 0) + (checkNumbering ? stat.numberingErrors : 0);
+                      const totalErrors = 
+                        (checkTypos ? stat.typos : 0) + 
+                        (checkNumbering ? stat.numberingErrors : 0) +
+                        (checkAltText ? stat.altTextErrors : 0) +
+                        (checkForbiddenWords ? stat.forbiddenErrors : 0);
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }}>
                           <td style={{ padding: '14px 8px', fontWeight: 600 }}>{stat.name}</td>
@@ -886,6 +1171,12 @@ export default function PptValidator({ apiKey }) {
                           </td>
                           <td style={{ padding: '14px 8px', color: !checkNumbering ? 'var(--text-muted)' : stat.numberingErrors > 0 ? '#f59e0b' : 'var(--text-muted)', fontWeight: 700 }}>
                             {checkNumbering ? (stat.numberingErrors > 0 ? `${stat.numberingErrors}건` : '없음') : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !checkAltText ? 'var(--text-muted)' : stat.altTextErrors > 0 ? '#06b6d4' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {checkAltText ? (stat.altTextErrors > 0 ? `${stat.altTextErrors}건` : '없음') : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !checkForbiddenWords ? 'var(--text-muted)' : stat.forbiddenErrors > 0 ? '#ec4899' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {checkForbiddenWords ? (stat.forbiddenErrors > 0 ? `${stat.forbiddenErrors}건` : '없음') : '비활성'}
                           </td>
                           <td style={{ padding: '14px 8px' }}>
                             {totalErrors === 0 ? (
@@ -1005,6 +1296,107 @@ export default function PptValidator({ apiKey }) {
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                               {n.guide}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 탭 4: 대체텍스트 누락 목록 */}
+            {activeResultTab === 'altText' && (
+              <div style={{ marginTop: '16px' }}>
+                {altTextResults.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 검출된 대체텍스트 누락 개체가 없습니다!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>위치</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>대상 개체명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>검출된 오류</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>권장 교정 가이드</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {altTextResults.map((alt, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={alt.fileName}>
+                              {alt.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {alt.slideNum}번 슬라이드
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#06b6d4', fontWeight: 700 }}>
+                              {alt.objName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#ef4444', fontWeight: 700 }}>
+                              {alt.error}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                              {alt.guide}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 탭 5: 특정 단어 검출 목록 */}
+            {activeResultTab === 'forbidden' && (
+              <div style={{ marginTop: '16px' }}>
+                {forbiddenResults.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 본문 내에 지정한 특정 단어가 검출되지 않았습니다!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>위치</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>검출된 단어</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>상태</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>검출 문장(하이라이트)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {forbiddenResults.map((forb, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={forb.fileName}>
+                              {forb.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {forb.slideNum}번 슬라이드
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#ec4899', fontWeight: 700 }}>
+                              {forb.word}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#f59e0b', fontWeight: 700 }}>
+                              {forb.error}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineBreak: 'anywhere' }}>
+                              {forb.sentence.split(forb.word).map((chunk, cIdx, arr) => (
+                                <span key={cIdx}>
+                                  {chunk}
+                                  {cIdx < arr.length - 1 && (
+                                    <span style={{ background: 'rgba(236, 72, 153, 0.25)', color: '#f472b6', padding: '0 2px', borderRadius: '3px', fontWeight: 700 }}>
+                                      {forb.word}
+                                    </span>
+                                  )}
+                                </span>
+                              ))}
                             </td>
                           </tr>
                         ))}
