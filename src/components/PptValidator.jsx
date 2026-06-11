@@ -295,12 +295,27 @@ export default function PptValidator({ apiKey }) {
         // 5-1. 좌측 넘버링 시퀀스 검증
         let expectedMajor = 1;
         let lastParts = []; // 이전 슬라이드의 넘버링 분할 [Major, Minor, Sub...]
+        let lastTitleText = ''; // 이전 슬라이드의 목차 타이틀 텍스트 보관용
 
         for (let i = 0; i < slideList.length; i++) {
           const slide = slideList[i];
           const text = slide.leftTitle;
           
           if (!text) continue;
+
+          // 동일 목차 타이틀 반복 감지
+          if (lastTitleText && text.trim() === lastTitleText.trim()) {
+            allNumberings.push({
+              fileName: file.name,
+              slideNum: slide.slideNum,
+              area: '좌측 타이틀',
+              text,
+              error: '동일 목차(타이틀) 반복 검출',
+              guide: `이전 슬라이드와 좌측 타이틀 명칭("${text}")이 완전히 동일합니다. 중복 기재되었는지 확인해 주세요.`
+            });
+            fileNumErrorsCount++;
+          }
+          lastTitleText = text; // 타이틀 업데이트
 
           // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
           // 또는 로마자 "I. ", 괄호 "(1) " 등 검출
