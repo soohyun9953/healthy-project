@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import { 
@@ -73,9 +73,22 @@ export default function PptValidator({ apiKey }) {
   const [fileStats, setFileStats] = useState([]); // [{ name: '', typos: 0, numberingErrors: 0, altTextErrors: 0, forbiddenErrors: 0 }]
   
   const [activeResultTab, setActiveResultTab] = useState('summary'); // summary, typo, numbering, altText, forbidden
-  const [userDictText, setUserDictText] = useState(''); // 사용자 정의 사전 입력란
-  const [forbiddenWordsText, setForbiddenWordsText] = useState("미정\n임시\nTBD\n검토필요\n작성중"); // 특정 점검 단어 입력란
+  const [userDictText, setUserDictText] = useState(() => {
+    return localStorage.getItem('ppt_validator_user_dict') || '';
+  }); // 사용자 정의 사전 입력란
+  const [forbiddenWordsText, setForbiddenWordsText] = useState(() => {
+    const saved = localStorage.getItem('ppt_validator_forbidden_words');
+    return saved !== null ? saved : "미정\n임시\nTBD\n검토필요\n작성중";
+  }); // 특정 점검 단어 입력란
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    localStorage.setItem('ppt_validator_user_dict', userDictText);
+  }, [userDictText]);
+
+  useEffect(() => {
+    localStorage.setItem('ppt_validator_forbidden_words', forbiddenWordsText);
+  }, [forbiddenWordsText]);
 
   // 파일 업로드 핸들러
   const handleFileChange = (e) => {
