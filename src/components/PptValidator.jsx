@@ -59,6 +59,10 @@ export default function PptValidator({ apiKey }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isValidated, setIsValidated] = useState(false);
   
+  // 검증 옵션 분리 상태
+  const [checkTypos, setCheckTypos] = useState(true);
+  const [checkNumbering, setCheckNumbering] = useState(true);
+  
   // 결과 데이터 저장
   const [typoResults, setTypoResults] = useState([]);
   const [numberingResults, setNumberingResults] = useState([]);
@@ -129,6 +133,10 @@ export default function PptValidator({ apiKey }) {
   // PPTX 검증 핵심 프로세스
   const handleValidate = async () => {
     if (pptFiles.length === 0) return;
+    if (!checkTypos && !checkNumbering) {
+      alert('오탈자 또는 넘버링 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
+      return;
+    }
     setIsProcessing(true);
     
     const allTypos = [];
@@ -229,207 +237,213 @@ export default function PptValidator({ apiKey }) {
           }
 
           // 3. 오탈자 점검 수행 (모든 텍스트 대상)
-          shapes.forEach(shape => {
-            const text = shape.text;
-            
-            // 등록된 사전 키워드들 검사
-            Object.keys(mergedDict).forEach(typo => {
-              // 한글 조사 등 경계 고려 정규식 생성
-              // 예: '역활이', '역활을'도 잡히도록 단어 포함 여부 검증
-              if (text.includes(typo)) {
-                // 문장 내 중복 검출 방지
-                const exists = allTypos.some(t => 
-                  t.fileName === file.name && 
-                  t.slideNum === slideNum && 
-                  t.sentence === text && 
-                  t.typo === typo
-                );
+          if (checkTypos) {
+            shapes.forEach(shape => {
+              const text = shape.text;
+              
+              // 등록된 사전 키워드들 검사
+              Object.keys(mergedDict).forEach(typo => {
+                // 한글 조사 등 경계 고려 정규식 생성
+                // 예: '역활이', '역활을'도 잡히도록 단어 포함 여부 검증
+                if (text.includes(typo)) {
+                  // 문장 내 중복 검출 방지
+                  const exists = allTypos.some(t => 
+                    t.fileName === file.name && 
+                    t.slideNum === slideNum && 
+                    t.sentence === text && 
+                    t.typo === typo
+                  );
 
-                if (!exists) {
-                  const info = mergedDict[typo];
-                  allTypos.push({
-                    fileName: file.name,
-                    slideNum,
-                    sentence: text,
-                    typo,
-                    correction: info.correction,
-                    type: info.type,
-                    desc: info.desc
-                  });
-                  fileTyposCount++;
+                  if (!exists) {
+                    const info = mergedDict[typo];
+                    allTypos.push({
+                      fileName: file.name,
+                      slideNum,
+                      sentence: text,
+                      typo,
+                      correction: info.correction,
+                      type: info.type,
+                      desc: info.desc
+                    });
+                    fileTyposCount++;
+                  }
                 }
-              }
+              });
             });
-          });
+          }
 
           // 4. 슬라이드 상단 타이틀 수집 및 넘버링 분류 준비
           // 보통 상단 타이틀은 Y 좌표가 약 1,300,000 EMU 이하인 개체에 해당
           // 전체 슬라이드 X 중앙선은 대략 6,000,000 EMU
-          const headerShapes = shapes.filter(s => s.y !== null && s.y < 1300000);
-          
-          let leftTitle = '';
-          let rightTitle = '';
-          
-          headerShapes.forEach(hs => {
-            if (hs.x !== null && hs.x < 6000000) {
-              // 좌측 상단 영역
-              if (!leftTitle || hs.y < (leftTitle.y || 99999999)) {
-                leftTitle = hs; // 가장 위쪽에 있는 상단 타이틀 선택
+          if (checkNumbering) {
+            const headerShapes = shapes.filter(s => s.y !== null && s.y < 1300000);
+            
+            let leftTitle = '';
+            let rightTitle = '';
+            
+            headerShapes.forEach(hs => {
+              if (hs.x !== null && hs.x < 6000000) {
+                // 좌측 상단 영역
+                if (!leftTitle || hs.y < (leftTitle.y || 99999999)) {
+                  leftTitle = hs; // 가장 위쪽에 있는 상단 타이틀 선택
+                }
+              } else if (hs.x !== null && hs.x >= 6000000) {
+                // 우측 상단 영역
+                if (!rightTitle || hs.y < (rightTitle.y || 99999999)) {
+                  rightTitle = hs;
+                }
               }
-            } else if (hs.x !== null && hs.x >= 6000000) {
-              // 우측 상단 영역
-              if (!rightTitle || hs.y < (rightTitle.y || 99999999)) {
-                rightTitle = hs;
-              }
-            }
-          });
+            });
 
-          slideList.push({
-            slideNum,
-            leftTitle: leftTitle ? leftTitle.text : '',
-            rightTitle: rightTitle ? rightTitle.text : ''
-          });
+            slideList.push({
+              slideNum,
+              leftTitle: leftTitle ? leftTitle.text : '',
+              rightTitle: rightTitle ? rightTitle.text : ''
+            });
+          }
         }
 
         // 5. 상단 넘버링 규칙 검증 분석
         // 5-1. 좌측 넘버링 시퀀스 검증
-        let expectedMajor = 1;
-        let lastParts = []; // 이전 슬라이드의 넘버링 분할 [Major, Minor, Sub...]
-        let lastTitleText = ''; // 이전 슬라이드의 목차 타이틀 텍스트 보관용
+        if (checkNumbering) {
+          let expectedMajor = 1;
+          let lastParts = []; // 이전 슬라이드의 넘버링 분할 [Major, Minor, Sub...]
+          let lastTitleText = ''; // 이전 슬라이드의 목차 타이틀 텍스트 보관용
 
-        for (let i = 0; i < slideList.length; i++) {
-          const slide = slideList[i];
-          const text = slide.leftTitle;
-          
-          if (!text) continue;
-
-          // 동일 목차 타이틀 반복 감지
-          if (lastTitleText && text.trim() === lastTitleText.trim()) {
-            allNumberings.push({
-              fileName: file.name,
-              slideNum: slide.slideNum,
-              area: '좌측 타이틀',
-              text,
-              error: '동일 목차(타이틀) 반복 검출',
-              guide: `이전 슬라이드와 좌측 타이틀 명칭("${text}")이 완전히 동일합니다. 중복 기재되었는지 확인해 주세요.`
-            });
-            fileNumErrorsCount++;
-          }
-          lastTitleText = text; // 타이틀 업데이트
-
-          // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
-          // 또는 로마자 "I. ", 괄호 "(1) " 등 검출
-          const numMatch = text.match(/^([0-9]+(\.[0-9]+)*)[\s\.]/);
-          
-          if (numMatch) {
-            const rawNumStr = numMatch[1];
-            const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
+          for (let i = 0; i < slideList.length; i++) {
+            const slide = slideList[i];
+            const text = slide.leftTitle;
             
-            if (lastParts.length > 0) {
-              // 1. 중복 감지
-              if (rawNumStr === lastParts.join('.')) {
-                allNumberings.push({
-                  fileName: file.name,
-                  slideNum: slide.slideNum,
-                  area: '좌측 타이틀',
-                  text,
-                  error: `넘버링 중복 검출 (${rawNumStr})`,
-                  guide: `이전 슬라이드와 동일한 넘버링입니다. 숫자를 확인해 순차 증가하도록 변경해 주세요.`
-                });
-                fileNumErrorsCount++;
+            if (!text) continue;
+
+            // 동일 목차 타이틀 반복 감지
+            if (lastTitleText && text.trim() === lastTitleText.trim()) {
+              allNumberings.push({
+                fileName: file.name,
+                slideNum: slide.slideNum,
+                area: '좌측 타이틀',
+                text,
+                error: '동일 목차(타이틀) 반복 검출',
+                guide: `이전 슬라이드와 좌측 타이틀 명칭("${text}")이 완전히 동일합니다. 중복 기재되었는지 확인해 주세요.`
+              });
+              fileNumErrorsCount++;
+            }
+            lastTitleText = text; // 타이틀 업데이트
+
+            // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
+            // 또는 로마자 "I. ", 괄호 "(1) " 등 검출
+            const numMatch = text.match(/^([0-9]+(\.[0-9]+)*)[\s\.]/);
+            
+            if (numMatch) {
+              const rawNumStr = numMatch[1];
+              const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
+              
+              if (lastParts.length > 0) {
+                // 1. 중복 감지
+                if (rawNumStr === lastParts.join('.')) {
+                  allNumberings.push({
+                    fileName: file.name,
+                    slideNum: slide.slideNum,
+                    area: '좌측 타이틀',
+                    text,
+                    error: `넘버링 중복 검출 (${rawNumStr})`,
+                    guide: `이전 슬라이드와 동일한 넘버링입니다. 숫자를 확인해 순차 증가하도록 변경해 주세요.`
+                  });
+                  fileNumErrorsCount++;
+                } else {
+                  // 2. 레벨 및 순차 증가 유효성 체크
+                  const lenDiff = parts.length - lastParts.length;
+                  
+                  if (lenDiff === 0) {
+                    // 동일 레벨: 마지막 자리가 1 증가해야 함
+                    const lastIdx = parts.length - 1;
+                    if (parts[lastIdx] !== lastParts[lastIdx] + 1) {
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '좌측 타이틀',
+                        text,
+                        error: `넘버링 시퀀스 불일치 (${lastParts.join('.')} ➜ ${rawNumStr})`,
+                        guide: `동일 레벨에서는 마지막 번호가 순차적으로 1씩 증가해야 합니다. (${lastParts.slice(0, -1).concat(lastParts[lastIdx] + 1).join('.')} 권장)`
+                      });
+                      fileNumErrorsCount++;
+                    }
+                  } else if (lenDiff > 0) {
+                    // 하위 레벨로 진입: 진입 시 첫 자리는 무조건 1이어야 함 (예: 1.1 ➜ 1.1.1)
+                    // 또한 상위 부모 레벨 번호는 이전과 같아야 함
+                    let parentMatch = true;
+                    for (let k = 0; k < lastParts.length; k++) {
+                      if (parts[k] !== lastParts[k]) parentMatch = false;
+                    }
+                    
+                    const newPart = parts[parts.length - 1];
+                    
+                    if (!parentMatch || newPart !== 1) {
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '좌측 타이틀',
+                        text,
+                        error: `하위 넘버링 시작값 오류 (${lastParts.join('.')} ➜ ${rawNumStr})`,
+                        guide: `하위 계층으로 진입할 때 하위 번호는 항상 1부터 순차 시작해야 합니다. (${lastParts.join('.')}.1 권장)`
+                      });
+                      fileNumErrorsCount++;
+                    }
+                  } else if (lenDiff < 0) {
+                    // 상위 레벨로 복귀: 복귀한 레벨의 번호가 이전 기록된 값보다 증가했는지 확인
+                    // 예: 1.1.2 ➜ 1.2 또는 2
+                    const targetLen = parts.length;
+                    const lastIdx = targetLen - 1;
+                    
+                    // 복귀 대상 레벨의 마지막 자리가 이전 같은 자리에 있던 값보다 증가하지 않거나 어긋났을 때
+                    // 하지만 보통 복귀 시 시퀀스 스킵이 일어나지 않는지만 체크
+                    // 간단하게 시퀀스가 1만큼 증가하는지 검증
+                  }
+                }
               } else {
-                // 2. 레벨 및 순차 증가 유효성 체크
-                const lenDiff = parts.length - lastParts.length;
-                
-                if (lenDiff === 0) {
-                  // 동일 레벨: 마지막 자리가 1 증가해야 함
-                  const lastIdx = parts.length - 1;
-                  if (parts[lastIdx] !== lastParts[lastIdx] + 1) {
-                    allNumberings.push({
-                      fileName: file.name,
-                      slideNum: slide.slideNum,
-                      area: '좌측 타이틀',
-                      text,
-                      error: `넘버링 시퀀스 불일치 (${lastParts.join('.')} ➜ ${rawNumStr})`,
-                      guide: `동일 레벨에서는 마지막 번호가 순차적으로 1씩 증가해야 합니다. (${lastParts.slice(0, -1).concat(lastParts[lastIdx] + 1).join('.')} 권장)`
-                    });
-                    fileNumErrorsCount++;
-                  }
-                } else if (lenDiff > 0) {
-                  // 하위 레벨로 진입: 진입 시 첫 자리는 무조건 1이어야 함 (예: 1.1 ➜ 1.1.1)
-                  // 또한 상위 부모 레벨 번호는 이전과 같아야 함
-                  let parentMatch = true;
-                  for (let k = 0; k < lastParts.length; k++) {
-                    if (parts[k] !== lastParts[k]) parentMatch = false;
-                  }
-                  
-                  const newPart = parts[parts.length - 1];
-                  
-                  if (!parentMatch || newPart !== 1) {
-                    allNumberings.push({
-                      fileName: file.name,
-                      slideNum: slide.slideNum,
-                      area: '좌측 타이틀',
-                      text,
-                      error: `하위 넘버링 시작값 오류 (${lastParts.join('.')} ➜ ${rawNumStr})`,
-                      guide: `하위 계층으로 진입할 때 하위 번호는 항상 1부터 순차 시작해야 합니다. (${lastParts.join('.')}.1 권장)`
-                    });
-                    fileNumErrorsCount++;
-                  }
-                } else if (lenDiff < 0) {
-                  // 상위 레벨로 복귀: 복귀한 레벨의 번호가 이전 기록된 값보다 증가했는지 확인
-                  // 예: 1.1.2 ➜ 1.2 또는 2
-                  const targetLen = parts.length;
-                  const lastIdx = targetLen - 1;
-                  
-                  // 복귀 대상 레벨의 마지막 자리가 이전 같은 자리에 있던 값보다 증가하지 않거나 어긋났을 때
-                  // 하지만 보통 복귀 시 시퀀스 스킵이 일어나지 않는지만 체크
-                  // 간단하게 시퀀스가 1만큼 증가하는지 검증
+                // 첫 번째 검출된 넘버링: Major가 1 또는 다른 적절한 초기값인지 확인
+                if (parts[0] !== 1 && parts.length === 1) {
+                  allNumberings.push({
+                    fileName: file.name,
+                    slideNum: slide.slideNum,
+                    area: '좌측 타이틀',
+                    text,
+                    error: `넘버링 시작 번호 부적합 (${rawNumStr})`,
+                    guide: `최초 대주제 넘버링은 1부터 시작하는 것을 권장합니다.`
+                  });
+                  fileNumErrorsCount++;
                 }
               }
-            } else {
-              // 첫 번째 검출된 넘버링: Major가 1 또는 다른 적절한 초기값인지 확인
-              if (parts[0] !== 1 && parts.length === 1) {
-                allNumberings.push({
-                  fileName: file.name,
-                  slideNum: slide.slideNum,
-                  area: '좌측 타이틀',
-                  text,
-                  error: `넘버링 시작 번호 부적합 (${rawNumStr})`,
-                  guide: `최초 대주제 넘버링은 1부터 시작하는 것을 권장합니다.`
-                });
-                fileNumErrorsCount++;
-              }
+              lastParts = parts; // 업데이트
             }
-            lastParts = parts; // 업데이트
           }
-        }
 
-        // 5-2. 우측 넘버링(페이지 번호 및 서브텍스트) 일관성 및 시퀀스 검증
-        let lastPageNum = null;
-        for (let i = 0; i < slideList.length; i++) {
-          const slide = slideList[i];
-          const text = slide.rightTitle;
-          if (!text) continue;
+          // 5-2. 우측 넘버링(페이지 번호 및 서브텍스트) 일관성 및 시퀀스 검증
+          let lastPageNum = null;
+          for (let i = 0; i < slideList.length; i++) {
+            const slide = slideList[i];
+            const text = slide.rightTitle;
+            if (!text) continue;
 
-          // 페이지 번호 형태 검출 (예: "01", "Page 1", "P. 3", "- 4 -")
-          const pageMatch = text.match(/(?:Page|P\.|-)?\s*(\d+)\s*(?:-)?$/i);
-          if (pageMatch) {
-            const pageNum = parseInt(pageMatch[1], 10);
-            if (lastPageNum !== null) {
-              if (pageNum !== lastPageNum + 1) {
-                allNumberings.push({
-                  fileName: file.name,
-                  slideNum: slide.slideNum,
-                  area: '우측 페이지',
-                  text,
-                  error: `우측 페이지 번호 시퀀스 단절 (이전 페이지: ${lastPageNum} ➜ 현재 표기: ${pageNum})`,
-                  guide: `페이지 번호가 순차적으로 증가하지 않았습니다. 슬라이드 번호 흐름을 점검해 주세요.`
-                });
-                fileNumErrorsCount++;
+            // 페이지 번호 형태 검출 (예: "01", "Page 1", "P. 3", "- 4 -")
+            const pageMatch = text.match(/(?:Page|P\.|-)?\s*(\d+)\s*(?:-)?$/i);
+            if (pageMatch) {
+              const pageNum = parseInt(pageMatch[1], 10);
+              if (lastPageNum !== null) {
+                if (pageNum !== lastPageNum + 1) {
+                  allNumberings.push({
+                    fileName: file.name,
+                    slideNum: slide.slideNum,
+                    area: '우측 페이지',
+                    text,
+                    error: `우측 페이지 번호 시퀀스 단절 (이전 페이지: ${lastPageNum} ➜ 현재 표기: ${pageNum})`,
+                    guide: `페이지 번호가 순차적으로 증가하지 않았습니다. 슬라이드 번호 흐름을 점검해 주세요.`
+                  });
+                  fileNumErrorsCount++;
+                }
               }
+              lastPageNum = pageNum;
             }
-            lastPageNum = pageNum;
           }
         }
 
@@ -561,6 +575,79 @@ export default function PptValidator({ apiKey }) {
               onChange={handleFileChange}
               style={{ display: 'none' }}
             />
+          </div>
+
+          {/* 검증 옵션 설정 */}
+          <div style={{ 
+            background: 'var(--panel-bg)', 
+            border: '1px solid var(--panel-border)', 
+            borderRadius: '16px', 
+            padding: '20px', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '14px' 
+          }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+              <ShieldAlert size={17} color="#e11d48" /> 검증 옵션 설정
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div 
+                onClick={() => setCheckTypos(prev => !prev)}
+                style={{ 
+                  background: checkTypos ? 'rgba(225, 29, 72, 0.05)' : 'rgba(255, 255, 255, 0.01)', 
+                  border: checkTypos ? '1px solid rgba(225, 29, 72, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px', 
+                  padding: '12px 16px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '10px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={checkTypos} 
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setCheckTypos(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#e11d48' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>오탈자 검증</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>맞춤법 및 외래어 오류 검출</span>
+                </div>
+              </div>
+              <div 
+                onClick={() => setCheckNumbering(prev => !prev)}
+                style={{ 
+                  background: checkNumbering ? 'rgba(168, 85, 247, 0.05)' : 'rgba(255, 255, 255, 0.01)', 
+                  border: checkNumbering ? '1px solid rgba(168, 85, 247, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px', 
+                  padding: '12px 16px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '10px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={checkNumbering} 
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setCheckNumbering(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#a855f7' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>넘버링 및 목차 검증</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>페이지 순서 및 타이틀 중복 점검</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* 업로드 파일 리스트 */}
@@ -734,42 +821,46 @@ export default function PptValidator({ apiKey }) {
               >
                 📊 파일별 점검 요약
               </button>
-              <button 
-                onClick={() => setActiveResultTab('typo')}
-                style={{
-                  padding: '8px 16px',
-                  background: activeResultTab === 'typo' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
-                  border: 'none',
-                  borderRadius: '6px',
-                  color: activeResultTab === 'typo' ? '#ef4444' : 'var(--text-muted)',
-                  cursor: 'pointer',
-                  fontWeight: 700,
-                  fontSize: '13.5px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                ❌ 오탈자 ({typoResults.length})
-              </button>
-              <button 
-                onClick={() => setActiveResultTab('numbering')}
-                style={{
-                  padding: '8px 16px',
-                  background: activeResultTab === 'numbering' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
-                  border: 'none',
-                  borderRadius: '6px',
-                  color: activeResultTab === 'numbering' ? '#f59e0b' : 'var(--text-muted)',
-                  cursor: 'pointer',
-                  fontWeight: 700,
-                  fontSize: '13.5px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                ⚠️ 넘버링 규칙성 ({numberingResults.length})
-              </button>
+              {checkTypos && (
+                <button 
+                  onClick={() => setActiveResultTab('typo')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'typo' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'typo' ? '#ef4444' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  ❌ 오탈자 ({typoResults.length})
+                </button>
+              )}
+              {checkNumbering && (
+                <button 
+                  onClick={() => setActiveResultTab('numbering')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'numbering' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'numbering' ? '#f59e0b' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  ⚠️ 넘버링 규칙성 ({numberingResults.length})
+                </button>
+              )}
             </div>
 
             {/* 탭 1: 파일별 점검 요약 */}
@@ -786,15 +877,15 @@ export default function PptValidator({ apiKey }) {
                   </thead>
                   <tbody>
                     {fileStats.map((stat, idx) => {
-                      const totalErrors = stat.typos + stat.numberingErrors;
+                      const totalErrors = (checkTypos ? stat.typos : 0) + (checkNumbering ? stat.numberingErrors : 0);
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }}>
                           <td style={{ padding: '14px 8px', fontWeight: 600 }}>{stat.name}</td>
-                          <td style={{ padding: '14px 8px', color: stat.typos > 0 ? '#ef4444' : 'var(--text-muted)', fontWeight: 700 }}>
-                            {stat.typos > 0 ? `${stat.typos}건` : '없음'}
+                          <td style={{ padding: '14px 8px', color: !checkTypos ? 'var(--text-muted)' : stat.typos > 0 ? '#ef4444' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {checkTypos ? (stat.typos > 0 ? `${stat.typos}건` : '없음') : '비활성'}
                           </td>
-                          <td style={{ padding: '14px 8px', color: stat.numberingErrors > 0 ? '#f59e0b' : 'var(--text-muted)', fontWeight: 700 }}>
-                            {stat.numberingErrors > 0 ? `${stat.numberingErrors}건` : '없음'}
+                          <td style={{ padding: '14px 8px', color: !checkNumbering ? 'var(--text-muted)' : stat.numberingErrors > 0 ? '#f59e0b' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {checkNumbering ? (stat.numberingErrors > 0 ? `${stat.numberingErrors}건` : '없음') : '비활성'}
                           </td>
                           <td style={{ padding: '14px 8px' }}>
                             {totalErrors === 0 ? (
