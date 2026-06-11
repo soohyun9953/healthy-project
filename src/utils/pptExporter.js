@@ -832,10 +832,11 @@ export async function processPptBatch(pptFile, options) {
         add_title_page_numbers = false,
         add_space_before_parenthesis = false,
         textColorRulesStr = '',
-        preventWordWrap = false
+        preventWordWrap = false,
+        clearAltText = false
     } = options;
     
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -1861,6 +1862,38 @@ export async function processPptBatch(pptFile, options) {
                     fileChanged = true;
                     totalReplacedTextDesigns += textDesignAppliedCount;
                 }
+            }
+        }
+        
+        // [신규] 대체 텍스트 일괄 제거 로직
+        if (clearAltText) {
+            const allNodes = xmlDoc.getElementsByTagName('*');
+            const cNvPrElements = [];
+            for (let i = 0; i < allNodes.length; i++) {
+                const node = allNodes[i];
+                if (node.nodeType === 1) {
+                    const localName = node.localName || node.tagName.split(':').pop();
+                    if (localName === 'cNvPr') {
+                        cNvPrElements.push(node);
+                    }
+                }
+            }
+            
+            let altTextChanged = false;
+            cNvPrElements.forEach(el => {
+                if (el.hasAttribute('descr')) {
+                    el.removeAttribute('descr');
+                    altTextChanged = true;
+                }
+                if (el.hasAttribute('title')) {
+                    el.removeAttribute('title');
+                    altTextChanged = true;
+                }
+            });
+            
+            if (altTextChanged) {
+                fileChanged = true;
+                hasChanges = true;
             }
         }
         

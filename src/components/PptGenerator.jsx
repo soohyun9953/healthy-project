@@ -63,6 +63,7 @@ export default function PptGenerator() {
             return false;
         }
     }); // 옵션 I: 단락 한글 단어 잘림 방지
+    const [clearAltText, setClearAltText] = useState(false); // 옵션 J: 대체 텍스트 일괄 제거 여부
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -524,7 +525,8 @@ export default function PptGenerator() {
             applySpecialCharClean,
             add_space_before_parenthesis,
             textColorRules,
-            preventWordWrap
+            preventWordWrap,
+            clearAltText
         } = options;
 
         const changes = [];
@@ -577,6 +579,10 @@ export default function PptGenerator() {
             const count = modifiedBlob.totalWordWrapPrevented || 0;
             changes.push(`단어 잘림 방지 적용 ${count}개 단락`);
         }
+        // 10. 대체 텍스트 일괄 제거
+        if (clearAltText) {
+            changes.push(`대체 텍스트 일괄 제거 완료`);
+        }
 
         if (changes.length > 0) {
             // 실질적인 변경이 하나라도 존재하는지 확인 (표 없음 제외)
@@ -588,6 +594,7 @@ export default function PptGenerator() {
                                   (add_space_before_parenthesis && (modifiedBlob.totalTitleSpacesAdded || 0) > 0) ||
                                   ((textColorRules && textColorRules.trim()) && (modifiedBlob.totalTextColorReplaced || 0) > 0) ||
                                   (preventWordWrap && (modifiedBlob.totalWordWrapPrevented || 0) > 0) ||
+                                  clearAltText ||
                                   (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
 
             if (hasRealChanges) {
@@ -669,8 +676,8 @@ export default function PptGenerator() {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap) {
-            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 또는 단락 단어 잘림 방지 중 하나 이상을 입력/선택해주세요.');
+        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText) {
+            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 또는 대체 텍스트 일괄 제거 중 하나 이상을 입력/선택해주세요.');
             return;
         }
 
@@ -705,7 +712,8 @@ export default function PptGenerator() {
                         add_title_page_numbers: add_title_page_numbers,
                         add_space_before_parenthesis: add_space_before_parenthesis,
                         textColorRulesStr: textColorRules,
-                        preventWordWrap: preventWordWrap
+                        preventWordWrap: preventWordWrap,
+                        clearAltText: clearAltText
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -745,7 +753,8 @@ export default function PptGenerator() {
                             applySpecialCharClean,
                             add_space_before_parenthesis,
                             textColorRules,
-                            preventWordWrap
+                            preventWordWrap,
+                            clearAltText
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -775,7 +784,8 @@ export default function PptGenerator() {
                             add_title_page_numbers: add_title_page_numbers,
                             add_space_before_parenthesis: add_space_before_parenthesis,
                             textColorRulesStr: textColorRules,
-                            preventWordWrap: preventWordWrap
+                            preventWordWrap: preventWordWrap,
+                            clearAltText: clearAltText
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         const fileName = `수정_${file.name}`;
@@ -790,7 +800,8 @@ export default function PptGenerator() {
                             applySpecialCharClean,
                             add_space_before_parenthesis,
                             textColorRules,
-                            preventWordWrap
+                            preventWordWrap,
+                            clearAltText
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -1571,6 +1582,23 @@ export default function PptGenerator() {
                                     <span style={{ fontSize: '12px', color: 'var(--success-color)', fontWeight: 600 }}>브라우저 자동 영구 보존(Auto-save) 적용됨</span>
                                 </div>
                             </div>
+
+                            {/* 옵션 J: 대체 텍스트 일괄 제거 */}
+                            <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                                    <input 
+                                        id="checkbox-option-j"
+                                        type="checkbox" 
+                                        checked={clearAltText}
+                                        onChange={(e) => setClearAltText(e.target.checked)}
+                                        style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
+                                    />
+                                    옵션 J: 개체(도형, 이미지 등)의 대체 텍스트 일괄 제거 적용
+                                </label>
+                                <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                                    💡 PPTX 파일 내의 이미지, 도형, 표 등 모든 개체에 설정된 대체 텍스트 제목 및 설명(descr, title)을 일괄 삭제합니다.
+                                </div>
+                            </div>
                         </div>
 
                         <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
@@ -1578,17 +1606,17 @@ export default function PptGenerator() {
                                 id="btn-batch-process"
                                 className="interactive"
                                 onClick={handleBatchProcess}
-                                disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap)}
+                                disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText)}
                                 style={{
                                     width: '100%',
                                     padding: '16px',
-                                    background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                                    color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap)) ? 'var(--text-muted)' : 'white',
+                                    background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                                    color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText)) ? 'var(--text-muted)' : 'white',
                                     border: 'none',
                                     borderRadius: '12px',
                                     fontSize: '16px',
                                     fontWeight: 700,
-                                    cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap)) ? 'not-allowed' : 'pointer',
+                                    cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText)) ? 'not-allowed' : 'pointer',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                                 }}
                             >
