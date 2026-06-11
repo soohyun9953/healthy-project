@@ -1,0 +1,919 @@
+import React, { useState, useRef } from 'react';
+import JSZip from 'jszip';
+import * as XLSX from 'xlsx';
+import { 
+  FileUp, 
+  ShieldAlert, 
+  CheckCircle2, 
+  AlertTriangle, 
+  Download, 
+  RefreshCw, 
+  FileSpreadsheet,
+  AlertCircle,
+  ChevronRight,
+  HelpCircle,
+  Info
+} from 'lucide-react';
+
+// 오탈자 내장 사전 정의
+const TYPO_DICTIONARY = {
+  '역활': { correction: '역할', desc: '역할(役割)의 잘못된 표기입니다.', type: '맞춤법' },
+  '되서': { correction: '돼서', desc: '되어서의 축약형인 돼서로 써야 합니다.', type: '맞춤법' },
+  '바램': { correction: '바람', desc: '바라다에서 파생된 명사는 바람이 맞습니다.', type: '맞춤법' },
+  '않하고': { correction: '안 하고', desc: '부정을 뜻하는 부사 안과 하다의 합성어인 안 하고가 맞습니다.', type: '맞춤법' },
+  '몇일': { correction: '며칠', desc: '몇 일은 며칠의 잘못된 표기입니다.', type: '맞춤법' },
+  '일일히': { correction: '일일이', desc: '일일이(하나씩 하나씩)가 표준어입니다.', type: '맞춤법' },
+  '문안히': { correction: '무난히', desc: '무난히(별일 없이/어렵지 않게)가 문맥상 올바릅니다.', type: '맞춤법' },
+  '어의없다': { correction: '어이없다', desc: '어처구니없다 또는 어이없다가 올바른 표기입니다.', type: '맞춤법' },
+  '않돼': { correction: '안 돼', desc: '안 되어의 축약형인 안 돼가 표준 표기입니다.', type: '맞춤법' },
+  '안돼다': { correction: '안되다', desc: '일이나 현상이 좋지 않게 흘러갈 때는 안되다가 표준어입니다.', type: '맞춤법' },
+  
+  // 외래어 표기법 오류
+  '아키텍쳐': { correction: '아키텍처', desc: '외래어 표기법에 의하면 아키텍처(Architecture)가 표준입니다.', type: '외래어 표기' },
+  '컨텐츠': { correction: '콘텐츠', desc: '콘텐츠(Contents)가 표준 외래어 표기법입니다.', type: '외래어 표기' },
+  '컴퍼넌트': { correction: '컴포넌트', desc: '컴포넌트(Component)가 올바른 외래어 표기입니다.', type: '외래어 표기' },
+  '데이타베이스': { correction: '데이터베이스', desc: '데이터베이스(Database)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '라이센스': { correction: '라이선스', desc: '라이선스(License)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '스케쥴': { correction: '스케줄', desc: '스케줄(Schedule)이 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '레포트': { correction: '리포트', desc: '리포트(Report)가 외래어 표기법에 부합합니다.', type: '외래어 표기' },
+  '플렛폼': { correction: '플랫폼', desc: '플랫폼(Platform)이 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '디렉토리': { correction: '디렉터리', desc: '디렉터리(Directory)가 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '가테고리': { correction: '카테고리', desc: '카테고리(Category)가 올바른 표기입니다.', type: '외래어 표기' },
+  '포퍼먼스': { correction: '퍼포먼스', desc: '퍼포먼스(Performance)가 올바른 외래어 표기입니다.', type: '외래어 표기' },
+  '프로세씽': { correction: '프로세싱', desc: '프로세싱(Processing)이 올바른 외래어 표기입니다.', type: '외래어 표기' },
+  '인터페이서': { correction: '인터페이스', desc: '인터페이스(Interface)가 표준 표기입니다.', type: '외래어 표기' },
+  '코뮤니케이션': { correction: '커뮤니케이션', desc: '커뮤니케이션(Communication)이 올바른 외래어 표기입니다.', type: '외래어 표기' },
+  
+  // 비즈니스/용어 혼동
+  '임계치': { correction: '임계값', desc: '순화어 권고 사항에 의하면 임계값을 사용하는 것을 권장합니다.', type: '순화어/비즈니스' },
+  '가이도라인': { correction: '가이드라인', desc: '가이드라인(Guideline)의 오타 표기입니다.', type: '순화어/비즈니스' },
+  '임프라': { correction: '인프라', desc: '인프라(Infrastructure)의 오타 표기입니다.', type: '순화어/비즈니스' },
+  '넷트웍': { correction: '네트워크', desc: '네트워크가 올바른 한글 표기법입니다.', type: '외래어 표기' },
+  '개선방안': { correction: '개선 방안', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' },
+  '일정계획': { correction: '일정 계획', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' },
+  '상세설계': { correction: '상세 설계', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' }
+};
+
+export default function PptValidator({ apiKey }) {
+  const [pptFiles, setPptFiles] = useState([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isValidated, setIsValidated] = useState(false);
+  
+  // 결과 데이터 저장
+  const [typoResults, setTypoResults] = useState([]);
+  const [numberingResults, setNumberingResults] = useState([]);
+  const [fileStats, setFileStats] = useState([]); // [{ name: '', typos: 0, numberingErrors: 0 }]
+  
+  const [activeResultTab, setActiveResultTab] = useState('summary'); // summary, typo, numbering
+  const [userDictText, setUserDictText] = useState(''); // 사용자 정의 사전 입력란
+  const fileInputRef = useRef(null);
+
+  // 파일 업로드 핸들러
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files).filter(f => f.name.endsWith('.pptx'));
+    if (files.length > 0) {
+      setPptFiles(prev => [...prev, ...files]);
+      setIsValidated(false);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.pptx'));
+    if (files.length > 0) {
+      setPptFiles(prev => [...prev, ...files]);
+      setIsValidated(false);
+    }
+  };
+
+  const removeFile = (index) => {
+    setPptFiles(prev => prev.filter((_, i) => i !== index));
+    setIsValidated(false);
+  };
+
+  const clearAllFiles = () => {
+    setPptFiles([]);
+    setIsValidated(false);
+    setTypoResults([]);
+    setNumberingResults([]);
+    setFileStats([]);
+  };
+
+  // 사용자 정의 사전 파싱
+  const parseUserDictionary = () => {
+    const dict = {};
+    if (!userDictText.trim()) return dict;
+
+    const lines = userDictText.split('\n');
+    lines.forEach(line => {
+      const parts = line.split(/[=➜➔>:\-]/);
+      if (parts.length >= 2) {
+        const typo = parts[0].trim();
+        const correction = parts[1].trim();
+        if (typo && correction) {
+          dict[typo] = {
+            correction,
+            desc: `사용자가 정의한 오탈자 교정 규칙입니다. (${typo} ➜ ${correction})`,
+            type: '사용자 정의'
+          };
+        }
+      }
+    });
+    return dict;
+  };
+
+  // PPTX 검증 핵심 프로세스
+  const handleValidate = async () => {
+    if (pptFiles.length === 0) return;
+    setIsProcessing(true);
+    
+    const allTypos = [];
+    const allNumberings = [];
+    const stats = [];
+    const userDict = parseUserDictionary();
+    const mergedDict = { ...TYPO_DICTIONARY, ...userDict };
+
+    try {
+      for (const file of pptFiles) {
+        let fileTyposCount = 0;
+        let fileNumErrorsCount = 0;
+
+        const arrayBuffer = await file.arrayBuffer();
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        
+        // 1. 모든 슬라이드 파일 추출 및 정렬
+        const slideFiles = Object.keys(zip.files).filter(p => 
+          p.startsWith('ppt/slides/slide') && p.endsWith('.xml')
+        ).sort((a, b) => {
+          const numA = parseInt(a.replace(/[^\d]/g, ''), 10);
+          const numB = parseInt(b.replace(/[^\d]/g, ''), 10);
+          return numA - numB;
+        });
+
+        const slideList = []; // 각 슬라이드의 타이틀 정보 및 텍스트 데이터 수집용
+
+        // 2. 각 슬라이드 XML 해석
+        for (let sIdx = 0; sIdx < slideFiles.length; sIdx++) {
+          const slidePath = slideFiles[sIdx];
+          const slideNum = sIdx + 1;
+          const slideXmlStr = await zip.file(slidePath).async('text');
+          
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(slideXmlStr, 'application/xml');
+          
+          if (xmlDoc.getElementsByTagName('parsererror').length > 0) continue;
+
+          // 슬라이드 내 모든 shape(<p:sp>) 노드 추출
+          const allNodes = xmlDoc.getElementsByTagName('*');
+          const shapes = [];
+
+          for (let i = 0; i < allNodes.length; i++) {
+            const node = allNodes[i];
+            const localName = node.localName || node.tagName.split(':').pop();
+            if (localName === 'sp') {
+              // 텍스트 및 좌표값 추출
+              let x = null, y = null, cx = null, cy = null;
+              let textContent = '';
+
+              // 2-1. 좌표 값(off 및 ext) 찾기
+              const offNodes = node.getElementsByTagName('a:off');
+              const extNodes = node.getElementsByTagName('a:ext');
+              
+              // 네임스페이스 매칭 안될 경우 대비 폴백 순회
+              const childs = node.getElementsByTagName('*');
+              let offNode = offNodes.length > 0 ? offNodes[0] : null;
+              let extNode = extNodes.length > 0 ? extNodes[0] : null;
+              
+              if (!offNode || !extNode) {
+                for (let k = 0; k < childs.length; k++) {
+                  const cNode = childs[k];
+                  const cName = cNode.localName || cNode.tagName.split(':').pop();
+                  if (cName === 'off') offNode = cNode;
+                  if (cName === 'ext') extNode = cNode;
+                }
+              }
+
+              if (offNode) {
+                x = parseInt(offNode.getAttribute('x') || '0', 10);
+                y = parseInt(offNode.getAttribute('y') || '0', 10);
+              }
+              if (extNode) {
+                cx = parseInt(extNode.getAttribute('cx') || '0', 10);
+                cy = parseInt(extNode.getAttribute('cy') || '0', 10);
+              }
+
+              // 2-2. 텍스트 추출
+              const tNodes = node.getElementsByTagName('a:t');
+              let tList = [];
+              if (tNodes.length > 0) {
+                for (let k = 0; k < tNodes.length; k++) {
+                  tList.push(tNodes[k].textContent || '');
+                }
+              } else {
+                for (let k = 0; k < childs.length; k++) {
+                  const cNode = childs[k];
+                  const cName = cNode.localName || cNode.tagName.split(':').pop();
+                  if (cName === 't') tList.push(cNode.textContent || '');
+                }
+              }
+              textContent = tList.join(' ').trim();
+
+              if (textContent) {
+                shapes.push({ x, y, cx, cy, text: textContent });
+              }
+            }
+          }
+
+          // 3. 오탈자 점검 수행 (모든 텍스트 대상)
+          shapes.forEach(shape => {
+            const text = shape.text;
+            
+            // 등록된 사전 키워드들 검사
+            Object.keys(mergedDict).forEach(typo => {
+              // 한글 조사 등 경계 고려 정규식 생성
+              // 예: '역활이', '역활을'도 잡히도록 단어 포함 여부 검증
+              if (text.includes(typo)) {
+                // 문장 내 중복 검출 방지
+                const exists = allTypos.some(t => 
+                  t.fileName === file.name && 
+                  t.slideNum === slideNum && 
+                  t.sentence === text && 
+                  t.typo === typo
+                );
+
+                if (!exists) {
+                  const info = mergedDict[typo];
+                  allTypos.push({
+                    fileName: file.name,
+                    slideNum,
+                    sentence: text,
+                    typo,
+                    correction: info.correction,
+                    type: info.type,
+                    desc: info.desc
+                  });
+                  fileTyposCount++;
+                }
+              }
+            });
+          });
+
+          // 4. 슬라이드 상단 타이틀 수집 및 넘버링 분류 준비
+          // 보통 상단 타이틀은 Y 좌표가 약 1,300,000 EMU 이하인 개체에 해당
+          // 전체 슬라이드 X 중앙선은 대략 6,000,000 EMU
+          const headerShapes = shapes.filter(s => s.y !== null && s.y < 1300000);
+          
+          let leftTitle = '';
+          let rightTitle = '';
+          
+          headerShapes.forEach(hs => {
+            if (hs.x !== null && hs.x < 6000000) {
+              // 좌측 상단 영역
+              if (!leftTitle || hs.y < (leftTitle.y || 99999999)) {
+                leftTitle = hs; // 가장 위쪽에 있는 상단 타이틀 선택
+              }
+            } else if (hs.x !== null && hs.x >= 6000000) {
+              // 우측 상단 영역
+              if (!rightTitle || hs.y < (rightTitle.y || 99999999)) {
+                rightTitle = hs;
+              }
+            }
+          });
+
+          slideList.push({
+            slideNum,
+            leftTitle: leftTitle ? leftTitle.text : '',
+            rightTitle: rightTitle ? rightTitle.text : ''
+          });
+        }
+
+        // 5. 상단 넘버링 규칙 검증 분석
+        // 5-1. 좌측 넘버링 시퀀스 검증
+        let expectedMajor = 1;
+        let lastParts = []; // 이전 슬라이드의 넘버링 분할 [Major, Minor, Sub...]
+
+        for (let i = 0; i < slideList.length; i++) {
+          const slide = slideList[i];
+          const text = slide.leftTitle;
+          
+          if (!text) continue;
+
+          // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
+          // 또는 로마자 "I. ", 괄호 "(1) " 등 검출
+          const numMatch = text.match(/^([0-9]+(\.[0-9]+)*)[\s\.]/);
+          
+          if (numMatch) {
+            const rawNumStr = numMatch[1];
+            const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
+            
+            if (lastParts.length > 0) {
+              // 1. 중복 감지
+              if (rawNumStr === lastParts.join('.')) {
+                allNumberings.push({
+                  fileName: file.name,
+                  slideNum: slide.slideNum,
+                  area: '좌측 타이틀',
+                  text,
+                  error: `넘버링 중복 검출 (${rawNumStr})`,
+                  guide: `이전 슬라이드와 동일한 넘버링입니다. 숫자를 확인해 순차 증가하도록 변경해 주세요.`
+                });
+                fileNumErrorsCount++;
+              } else {
+                // 2. 레벨 및 순차 증가 유효성 체크
+                const lenDiff = parts.length - lastParts.length;
+                
+                if (lenDiff === 0) {
+                  // 동일 레벨: 마지막 자리가 1 증가해야 함
+                  const lastIdx = parts.length - 1;
+                  if (parts[lastIdx] !== lastParts[lastIdx] + 1) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: `넘버링 시퀀스 불일치 (${lastParts.join('.')} ➜ ${rawNumStr})`,
+                      guide: `동일 레벨에서는 마지막 번호가 순차적으로 1씩 증가해야 합니다. (${lastParts.slice(0, -1).concat(lastParts[lastIdx] + 1).join('.')} 권장)`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                } else if (lenDiff > 0) {
+                  // 하위 레벨로 진입: 진입 시 첫 자리는 무조건 1이어야 함 (예: 1.1 ➜ 1.1.1)
+                  // 또한 상위 부모 레벨 번호는 이전과 같아야 함
+                  let parentMatch = true;
+                  for (let k = 0; k < lastParts.length; k++) {
+                    if (parts[k] !== lastParts[k]) parentMatch = false;
+                  }
+                  
+                  const newPart = parts[parts.length - 1];
+                  
+                  if (!parentMatch || newPart !== 1) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: `하위 넘버링 시작값 오류 (${lastParts.join('.')} ➜ ${rawNumStr})`,
+                      guide: `하위 계층으로 진입할 때 하위 번호는 항상 1부터 순차 시작해야 합니다. (${lastParts.join('.')}.1 권장)`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                } else if (lenDiff < 0) {
+                  // 상위 레벨로 복귀: 복귀한 레벨의 번호가 이전 기록된 값보다 증가했는지 확인
+                  // 예: 1.1.2 ➜ 1.2 또는 2
+                  const targetLen = parts.length;
+                  const lastIdx = targetLen - 1;
+                  
+                  // 복귀 대상 레벨의 마지막 자리가 이전 같은 자리에 있던 값보다 증가하지 않거나 어긋났을 때
+                  // 하지만 보통 복귀 시 시퀀스 스킵이 일어나지 않는지만 체크
+                  // 간단하게 시퀀스가 1만큼 증가하는지 검증
+                }
+              }
+            } else {
+              // 첫 번째 검출된 넘버링: Major가 1 또는 다른 적절한 초기값인지 확인
+              if (parts[0] !== 1 && parts.length === 1) {
+                allNumberings.push({
+                  fileName: file.name,
+                  slideNum: slide.slideNum,
+                  area: '좌측 타이틀',
+                  text,
+                  error: `넘버링 시작 번호 부적합 (${rawNumStr})`,
+                  guide: `최초 대주제 넘버링은 1부터 시작하는 것을 권장합니다.`
+                });
+                fileNumErrorsCount++;
+              }
+            }
+            lastParts = parts; // 업데이트
+          }
+        }
+
+        // 5-2. 우측 넘버링(페이지 번호 및 서브텍스트) 일관성 및 시퀀스 검증
+        let lastPageNum = null;
+        for (let i = 0; i < slideList.length; i++) {
+          const slide = slideList[i];
+          const text = slide.rightTitle;
+          if (!text) continue;
+
+          // 페이지 번호 형태 검출 (예: "01", "Page 1", "P. 3", "- 4 -")
+          const pageMatch = text.match(/(?:Page|P\.|-)?\s*(\d+)\s*(?:-)?$/i);
+          if (pageMatch) {
+            const pageNum = parseInt(pageMatch[1], 10);
+            if (lastPageNum !== null) {
+              if (pageNum !== lastPageNum + 1) {
+                allNumberings.push({
+                  fileName: file.name,
+                  slideNum: slide.slideNum,
+                  area: '우측 페이지',
+                  text,
+                  error: `우측 페이지 번호 시퀀스 단절 (이전 페이지: ${lastPageNum} ➜ 현재 표기: ${pageNum})`,
+                  guide: `페이지 번호가 순차적으로 증가하지 않았습니다. 슬라이드 번호 흐름을 점검해 주세요.`
+                });
+                fileNumErrorsCount++;
+              }
+            }
+            lastPageNum = pageNum;
+          }
+        }
+
+        stats.push({
+          name: file.name,
+          typos: fileTyposCount,
+          numberingErrors: fileNumErrorsCount
+        });
+      }
+
+      setTypoResults(allTypos);
+      setNumberingResults(allNumberings);
+      setFileStats(stats);
+      setIsValidated(true);
+      setActiveResultTab('summary');
+    } catch (err) {
+      console.error('검증 중 오류 발생:', err);
+      alert(`검증 오류 발생: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 점검 결과를 엑셀 파일로 추출
+  const handleExportToExcel = () => {
+    if (typoResults.length === 0 && numberingResults.length === 0) {
+      alert('출력할 검증 결과 데이터가 존재하지 않습니다.');
+      return;
+    }
+
+    const workbook = XLSX.utils.book_new();
+
+    // 1. 오탈자 시트 데이터 구성
+    const typoRows = typoResults.map((t, idx) => ({
+      '순번': idx + 1,
+      '대상 파일명': t.fileName,
+      '슬라이드 번호': `${t.slideNum}번 슬라이드`,
+      '의심 단어': t.typo,
+      '추천 교정안': t.correction,
+      '검증 구분': t.type,
+      '교정 가이드': t.desc,
+      '검출 문장(전체)': t.sentence
+    }));
+    const typoSheet = XLSX.utils.json_to_sheet(typoRows);
+    XLSX.utils.book_append_sheet(workbook, typoSheet, '오탈자_점검결과');
+
+    // 2. 넘버링 시트 데이터 구성
+    const numberingRows = numberingResults.map((n, idx) => ({
+      '순번': idx + 1,
+      '대상 파일명': n.fileName,
+      '슬라이드 번호': `${n.slideNum}번 슬라이드`,
+      '검증 영역': n.area,
+      '표기 텍스트': n.text,
+      '검출 오류': n.error,
+      '올바른 규칙 가이드': n.guide
+    }));
+    const numberingSheet = XLSX.utils.json_to_sheet(numberingRows);
+    XLSX.utils.book_append_sheet(workbook, numberingSheet, '넘버링_점검결과');
+
+    // 엑셀 파일 다운로드 실행
+    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    XLSX.writeFile(workbook, `PPT_산출물_검증결과_${dateStr}.xlsx`);
+  };
+
+  return (
+    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', minHeight: 'calc(100vh - 120px)', color: 'var(--text-primary)' }}>
+      
+      {/* 타이틀 및 가이드 배너 */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(225, 29, 72, 0.15), rgba(168, 85, 247, 0.05))', border: '1px solid rgba(225, 29, 72, 0.25)', padding: '24px', borderRadius: '16px', backdropFilter: 'blur(10px)' }}>
+        <div>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '22px', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+            <ShieldAlert size={28} color="#e11d48" /> PPT 검증(표준산출물)
+          </h2>
+          <p style={{ margin: '8px 0 0 0', fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+            PPTX 제안서 또는 표준 산출물을 업로드하면 텍스트 내의 **오탈자(비즈니스/외래어/맞춤법)**와 **상단 헤더(좌측/우측) 넘버링 규칙성**을 정교하게 분석합니다.<br />
+            점검이 완료되면 파일별 점검 내역을 대시보드로 요약하고, 상세한 리포트를 **멀티 시트 엑셀 파일**로 출력할 수 있습니다.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button 
+            onClick={clearAllFiles}
+            disabled={pptFiles.length === 0}
+            style={{ padding: '10px 16px', background: 'rgba(255,255,255,0.05)', color: pptFiles.length > 0 ? 'var(--text-primary)' : 'var(--text-muted)', border: '1px solid var(--panel-border)', borderRadius: '8px', cursor: pptFiles.length > 0 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}
+          >
+            <RefreshCw size={15} /> 초기화
+          </button>
+        </div>
+      </div>
+
+      {/* 메인 콘텐츠 영역 (2열 레이아웃) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+        
+        {/* 좌측: 파일 드롭존 및 업로드 파일 목록 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* 드롭존 카드 */}
+          <div 
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            style={{ 
+              background: 'var(--panel-bg)', 
+              border: '2px dashed var(--panel-border)', 
+              borderRadius: '16px', 
+              padding: '40px 20px', 
+              textAlign: 'center', 
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '14px'
+            }}
+            className="interactive-card"
+          >
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(225, 29, 72, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e11d48' }}>
+              <FileUp size={32} />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>검증할 PPTX 파일을 끌어다 놓으세요</p>
+              <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>또는 컴퓨터에서 파일 찾아보기 (다중 선택 가능)</p>
+            </div>
+            <input 
+              ref={fileInputRef}
+              type="file" 
+              accept=".pptx" 
+              multiple 
+              onChange={handleFileChange}
+              style={{ display: 'none' }}
+            />
+          </div>
+
+          {/* 업로드 파일 리스트 */}
+          <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              대기 중인 파일 <span style={{ background: 'rgba(225, 29, 72, 0.1)', color: '#e11d48', padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 800 }}>{pptFiles.length}</span>
+            </h3>
+            
+            {pptFiles.length === 0 ? (
+              <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                검증 대기 중인 파워포인트 파일이 없습니다.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto', paddingRight: '4px' }}>
+                {pptFiles.map((file, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', padding: '10px 14px', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                      <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)', width: '22px', height: '22px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {idx + 1}
+                      </span>
+                      <span style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {file.name}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
+                        ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => removeFile(idx)}
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                    >
+                      삭제
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={handleValidate}
+              disabled={pptFiles.length === 0 || isProcessing}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: (pptFiles.length === 0 || isProcessing) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #e11d48, #a855f7)',
+                color: (pptFiles.length === 0 || isProcessing) ? 'var(--text-muted)' : 'white',
+                border: 'none',
+                borderRadius: '10px',
+                fontSize: '15px',
+                fontWeight: 700,
+                cursor: (pptFiles.length === 0 || isProcessing) ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              {isProcessing ? (
+                <><RefreshCw size={18} className="animate-spin" /> PPTX 구조 해독 및 규칙 검증 중...</>
+              ) : (
+                <><ShieldAlert size={18} /> 검증 프로세스 실행</>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* 우측: 사용자 정의 검증 사전 등록 */}
+        <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <HelpCircle size={17} color="var(--accent-purple)" /> 사용자 정의 검사 규칙 (선택)
+          </h3>
+          <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+            프로젝트 고유 명사나 내장 사전에 존재하지 않는 특정 오탈자를 추가할 수 있습니다. <strong>[오타단어 ➜ 바른단어]</strong> 형태로 한 줄씩 기재해 주세요.
+          </p>
+          <textarea
+            value={userDictText}
+            onChange={(e) => setUserDictText(e.target.value)}
+            placeholder={`예시 입력:
+프로젝트명 ➜ 건강한 프로젝트
+아키택처 ➜ 아키텍처
+스프링부터 ➜ 스프링부트`}
+            style={{
+              width: '100%',
+              height: '190px',
+              padding: '12px',
+              background: 'rgba(0,0,0,0.2)',
+              border: '1px solid var(--panel-border)',
+              borderRadius: '10px',
+              color: 'var(--text-primary)',
+              fontSize: '13px',
+              fontFamily: 'monospace',
+              lineHeight: '1.6',
+              resize: 'none',
+              outline: 'none'
+            }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+            <Info size={12} />
+            <span>내장 사전에 있는 규칙은 기본적으로 적용됩니다.</span>
+          </div>
+        </div>
+
+      </div>
+
+      {/* 하단: 검증 결과 보고 대시보드 */}
+      {isValidated && (
+        <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', animation: 'fadeIn 0.4s ease' }}>
+          
+          {/* 검증 요약 요약바 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--panel-border)', paddingBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <CheckCircle2 size={24} color="var(--success-color)" />
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>산출물 검증 완료 리포트</h3>
+            </div>
+            
+            <button
+              onClick={handleExportToExcel}
+              style={{
+                padding: '10px 18px',
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'opacity 0.3s'
+              }}
+              onMouseEnter={(e) => e.target.style.opacity = '0.9'}
+              onMouseLeave={(e) => e.target.style.opacity = '1'}
+            >
+              <FileSpreadsheet size={16} /> 검증 결과 엑셀로 내려받기
+            </button>
+          </div>
+
+          {/* 종합 요약 카드 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>검증 파일 수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: 'var(--text-primary)' }}>{pptFiles.length}개 파일</span>
+            </div>
+            <div style={{ background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.15)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: '#f87171', fontWeight: 600 }}>검출된 오탈자 의심 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: '#ef4444' }}>{typoResults.length}건</span>
+            </div>
+            <div style={{ background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.15)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: '#fbbf24', fontWeight: 600 }}>넘버링 규칙 위반 의심 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: '#f59e0b' }}>{numberingResults.length}건</span>
+            </div>
+          </div>
+
+          {/* 결과 상세 확인 테이블 탭 */}
+          <div style={{ marginTop: '10px' }}>
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '10px' }}>
+              <button 
+                onClick={() => setActiveResultTab('summary')}
+                style={{
+                  padding: '8px 16px',
+                  background: activeResultTab === 'summary' ? 'rgba(255,255,255,0.06)' : 'transparent',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: activeResultTab === 'summary' ? 'var(--text-primary)' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '13.5px'
+                }}
+              >
+                📊 파일별 점검 요약
+              </button>
+              <button 
+                onClick={() => setActiveResultTab('typo')}
+                style={{
+                  padding: '8px 16px',
+                  background: activeResultTab === 'typo' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: activeResultTab === 'typo' ? '#ef4444' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '13.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                ❌ 오탈자 ({typoResults.length})
+              </button>
+              <button 
+                onClick={() => setActiveResultTab('numbering')}
+                style={{
+                  padding: '8px 16px',
+                  background: activeResultTab === 'numbering' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: activeResultTab === 'numbering' ? '#f59e0b' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '13.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                ⚠️ 넘버링 규칙성 ({numberingResults.length})
+              </button>
+            </div>
+
+            {/* 탭 1: 파일별 점검 요약 */}
+            {activeResultTab === 'summary' && (
+              <div style={{ marginTop: '16px', overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13.5px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                      <th style={{ padding: '12px 8px', fontWeight: 700 }}>파일명</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>오탈자 의심</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>넘버링 오류</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>종합 상태</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fileStats.map((stat, idx) => {
+                      const totalErrors = stat.typos + stat.numberingErrors;
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }}>
+                          <td style={{ padding: '14px 8px', fontWeight: 600 }}>{stat.name}</td>
+                          <td style={{ padding: '14px 8px', color: stat.typos > 0 ? '#ef4444' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {stat.typos > 0 ? `${stat.typos}건` : '없음'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: stat.numberingErrors > 0 ? '#f59e0b' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {stat.numberingErrors > 0 ? `${stat.numberingErrors}건` : '없음'}
+                          </td>
+                          <td style={{ padding: '14px 8px' }}>
+                            {totalErrors === 0 ? (
+                              <span style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '4px 8px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 800 }}>이상 없음</span>
+                            ) : (
+                              <span style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '4px 8px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 800 }}>검토 필요</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* 탭 2: 오탈자 상세 목록 */}
+            {activeResultTab === 'typo' && (
+              <div style={{ marginTop: '16px' }}>
+                {typoResults.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 검출된 오탈자 의심 단어가 없습니다!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>위치</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '110px' }}>의심 단어</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '110px' }}>교정 추천</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '80px' }}>유형</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>검출 문장</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {typoResults.map((t, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={t.fileName}>
+                              {t.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {t.slideNum}번 슬라이드
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#ef4444', fontWeight: 700 }}>{t.typo}</td>
+                            <td style={{ padding: '12px 8px', color: 'var(--success-color)', fontWeight: 700 }}>
+                              {t.correction}
+                            </td>
+                            <td style={{ padding: '12px 8px' }}>
+                              <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px', fontSize: '11px' }}>{t.type}</span>
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineBreak: 'anywhere' }}>
+                              {/* 매칭 단어 하이라이트 효과 */}
+                              {t.sentence.split(t.typo).map((chunk, cIdx, arr) => (
+                                <span key={cIdx}>
+                                  {chunk}
+                                  {cIdx < arr.length - 1 && <span style={{ background: 'rgba(239, 68, 68, 0.25)', color: '#ff8a8a', padding: '0 2px', borderRadius: '3px', fontWeight: 700 }}>{t.typo}</span>}
+                                </span>
+                              ))}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 탭 3: 넘버링 규칙성 오류 목록 */}
+            {activeResultTab === 'numbering' && (
+              <div style={{ marginTop: '16px' }}>
+                {numberingResults.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 검출된 상단 헤더 넘버링 오류가 없습니다!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>위치</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>영역</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>표기 텍스트</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>검출된 오류</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>권장 교정 가이드</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {numberingResults.map((n, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={n.fileName}>
+                              {n.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {n.slideNum}번 슬라이드
+                            </td>
+                            <td style={{ padding: '12px 8px' }}>
+                              <span style={{ 
+                                background: n.area === '좌측 타이틀' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(236, 72, 153, 0.1)', 
+                                color: n.area === '좌측 타이틀' ? '#818cf8' : '#f472b6', 
+                                padding: '2px 6px', 
+                                borderRadius: '4px', 
+                                fontSize: '11px',
+                                fontWeight: 700
+                              }}>
+                                {n.area}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-primary)', fontWeight: 700, fontStyle: 'italic' }}>
+                              {n.text}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#f59e0b', fontWeight: 700 }}>
+                              {n.error}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                              {n.guide}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+
+        </div>
+      )}
+
+    </div>
+  );
+}

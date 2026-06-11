@@ -9,8 +9,10 @@ import MeetingMinutes from './components/MeetingMinutes';
 import AiPptDesigner from './components/AiPptDesigner';
 import RagKnowledgeBase from './components/RagKnowledgeBase';
 import IsmpDaDashboard from './components/IsmpDaDashboard';
+import PptValidator from './components/PptValidator';
 import { 
   Shield, 
+  ShieldAlert,
   Activity, 
   FileText, 
   Presentation,
@@ -140,6 +142,7 @@ function App() {
 
   const tabs = [
     { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316' },
+    { id: 'ppt-verify', label: 'PPT 검증(표준산출물)', icon: ShieldAlert, color: '#e11d48' },
     { id: 'main', label: 'AI 산출물 검증', icon: Shield, color: 'var(--accent-blue)' },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)' },
     { id: 'law', label: 'AI 법률 자문(제미나이)', icon: MessageSquare, color: 'var(--success-color)' },
@@ -425,6 +428,7 @@ function App() {
           { activeTab === 'erd' && <ErdGenerator apiKey={apiKey} /> }
           { activeTab === 'aippt' && <AiPptDesigner apiKey={apiKey} /> }
           { activeTab === 'ppt' && <PptGenerator apiKey={apiKey} /> }
+          { activeTab === 'ppt-verify' && <PptValidator apiKey={apiKey} /> }
           {activeTab === 'meeting' && <MeetingMinutes apiKey={apiKey} />}
           {activeTab === 'library' && <ReferenceLibrary />}
           {activeTab === 'rag' && <RagKnowledgeBase apiKey={apiKey} />}
