@@ -283,7 +283,7 @@ export default function PptValidator({ apiKey }) {
             });
           }
 
-          // 3-2. 대체텍스트 검증 수행
+          // 3-2. 대체텍스트 검색 및 추출 수행
           if (checkAltText) {
             const cNvPrs = xmlDoc.getElementsByTagName('*');
             for (let i = 0; i < cNvPrs.length; i++) {
@@ -302,19 +302,20 @@ export default function PptValidator({ apiKey }) {
                   name.toLowerCase().includes('chart') || name.toLowerCase().includes('차트') ||
                   name.toLowerCase().includes('diagram') || name.toLowerCase().includes('다이어그램');
                 
-                if (isVisualElement && !descr.trim()) {
+                if (isVisualElement && descr.trim()) {
                   const exists = allAltTexts.some(e => 
                     e.fileName === file.name && 
                     e.slideNum === slideNum && 
-                    e.objName === name
+                    e.objName === name &&
+                    e.descr === descr
                   );
                   if (!exists) {
                     allAltTexts.push({
                       fileName: file.name,
                       slideNum,
                       objName: name,
-                      error: '대체텍스트 누락',
-                      guide: `시각 개체("${name}")에 대체텍스트(descr)가 설정되어 있지 않습니다. 웹 접근성(산출물 표준) 준수를 위해 대체텍스트를 입력해 주세요.`
+                      descr: descr,
+                      guide: '개체에 등록되어 있는 대체텍스트 내용입니다.'
                     });
                     fileAltErrorsCount++;
                   }
@@ -606,11 +607,11 @@ export default function PptValidator({ apiKey }) {
         '대상 파일명': a.fileName,
         '슬라이드 번호': `${a.slideNum}번 슬라이드`,
         '대상 개체명': a.objName,
-        '검출 오류': a.error,
-        '올바른 규칙 가이드': a.guide
+        '대체텍스트 내용': a.descr,
+        '참고': a.guide
       }));
       const altSheet = XLSX.utils.json_to_sheet(altRows);
-      XLSX.utils.book_append_sheet(workbook, altSheet, '대체텍스트_누락결과');
+      XLSX.utils.book_append_sheet(workbook, altSheet, '대체텍스트_검색결과');
     }
 
     // 4. 지정 단어 시트 데이터 구성
@@ -776,7 +777,7 @@ export default function PptValidator({ apiKey }) {
                 </div>
               </div>
 
-              {/* 3. 대체텍스트 누락 검증 */}
+              {/* 3. 대체텍스트 검색 및 추출 */}
               <div 
                 onClick={() => setCheckAltText(prev => !prev)}
                 style={{ 
@@ -801,8 +802,8 @@ export default function PptValidator({ apiKey }) {
                   style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#06b6d4' }}
                 />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>대체텍스트 누락 검증</span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>시각 개체(그림/차트)의 대체텍스트(descr) 미기재 건수 점검</span>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>대체텍스트 검색 및 추출</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>시각 개체(그림/차트)에 작성된 대체텍스트(descr) 내용 검색 및 수집</span>
                 </div>
               </div>
 
@@ -1033,7 +1034,7 @@ TBD
               <span style={{ fontSize: '24px', fontWeight: 900, color: checkNumbering ? '#f59e0b' : 'var(--text-muted)' }}>{checkNumbering ? `${numberingResults.length}건` : '비활성'}</span>
             </div>
             <div style={{ background: checkAltText ? 'rgba(6, 182, 212, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkAltText ? '1px solid rgba(6, 182, 212, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '13px', color: checkAltText ? '#22d3ee' : 'var(--text-muted)', fontWeight: 600 }}>대체텍스트 누락 건수</span>
+              <span style={{ fontSize: '13px', color: checkAltText ? '#22d3ee' : 'var(--text-muted)', fontWeight: 600 }}>대체텍스트 검출 건수</span>
               <span style={{ fontSize: '24px', fontWeight: 900, color: checkAltText ? '#06b6d4' : 'var(--text-muted)' }}>{checkAltText ? `${altTextResults.length}건` : '비활성'}</span>
             </div>
             <div style={{ background: checkForbiddenWords ? 'rgba(236, 72, 153, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkForbiddenWords ? '1px solid rgba(236, 72, 153, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1117,7 +1118,7 @@ TBD
                     gap: '6px'
                   }}
                 >
-                  🖼️ 대체텍스트 누락 ({altTextResults.length})
+                  🖼️ 대체텍스트 검색 ({altTextResults.length})
                 </button>
               )}
               {checkForbiddenWords && (
@@ -1151,7 +1152,7 @@ TBD
                       <th style={{ padding: '12px 8px', fontWeight: 700 }}>파일명</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>오탈자 의심</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>넘버링 오류</th>
-                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>대체텍스트 누락</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>대체텍스트 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>특정 단어 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>종합 상태</th>
                     </tr>
@@ -1306,12 +1307,12 @@ TBD
               </div>
             )}
 
-            {/* 탭 4: 대체텍스트 누락 목록 */}
+            {/* 탭 4: 대체텍스트 검색 목록 */}
             {activeResultTab === 'altText' && (
               <div style={{ marginTop: '16px' }}>
                 {altTextResults.length === 0 ? (
                   <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
-                    🎉 검출된 대체텍스트 누락 개체가 없습니다!
+                    🎉 검출된 대체텍스트 정보가 없습니다!
                   </div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
@@ -1321,8 +1322,8 @@ TBD
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>위치</th>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>대상 개체명</th>
-                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>검출된 오류</th>
-                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>권장 교정 가이드</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '250px' }}>대체텍스트 내용</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>참고 사항</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1337,8 +1338,8 @@ TBD
                             <td style={{ padding: '12px 8px', color: '#06b6d4', fontWeight: 700 }}>
                               {alt.objName}
                             </td>
-                            <td style={{ padding: '12px 8px', color: '#ef4444', fontWeight: 700 }}>
-                              {alt.error}
+                            <td style={{ padding: '12px 8px', color: 'var(--text-primary)', fontWeight: 700 }}>
+                              {alt.descr}
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                               {alt.guide}
