@@ -393,6 +393,10 @@ export default function PptValidator({ apiKey }) {
           let expectedMajor = 1;
           let lastParts = []; // 이전 슬라이드의 넘버링 분할 [Major, Minor, Sub...]
           let lastTitleText = ''; // 이전 슬라이드의 목차 타이틀 텍스트 보관용
+          let lastPureTitle = ''; // 이전 슬라이드의 괄호 제외 순수 제목
+          let lastHasAltPages = false;
+          let lastCurrentAltPage = null;
+          let lastTotalAltPage = null;
 
           for (let i = 0; i < slideList.length; i++) {
             const slide = slideList[i];
@@ -400,19 +404,92 @@ export default function PptValidator({ apiKey }) {
             
             if (!text) continue;
 
-            // 동일 목차 타이틀 반복 감지
-            if (lastTitleText && text.trim() === lastTitleText.trim()) {
-              allNumberings.push({
-                fileName: file.name,
-                slideNum: slide.slideNum,
-                area: '좌측 타이틀',
-                text,
-                error: '동일 목차(타이틀) 반복 검출',
-                guide: `이전 슬라이드와 좌측 타이틀 명칭("${text}")이 완전히 동일합니다. 중복 기재되었는지 확인해 주세요.`
-              });
-              fileNumErrorsCount++;
+            // "목차 명칭 (1/4)" 정규식 파싱
+            const altPageMatch = text.match(/\((\d+)\/(\d+)\)\s*$/);
+            let hasAltPages = false;
+            let currentAltPage = null;
+            let totalAltPage = null;
+            let pureTitle = text.trim();
+
+            if (altPageMatch) {
+              hasAltPages = true;
+              currentAltPage = parseInt(altPageMatch[1], 10);
+              totalAltPage = parseInt(altPageMatch[2], 10);
+              pureTitle = text.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
             }
-            lastTitleText = text; // 타이틀 업데이트
+
+            // 동일 목차 타이틀 반복 감지 및 연속 페이지 검증
+            if (lastTitleText) {
+              if (hasAltPages && lastHasAltPages && pureTitle === lastPureTitle) {
+                // 연속 페이지 흐름 검증
+                if (totalAltPage !== lastTotalAltPage) {
+                  allNumberings.push({
+                    fileName: file.name,
+                    slideNum: slide.slideNum,
+                    area: '좌측 타이틀',
+                    text,
+                    error: '목차 전체 페이지 수 불일치',
+                    guide: `연속 목차의 전체 페이지 수(분모)가 이전 슬라이드(${lastTotalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
+                  });
+                  fileNumErrorsCount++;
+                }
+                
+                if (currentAltPage !== lastCurrentAltPage + 1) {
+                  allNumberings.push({
+                    fileName: file.name,
+                    slideNum: slide.slideNum,
+                    area: '좌측 타이틀',
+                    text,
+                    error: '목차 연속 페이지 번호 단절',
+                    guide: `연속된 목차 페이지 번호가 순차적으로 증가하지 않았습니다. (이전: ${lastCurrentAltPage}/${lastTotalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
+                  });
+                  fileNumErrorsCount++;
+                }
+
+                if (currentAltPage > totalAltPage) {
+                  allNumberings.push({
+                    fileName: file.name,
+                    slideNum: slide.slideNum,
+                    area: '좌측 타이틀',
+                    text,
+                    error: '목차 페이지 범위 초과',
+                    guide: `목차 페이지 번호(${currentAltPage})가 전체 페이지 수(${totalAltPage})를 초과하였습니다.`
+                  });
+                  fileNumErrorsCount++;
+                }
+              } else if (text.trim() === lastTitleText.trim()) {
+                allNumberings.push({
+                  fileName: file.name,
+                  slideNum: slide.slideNum,
+                  area: '좌측 타이틀',
+                  text,
+                  error: '동일 목차(타이틀) 반복 검출',
+                  guide: `이전 슬라이드와 좌측 타이틀 명칭("${text}")이 완전히 동일합니다. 중복 기재가 아니며 여러 슬라이드로 나뉘어 이어지는 내용이라면 "(1/4)" 형태로 연속 페이지 번호를 지정해 주세요.`
+                });
+                fileNumErrorsCount++;
+              }
+            }
+
+            // 첫 연속 페이지 진입 검증
+            if (hasAltPages && (!lastHasAltPages || pureTitle !== lastPureTitle)) {
+              if (currentAltPage !== 1) {
+                allNumberings.push({
+                  fileName: file.name,
+                  slideNum: slide.slideNum,
+                  area: '좌측 타이틀',
+                  text,
+                  error: '목차 페이지 시작 번호 오류',
+                  guide: `연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${currentAltPage}/${totalAltPage})`
+                });
+                fileNumErrorsCount++;
+              }
+            }
+
+            lastTitleText = text;
+            lastPureTitle = pureTitle;
+            lastHasAltPages = hasAltPages;
+            lastCurrentAltPage = currentAltPage;
+            lastTotalAltPage = totalAltPage;
 
             // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
             // 또는 로마자 "I. ", 괄호 "(1) " 등 검출
