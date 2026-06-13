@@ -1546,7 +1546,7 @@ export async function processPptBatch(pptFile, options) {
             }
         }
         
-        const allElements = xmlDoc.getElementsByTagName('*');
+        const allElements = Array.from(xmlDoc.getElementsByTagName('*'));
         
         // 1. 단어 일괄 수정 \u0026 3. 폰트 일괄 교체 \u0026 4. 폰트 크기 변경 통합 루프
         for (let i = 0; i < allElements.length; i++) {
@@ -1827,7 +1827,7 @@ export async function processPptBatch(pptFile, options) {
             }
 
             let designChangedLocal = false;
-            const allElementsInner = xmlDoc.getElementsByTagName('*');
+            const allElementsInner = Array.from(xmlDoc.getElementsByTagName('*'));
             for (let i = 0; i < allElementsInner.length; i++) {
                 const el = allElementsInner[i];
                 if (el.nodeType !== 1) continue;
