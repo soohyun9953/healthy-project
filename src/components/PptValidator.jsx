@@ -793,6 +793,43 @@ export default function PptValidator({ apiKey }) {
             />
           </div>
 
+          {/* 업로드 파일 리스트 */}
+          <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              대기 중인 파일 <span style={{ background: 'rgba(225, 29, 72, 0.1)', color: '#e11d48', padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 800 }}>{pptFiles.length}</span>
+            </h3>
+            
+            {pptFiles.length === 0 ? (
+              <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                검증 대기 중인 파워포인트 파일이 없습니다.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto', paddingRight: '4px' }}>
+                {pptFiles.map((file, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', padding: '10px 14px', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                      <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)', width: '22px', height: '22px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {idx + 1}
+                      </span>
+                      <span style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {file.name}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
+                        ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => removeFile(idx)}
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                    >
+                      삭제
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* 검증 옵션 설정 */}
           <div style={{ 
             background: 'var(--panel-bg)', 
@@ -927,43 +964,6 @@ export default function PptValidator({ apiKey }) {
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* 업로드 파일 리스트 */}
-          <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              대기 중인 파일 <span style={{ background: 'rgba(225, 29, 72, 0.1)', color: '#e11d48', padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 800 }}>{pptFiles.length}</span>
-            </h3>
-            
-            {pptFiles.length === 0 ? (
-              <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                검증 대기 중인 파워포인트 파일이 없습니다.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto', paddingRight: '4px' }}>
-                {pptFiles.map((file, idx) => (
-                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', padding: '10px 14px', borderRadius: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-                      <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)', width: '22px', height: '22px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        {idx + 1}
-                      </span>
-                      <span style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {file.name}
-                      </span>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
-                        ({(file.size / 1024 / 1024).toFixed(2)} MB)
-                      </span>
-                    </div>
-                    <button 
-                      onClick={() => removeFile(idx)}
-                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
-                    >
-                      삭제
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
 
             <button
               onClick={handleValidate}
@@ -982,7 +982,8 @@ export default function PptValidator({ apiKey }) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '10px',
-                transition: 'all 0.3s ease'
+                transition: 'all 0.3s ease',
+                marginTop: '6px'
               }}
             >
               {isProcessing ? (
