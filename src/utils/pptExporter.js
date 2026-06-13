@@ -1790,78 +1790,75 @@ export async function processPptBatch(pptFile, options) {
 
         // 2. 텍스트 디자인 일괄 변경
         if (applyDesign && designTargetFilesSet.has(slidePath)) {
-            const xmlDocInner = parser.parseFromString(slideXmlStr, 'application/xml'); // 새로 파싱하거나 기존 것 사용
-            if (xmlDocInner.getElementsByTagName('parsererror').length === 0) {
-                let textDesignAppliedCount = 0;
-                function applyLnToRPr(rPr) {
-                    let existingLn = null;
-                    for (let j = 0; j < rPr.childNodes.length; j++) {
-                        const child = rPr.childNodes[j];
-                        if (child.nodeType === 1 && (child.localName === 'ln' || child.tagName.split(':').pop() === 'ln')) {
-                            existingLn = child;
+            let textDesignAppliedCount = 0;
+            // xmlDoc을 대상으로 직접 작업하도록 수정하여 기존에 수행한 변경사항(테이블, 단어 등)이 소실되지 않도록 보장
+            function applyLnToRPr(rPr) {
+                let existingLn = null;
+                for (let j = 0; j < rPr.childNodes.length; j++) {
+                    const child = rPr.childNodes[j];
+                    if (child.nodeType === 1 && (child.localName === 'ln' || child.tagName.split(':').pop() === 'ln')) {
+                        existingLn = child;
+                        break;
+                    }
+                }
+                if (existingLn) rPr.removeChild(existingLn);
+
+                const ln = xmlDoc.createElementNS(nsA, 'a:ln');
+                ln.setAttribute('w', '9525');
+                ln.setAttribute('cmpd', 'sng');
+
+                const solidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                const srgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                srgbClr.setAttribute('val', 'FFFFFF');
+
+                const alpha = xmlDoc.createElementNS(nsA, 'a:alpha');
+                alpha.setAttribute('val', '0');
+
+                srgbClr.appendChild(alpha);
+                solidFill.appendChild(srgbClr);
+                ln.appendChild(solidFill);
+                
+                const prstDash = xmlDoc.createElementNS(nsA, 'a:prstDash');
+                prstDash.setAttribute('val', 'solid');
+                ln.appendChild(prstDash);
+                
+                rPr.insertBefore(ln, rPr.firstChild);
+                textDesignAppliedCount++;
+            }
+
+            let designChangedLocal = false;
+            const allElementsInner = xmlDoc.getElementsByTagName('*');
+            for (let i = 0; i < allElementsInner.length; i++) {
+                const el = allElementsInner[i];
+                if (el.nodeType !== 1) continue;
+                const localName = el.localName || el.tagName.split(':').pop();
+                
+                if (localName === 'r' || localName === 'fld' || localName === 'br') {
+                    let rPr = null;
+                    for (let j = 0; j < el.childNodes.length; j++) {
+                        const child = el.childNodes[j];
+                        if (child.nodeType === 1 && (child.localName === 'rPr' || child.tagName.split(':').pop() === 'rPr')) {
+                            rPr = child;
                             break;
                         }
                     }
-                    if (existingLn) rPr.removeChild(existingLn);
-
-                    const ln = xmlDocInner.createElementNS(nsA, 'a:ln');
-                    ln.setAttribute('w', '9525');
-                    ln.setAttribute('cmpd', 'sng');
-
-                    const solidFill = xmlDocInner.createElementNS(nsA, 'a:solidFill');
-                    const srgbClr = xmlDocInner.createElementNS(nsA, 'a:srgbClr');
-                    srgbClr.setAttribute('val', 'FFFFFF');
-
-                    const alpha = xmlDocInner.createElementNS(nsA, 'a:alpha');
-                    alpha.setAttribute('val', '0');
-
-                    srgbClr.appendChild(alpha);
-                    solidFill.appendChild(srgbClr);
-                    ln.appendChild(solidFill);
-                    
-                    const prstDash = xmlDocInner.createElementNS(nsA, 'a:prstDash');
-                    prstDash.setAttribute('val', 'solid');
-                    ln.appendChild(prstDash);
-                    
-                    rPr.insertBefore(ln, rPr.firstChild);
-                    textDesignAppliedCount++;
-                }
-
-                designChanged = false;
-                const allElementsInner = xmlDocInner.getElementsByTagName('*');
-                for (let i = 0; i < allElementsInner.length; i++) {
-                    const el = allElementsInner[i];
-                    if (el.nodeType !== 1) continue;
-                    const localName = el.localName || el.tagName.split(':').pop();
-                    
-                    if (localName === 'r' || localName === 'fld' || localName === 'br') {
-                        let rPr = null;
-                        for (let j = 0; j < el.childNodes.length; j++) {
-                            const child = el.childNodes[j];
-                            if (child.nodeType === 1 && (child.localName === 'rPr' || child.tagName.split(':').pop() === 'rPr')) {
-                                rPr = child;
-                                break;
-                            }
-                        }
-                        if (!rPr) {
-                            rPr = xmlDocInner.createElementNS(nsA, 'a:rPr');
-                            el.insertBefore(rPr, el.firstChild);
-                        }
-                        applyLnToRPr(rPr);
-                        designChanged = true;
-                        hasChanges = true;
-                    } else if (localName === 'endParaRPr' || localName === 'defRPr') {
-                        applyLnToRPr(el);
-                        designChanged = true;
-                        hasChanges = true;
+                    if (!rPr) {
+                        rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
+                        el.insertBefore(rPr, el.firstChild);
                     }
+                    applyLnToRPr(rPr);
+                    designChangedLocal = true;
+                    hasChanges = true;
+                } else if (localName === 'endParaRPr' || localName === 'defRPr') {
+                    applyLnToRPr(el);
+                    designChangedLocal = true;
+                    hasChanges = true;
                 }
-                
-                if (designChanged) {
-                    slideXmlStr = serializer.serializeToString(xmlDocInner);
-                    fileChanged = true;
-                    totalReplacedTextDesigns += textDesignAppliedCount;
-                }
+            }
+            
+            if (designChangedLocal) {
+                fileChanged = true;
+                totalReplacedTextDesigns += textDesignAppliedCount;
             }
         }
         
@@ -1889,6 +1886,18 @@ export async function processPptBatch(pptFile, options) {
                     el.removeAttribute('title');
                     altTextChanged = true;
                 }
+                // XML 네임스페이스 속성 및 접두어가 붙은 대체 텍스트(descr, title) 완전 소거 폴백
+                const attrs = Array.from(el.attributes);
+                attrs.forEach(attr => {
+                    const localAttrName = attr.localName || attr.name.split(':').pop();
+                    if (localAttrName === 'descr' || localAttrName === 'title') {
+                        el.removeAttribute(attr.name);
+                        if (attr.namespaceURI) {
+                            el.removeAttributeNS(attr.namespaceURI, localAttrName);
+                        }
+                        altTextChanged = true;
+                    }
+                });
             });
             
             if (altTextChanged) {
@@ -1897,13 +1906,9 @@ export async function processPptBatch(pptFile, options) {
             }
         }
         
-        // 단어/폰트/크기/테이블 수정 루프에서 변경이 가해진 경우 최종 xmlDoc 동기화
-        if (fileChanged && !designChanged) {
-            slideXmlStr = serializer.serializeToString(xmlDoc);
-        }
-        
-        // 변경사항이 있으면 압축 파일 갱신
+        // 변경사항이 있으면 압축 파일 갱신 (더 이상 이중 파싱 및 designChanged 충돌이 없으므로 일괄 직렬화)
         if (fileChanged) {
+            slideXmlStr = serializer.serializeToString(xmlDoc);
             zip.file(slidePath, slideXmlStr);
         }
     });
