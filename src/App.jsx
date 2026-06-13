@@ -51,7 +51,7 @@ const gaEvent = (eventName, params = {}) => {
 };
 
 function App() {
-  const [activeTab, setActiveTab] = useState('main');
+  const [activeTab, setActiveTab] = useState('ppt');
   // apiKeys: 문자열 배열로 관리, 기존 localStorage 콤마 구분 값과 호환
   const [apiKeys, setApiKeys] = useState(() => {
     const stored = localStorage.getItem('gemini_api_key') || '';
