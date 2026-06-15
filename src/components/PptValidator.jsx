@@ -315,6 +315,11 @@ export default function PptValidator({ apiKey }) {
                     matches.forEach(match => {
                       const duplicated_word = match[1];
                       const matched_text = match[0];
+                      
+                      // 숫자로만 구성되었거나 숫자와 결합된 단순 기호 시퀀스인 경우 중복 검사 제외
+                      const is_numeric = /^[0-9.,()\-/[\]\s]+$/.test(duplicated_word);
+                      if (is_numeric) return;
+
                       const exists = all_duplicates.some(e => 
                         e.fileName === file.name && 
                         e.slideNum === slideNum && 
@@ -571,6 +576,11 @@ export default function PptValidator({ apiKey }) {
               matches.forEach(match => {
                 const duplicated_word = match[1];
                 const matched_text = match[0];
+                
+                // 숫자로만 구성되었거나 숫자와 결합된 단순 기호 시퀀스인 경우 중복 검사 제외
+                const is_numeric = /^[0-9.,()\-/[\]\s]+$/.test(duplicated_word);
+                if (is_numeric) return;
+
                 const exists = all_duplicates.some(e => 
                   e.fileName === file.name && 
                   e.slideNum === slideNum && 
