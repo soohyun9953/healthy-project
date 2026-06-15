@@ -54,6 +54,50 @@ const TYPO_DICTIONARY = {
   '상세설계': { correction: '상세 설계', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' }
 };
 
+// 동일 단어 중복 검출 시 단어 경계(Boundary) 유효성 검사 헬퍼 함수 (스네이크 케이스 준수)
+const check_word_boundary = (text, match_index, matched_length, duplicated_word) => {
+  const start1 = match_index;
+  const end1 = start1 + duplicated_word.length;
+  const start2 = match_index + matched_length - duplicated_word.length;
+  const end2 = match_index + matched_length;
+
+  const is_alphanumeric = (char) => {
+    if (!char) return false;
+    return /[a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ]/.test(char);
+  };
+
+  const word_start_char = duplicated_word[0];
+  const word_end_char = duplicated_word[duplicated_word.length - 1];
+
+  // 첫 번째 유닛의 앞 경계 검사
+  if (is_alphanumeric(word_start_char)) {
+    const char_before1 = text[start1 - 1];
+    if (is_alphanumeric(char_before1)) return false;
+  }
+
+  // 첫 번째 유닛의 뒤 경계 검사
+  if (is_alphanumeric(word_end_char)) {
+    const char_after1 = text[end1];
+    // 두 번째 유닛과 바로 붙어 있지 않은 경우에만 뒤 문자 검사
+    if (end1 !== start2 && is_alphanumeric(char_after1)) return false;
+  }
+
+  // 두 번째 유닛의 앞 경계 검사
+  if (is_alphanumeric(word_start_char)) {
+    const char_before2 = text[start2 - 1];
+    // 첫 번째 유닛과 바로 붙어 있지 않은 경우에만 앞 문자 검사
+    if (end1 !== start2 && is_alphanumeric(char_before2)) return false;
+  }
+
+  // 두 번째 유닛의 뒤 경계 검사
+  if (is_alphanumeric(word_end_char)) {
+    const char_after2 = text[end2];
+    if (is_alphanumeric(char_after2)) return false;
+  }
+
+  return true;
+};
+
 export default function PptValidator({ apiKey }) {
   const [pptFiles, setPptFiles] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -320,6 +364,9 @@ export default function PptValidator({ apiKey }) {
                       const is_numeric = /^[0-9.,()\-/[\]\s]+$/.test(duplicated_word);
                       if (is_numeric) return;
 
+                      // 단어 경계가 제대로 지켜지지 않은 경우 제외 (예: xxxse sexxx 등)
+                      if (!check_word_boundary(paragraph_text, match.index, match[0].length, duplicated_word)) return;
+
                       const exists = all_duplicates.some(e => 
                         e.fileName === file.name && 
                         e.slideNum === slideNum && 
@@ -580,6 +627,9 @@ export default function PptValidator({ apiKey }) {
                 // 숫자로만 구성되었거나 숫자와 결합된 단순 기호 시퀀스인 경우 중복 검사 제외
                 const is_numeric = /^[0-9.,()\-/[\]\s]+$/.test(duplicated_word);
                 if (is_numeric) return;
+
+                // 단어 경계가 제대로 지켜지지 않은 경우 제외 (예: xxxse sexxx 등)
+                if (!check_word_boundary(text, match.index, match[0].length, duplicated_word)) return;
 
                 const exists = all_duplicates.some(e => 
                   e.fileName === file.name && 
