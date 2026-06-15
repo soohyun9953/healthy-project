@@ -98,7 +98,7 @@ export default function PptValidator({ apiKey }) {
 
   // 파일 업로드 핸들러
   const handleFileChange = (e) => {
-    const files = Array.from(e.target.files).filter(f => f.name.endsWith('.pptx'));
+    const files = Array.from(e.target.files).filter(f => f.name.endsWith('.pptx') || f.name.endsWith('.hwpx'));
     if (files.length > 0) {
       setPptFiles(prev => [...prev, ...files]);
       setIsValidated(false);
@@ -111,7 +111,7 @@ export default function PptValidator({ apiKey }) {
 
   const handleDrop = (e) => {
     e.preventDefault();
-    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.pptx'));
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.pptx') || f.name.endsWith('.hwpx'));
     if (files.length > 0) {
       setPptFiles(prev => [...prev, ...files]);
       setIsValidated(false);
@@ -189,6 +189,157 @@ export default function PptValidator({ apiKey }) {
         const arrayBuffer = await file.arrayBuffer();
         const zip = await JSZip.loadAsync(arrayBuffer);
         
+        const is_hwpx = file.name.endsWith('.hwpx');
+        
+        if (is_hwpx) {
+          const section_files = Object.keys(zip.files).filter(p => 
+            p.startsWith('Contents/section') && p.endsWith('.xml')
+          ).sort((a, b) => {
+            const numA = parseInt(a.replace(/[^\d]/g, ''), 10);
+            const numB = parseInt(b.replace(/[^\d]/g, ''), 10);
+            return numA - numB;
+          });
+          
+          for (let sIdx = 0; sIdx < section_files.length; sIdx++) {
+            const section_path = section_files[sIdx];
+            const section_xml_str = await zip.file(section_path).async('text');
+            
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(section_xml_str, 'application/xml');
+            if (xmlDoc.getElementsByTagName('parsererror').length > 0) continue;
+            
+            const allNodes = xmlDoc.getElementsByTagName('*');
+            for (let i = 0; i < allNodes.length; i++) {
+              const node = allNodes[i];
+              const localName = node.localName || node.tagName.split(':').pop();
+              if (localName === 'p') {
+                const tNodes = node.getElementsByTagName('*');
+                let p_text_list = [];
+                for (let j = 0; j < tNodes.length; j++) {
+                  const tNode = tNodes[j];
+                  const tLocalName = tNode.localName || tNode.tagName.split(':').pop();
+                  if (tLocalName === 't') {
+                    p_text_list.push(tNode.textContent || '');
+                  }
+                }
+                const paragraph_text = p_text_list.join('').trim();
+                if (paragraph_text) {
+                  const slideNum = sIdx + 1;
+                  
+                  // 1) 오탈자 점검
+                  if (checkTypos) {
+                    Object.keys(mergedDict).forEach(typo => {
+                      if (paragraph_text.includes(typo)) {
+                        const exists = allTypos.some(t => 
+                          t.fileName === file.name && 
+                          t.slideNum === slideNum && 
+                          t.sentence === paragraph_text && 
+                          t.typo === typo
+                        );
+                        if (!exists) {
+                          const info = mergedDict[typo];
+                          allTypos.push({
+                            fileName: file.name,
+                            slideNum,
+                            sentence: paragraph_text,
+                            typo,
+                            correction: info.correction,
+                            type: info.type,
+                            desc: info.desc
+                          });
+                          fileTyposCount++;
+                        }
+                      }
+                    });
+                  }
+                  
+                  // 2) 특정 단어 검증
+                  if (checkForbiddenWords && forbiddenWordsText.trim()) {
+                    const targetWords = forbiddenWordsText.split('\n')
+                      .map(w => w.trim())
+                      .filter(w => w.length > 0);
+                    targetWords.forEach(word => {
+                      if (paragraph_text.includes(word)) {
+                        const exists = allForbiddens.some(e => 
+                          e.fileName === file.name && 
+                          e.slideNum === slideNum && 
+                          e.sentence === paragraph_text && 
+                          e.word === word
+                        );
+                        if (!exists) {
+                          allForbiddens.push({
+                            fileName: file.name,
+                            slideNum,
+                            sentence: paragraph_text,
+                            word,
+                            error: `지정 단어 검출 (${word})`,
+                            guide: `문서 본문 내에 점검 지정 단어인 "${word}"가 포함되어 있습니다. 최종 제출 시 적절한 표현인지 확인해 주세요.`
+                          });
+                          fileForbiddenCount++;
+                        }
+                      }
+                    });
+                  }
+                  
+                  // 3) 영어/한글 혼용 단어 검증
+                  if (checkEngKoMixed) {
+                    const words = paragraph_text.split(/\s+/);
+                    words.forEach(word => {
+                      const cleanWord = word.replace(/^[.,;:!?()\[\]"']+|[.,;:!?()\[\]"']+$/g, '');
+                      const mixRegex = /[a-zA-Z][가-힣ㄱ-ㅎㅏ-ㅣ]|[가-힣ㄱ-ㅎㅏ-ㅣ][a-zA-Z]/;
+                      if (mixRegex.test(cleanWord)) {
+                        const exists = allEngKoMixed.some(e => 
+                          e.fileName === file.name && 
+                          e.slideNum === slideNum && 
+                          e.word === cleanWord &&
+                          e.sentence === paragraph_text
+                        );
+                        if (!exists) {
+                          allEngKoMixed.push({
+                            fileName: file.name,
+                            slideNum,
+                            sentence: paragraph_text,
+                            word: cleanWord,
+                            error: '영어/한글 혼용 단어 검출',
+                            guide: `단어 "${cleanWord}" 내에 영어와 한글이 공백 없이 혼용되어 표시되어 있습니다. 오타가 아닌지 혹은 의도된 결합 표기인지 확인해 주세요.`
+                          });
+                          fileEngKoMixedCount++;
+                        }
+                      }
+                    });
+                  }
+                  
+                  // 4) 동일 단어 중복 검증
+                  if (check_duplicate_words) {
+                    const matches = [...paragraph_text.matchAll(/(\S{2,})\s*\1/g)];
+                    matches.forEach(match => {
+                      const duplicated_word = match[1];
+                      const matched_text = match[0];
+                      const exists = all_duplicates.some(e => 
+                        e.fileName === file.name && 
+                        e.slideNum === slideNum && 
+                        e.sentence === paragraph_text && 
+                        e.word === matched_text
+                      );
+                      if (!exists) {
+                        all_duplicates.push({
+                          fileName: file.name,
+                          slideNum,
+                          sentence: paragraph_text,
+                          word: matched_text,
+                          duplicateWord: duplicated_word,
+                          error: '동일 단어 중복 검출',
+                          guide: `문서 본문 내에 동일한 단어 "${duplicated_word}"가 연속으로 중복 기재되어 있습니다. ("${matched_text}")`
+                        });
+                        file_duplicate_count++;
+                      }
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } else {
         // 1. 모든 슬라이드 파일 추출 및 정렬
         const slideFiles = Object.keys(zip.files).filter(p => 
           p.startsWith('ppt/slides/slide') && p.endsWith('.xml')
@@ -693,6 +844,7 @@ export default function PptValidator({ apiKey }) {
             }
           }
         }
+        }
 
         stats.push({
           name: file.name,
@@ -841,11 +993,11 @@ export default function PptValidator({ apiKey }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(225, 29, 72, 0.15), rgba(168, 85, 247, 0.05))', border: '1px solid rgba(225, 29, 72, 0.25)', padding: '24px', borderRadius: '16px', backdropFilter: 'blur(10px)' }}>
         <div>
           <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '22px', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-            <ShieldAlert size={28} color="#e11d48" /> PPT 검증(표준산출물)
+            <ShieldAlert size={28} color="#e11d48" /> PPT / HWPX 검증(표준산출물)
           </h2>
           <p style={{ margin: '8px 0 0 0', fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-            PPTX 제안서 또는 표준 산출물을 업로드하면 텍스트 내의 **오탈자(비즈니스/외래어/맞춤법)**와 **상단 헤더(좌측/우측) 넘버링 규칙성**을 정교하게 분석합니다.<br />
-            점검이 완료되면 파일별 점검 내역을 대시보드로 요약하고, 상세한 리포트를 **멀티 시트 엑셀 파일**로 출력할 수 있습니다.
+            PPTX 제안서 또는 HWPX 한글 보고서를 업로드하면 텍스트 내의 **오탈자(비즈니스/외래어/맞춤법)**와 **중복 단어, 영한 혼용 단어** 등을 정교하게 분석합니다.<br />
+            (PPTX의 경우 상단 헤더 넘버링 규칙성 및 대체텍스트도 점검하며, HWPX는 본문 텍스트 기반 검증이 수행됩니다.)
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -890,13 +1042,13 @@ export default function PptValidator({ apiKey }) {
               <FileUp size={32} />
             </div>
             <div>
-              <p style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>검증할 PPTX 파일을 끌어다 놓으세요</p>
+              <p style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>검증할 PPTX 또는 HWPX 파일을 끌어다 놓으세요</p>
               <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>또는 컴퓨터에서 파일 찾아보기 (다중 선택 가능)</p>
             </div>
             <input 
               ref={fileInputRef}
               type="file" 
-              accept=".pptx" 
+              accept=".pptx, .hwpx" 
               multiple 
               onChange={handleFileChange}
               style={{ display: 'none' }}
@@ -911,7 +1063,7 @@ export default function PptValidator({ apiKey }) {
             
             {pptFiles.length === 0 ? (
               <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                검증 대기 중인 파워포인트 파일이 없습니다.
+                검증 대기 중인 파일이 없습니다.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto', paddingRight: '4px' }}>
