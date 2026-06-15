@@ -65,6 +65,8 @@ export default function PptValidator({ apiKey }) {
   const [checkAltText, setCheckAltText] = useState(true);
   const [checkForbiddenWords, setCheckForbiddenWords] = useState(true);
   const [checkEngKoMixed, setCheckEngKoMixed] = useState(true);
+  // 추가 옵션: 동일 단어 중복 검증 (스네이크 케이스 규칙 적용)
+  const [check_duplicate_words, set_check_duplicate_words] = useState(true);
   
   // 결과 데이터 저장
   const [typoResults, setTypoResults] = useState([]);
@@ -72,7 +74,9 @@ export default function PptValidator({ apiKey }) {
   const [altTextResults, setAltTextResults] = useState([]);
   const [forbiddenResults, setForbiddenResults] = useState([]);
   const [engKoMixedResults, setEngKoMixedResults] = useState([]);
-  const [fileStats, setFileStats] = useState([]); // [{ name: '', typos: 0, numberingErrors: 0, altTextErrors: 0, forbiddenErrors: 0, engKoMixedErrors: 0 }]
+  // 동일 단어 중복 검증 결과 저장 (스네이크 케이스 규칙 적용)
+  const [duplicate_results, set_duplicate_results] = useState([]);
+  const [fileStats, setFileStats] = useState([]); // [{ name: '', typos: 0, numberingErrors: 0, altTextErrors: 0, forbiddenErrors: 0, engKoMixedErrors: 0, duplicateErrors: 0 }]
   
   const [activeResultTab, setActiveResultTab] = useState('summary'); // summary, typo, numbering, altText, forbidden
   const [userDictText, setUserDictText] = useState(() => {
@@ -127,6 +131,7 @@ export default function PptValidator({ apiKey }) {
     setAltTextResults([]);
     setForbiddenResults([]);
     setEngKoMixedResults([]);
+    set_duplicate_results([]);
     setFileStats([]);
   };
 
@@ -156,8 +161,8 @@ export default function PptValidator({ apiKey }) {
   // PPTX 검증 핵심 프로세스
   const handleValidate = async () => {
     if (pptFiles.length === 0) return;
-    if (!checkTypos && !checkNumbering && !checkAltText && !checkForbiddenWords && !checkEngKoMixed) {
-      alert('오탈자, 넘버링, 대체텍스트, 특정 단어, 영어/한글 혼용 단어 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
+    if (!checkTypos && !checkNumbering && !checkAltText && !checkForbiddenWords && !checkEngKoMixed && !check_duplicate_words) {
+      alert('오탈자, 넘버링, 대체텍스트, 특정 단어, 영어/한글 혼용 단어, 동일 단어 중복 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
       return;
     }
     setIsProcessing(true);
@@ -167,6 +172,7 @@ export default function PptValidator({ apiKey }) {
     const allAltTexts = [];
     const allForbiddens = [];
     const allEngKoMixed = [];
+    const all_duplicates = [];
     const stats = [];
     const userDict = parseUserDictionary();
     const mergedDict = { ...TYPO_DICTIONARY, ...userDict };
@@ -178,6 +184,7 @@ export default function PptValidator({ apiKey }) {
         let fileAltErrorsCount = 0;
         let fileForbiddenCount = 0;
         let fileEngKoMixedCount = 0;
+        let file_duplicate_count = 0;
 
         const arrayBuffer = await file.arrayBuffer();
         const zip = await JSZip.loadAsync(arrayBuffer);
@@ -400,6 +407,36 @@ export default function PptValidator({ apiKey }) {
                     });
                     fileEngKoMixedCount++;
                   }
+                }
+              });
+            });
+          }
+
+          // 3-5. 동일 단어 중복 검증 수행
+          if (check_duplicate_words) {
+            shapes.forEach(shape => {
+              const text = shape.text;
+              const matches = [...text.matchAll(/(\S{2,})\s*\1/g)];
+              matches.forEach(match => {
+                const duplicated_word = match[1];
+                const matched_text = match[0];
+                const exists = all_duplicates.some(e => 
+                  e.fileName === file.name && 
+                  e.slideNum === slideNum && 
+                  e.sentence === text && 
+                  e.word === matched_text
+                );
+                if (!exists) {
+                  all_duplicates.push({
+                    fileName: file.name,
+                    slideNum,
+                    sentence: text,
+                    word: matched_text,
+                    duplicateWord: duplicated_word,
+                    error: '동일 단어 중복 검출',
+                    guide: `문서 본문 내에 동일한 단어 "${duplicated_word}"가 연속으로 중복 기재되어 있습니다. ("${matched_text}")`
+                  });
+                  file_duplicate_count++;
                 }
               });
             });
@@ -663,7 +700,8 @@ export default function PptValidator({ apiKey }) {
           numberingErrors: fileNumErrorsCount,
           altTextErrors: fileAltErrorsCount,
           forbiddenErrors: fileForbiddenCount,
-          engKoMixedErrors: fileEngKoMixedCount
+          engKoMixedErrors: fileEngKoMixedCount,
+          duplicateErrors: file_duplicate_count
         });
       }
 
@@ -672,6 +710,7 @@ export default function PptValidator({ apiKey }) {
       setAltTextResults(allAltTexts);
       setForbiddenResults(allForbiddens);
       setEngKoMixedResults(allEngKoMixed);
+      set_duplicate_results(all_duplicates);
       setFileStats(stats);
       setIsValidated(true);
       setActiveResultTab('summary');
@@ -690,7 +729,8 @@ export default function PptValidator({ apiKey }) {
       numberingResults.length === 0 && 
       altTextResults.length === 0 && 
       forbiddenResults.length === 0 &&
-      engKoMixedResults.length === 0
+      engKoMixedResults.length === 0 &&
+      duplicate_results.length === 0
     ) {
       alert('출력할 검증 결과 데이터가 존재하지 않습니다.');
       return;
@@ -771,6 +811,22 @@ export default function PptValidator({ apiKey }) {
       }));
       const engKoMixedSheet = XLSX.utils.json_to_sheet(engKoMixedRows);
       XLSX.utils.book_append_sheet(workbook, engKoMixedSheet, '영한혼용_점검결과');
+    }
+
+    // 6. 동일 단어 중복 시트 데이터 구성
+    if (check_duplicate_words) {
+      const duplicateRows = duplicate_results.map((d, idx) => ({
+        '순번': idx + 1,
+        '대상 파일명': d.fileName,
+        '페이지수': `${d.slideNum} 페이지`,
+        '중복 표현': d.word,
+        '검출 단어': d.duplicateWord,
+        '검출 오류': d.error,
+        '올바른 규칙 가이드': d.guide,
+        '검출 문장(전체)': d.sentence
+      }));
+      const duplicateSheet = XLSX.utils.json_to_sheet(duplicateRows);
+      XLSX.utils.book_append_sheet(workbook, duplicateSheet, '중복단어_점검결과');
     }
 
     // 엑셀 파일 다운로드 실행
@@ -1047,6 +1103,36 @@ export default function PptValidator({ apiKey }) {
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>영어와 한글이 공백 없이 한 단어로 혼용되어 표시된 단어(예: re에이전트) 검출</span>
                 </div>
               </div>
+
+              {/* 6. 동일 단어 중복 검증 */}
+              <div 
+                onClick={() => set_check_duplicate_words(prev => !prev)}
+                style={{ 
+                  background: check_duplicate_words ? 'rgba(249, 115, 22, 0.05)' : 'rgba(255, 255, 255, 0.01)', 
+                  border: check_duplicate_words ? '1px solid rgba(249, 115, 22, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px', 
+                  padding: '12px 16px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={check_duplicate_words} 
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    set_check_duplicate_words(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#f97316' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>동일 단어 중복 검증</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>동일 단어/기호가 연속으로 두 번 기재된 오탈자(예: (ISP)(ISP), 데이터 데이터) 검출</span>
+                </div>
+              </div>
             </div>
 
             <button
@@ -1195,7 +1281,7 @@ TBD
           </div>
 
           {/* 종합 요약 카드 */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '16px' }}>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>검증 파일 수</span>
               <span style={{ fontSize: '24px', fontWeight: 900, color: 'var(--text-primary)' }}>{pptFiles.length}개 파일</span>
@@ -1219,6 +1305,10 @@ TBD
             <div style={{ background: checkEngKoMixed ? 'rgba(99, 102, 241, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkEngKoMixed ? '1px solid rgba(99, 102, 241, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <span style={{ fontSize: '13px', color: checkEngKoMixed ? '#818cf8' : 'var(--text-muted)', fontWeight: 600 }}>영한 혼용 검출 건수</span>
               <span style={{ fontSize: '24px', fontWeight: 900, color: checkEngKoMixed ? '#6366f1' : 'var(--text-muted)' }}>{checkEngKoMixed ? `${engKoMixedResults.length}건` : '비활성'}</span>
+            </div>
+            <div style={{ background: check_duplicate_words ? 'rgba(249, 115, 22, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: check_duplicate_words ? '1px solid rgba(249, 115, 22, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: check_duplicate_words ? '#fb923c' : 'var(--text-muted)', fontWeight: 600 }}>동일 단어 중복 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: check_duplicate_words ? '#f97316' : 'var(--text-muted)' }}>{check_duplicate_words ? `${duplicate_results.length}건` : '비활성'}</span>
             </div>
           </div>
 
@@ -1340,6 +1430,26 @@ TBD
                   🔤 영한 혼용 단어 ({engKoMixedResults.length})
                 </button>
               )}
+              {check_duplicate_words && (
+                <button 
+                  onClick={() => setActiveResultTab('duplicate')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'duplicate' ? 'rgba(249, 115, 22, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'duplicate' ? '#f97316' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  🔁 동일 단어 중복 ({duplicate_results.length})
+                </button>
+              )}
             </div>
 
             {/* 탭 1: 파일별 점검 요약 */}
@@ -1354,6 +1464,7 @@ TBD
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>대체텍스트 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>특정 단어 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>영한 혼용 검출</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>중복 단어 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>종합 상태</th>
                     </tr>
                   </thead>
@@ -1364,7 +1475,8 @@ TBD
                         (checkNumbering ? stat.numberingErrors : 0) +
                         (checkAltText ? stat.altTextErrors : 0) +
                         (checkForbiddenWords ? stat.forbiddenErrors : 0) +
-                        (checkEngKoMixed ? stat.engKoMixedErrors : 0);
+                        (checkEngKoMixed ? stat.engKoMixedErrors : 0) +
+                        (check_duplicate_words ? stat.duplicateErrors : 0);
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }}>
                           <td style={{ padding: '14px 8px', fontWeight: 600 }}>{stat.name}</td>
@@ -1382,6 +1494,9 @@ TBD
                           </td>
                           <td style={{ padding: '14px 8px', color: !checkEngKoMixed ? 'var(--text-muted)' : stat.engKoMixedErrors > 0 ? '#6366f1' : 'var(--text-muted)', fontWeight: 700 }}>
                             {checkEngKoMixed ? (stat.engKoMixedErrors > 0 ? `${stat.engKoMixedErrors}건` : '없음') : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !check_duplicate_words ? 'var(--text-muted)' : stat.duplicateErrors > 0 ? '#f97316' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {check_duplicate_words ? (stat.duplicateErrors > 0 ? `${stat.duplicateErrors}건` : '없음') : '비활성'}
                           </td>
                           <td style={{ padding: '14px 8px' }}>
                             {totalErrors === 0 ? (
@@ -1653,6 +1768,61 @@ TBD
                                   {cIdx < arr.length - 1 && (
                                     <span style={{ background: 'rgba(99, 102, 241, 0.25)', color: '#818cf8', padding: '0 2px', borderRadius: '3px', fontWeight: 700 }}>
                                       {e.word}
+                                    </span>
+                                  )}
+                                </span>
+                              ))}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 탭 7: 동일 단어 중복 검출 목록 */}
+            {activeResultTab === 'duplicate' && (
+              <div style={{ marginTop: '16px' }}>
+                {duplicate_results.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 본문 내에 연속으로 기재된 중복 단어가 검출되지 않았습니다!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>페이지수</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>중복 표현</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>상태</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>검출 문장(하이라이트)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {duplicate_results.map((dup, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={dup.fileName}>
+                              {dup.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {dup.slideNum} 페이지
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#f97316', fontWeight: 700 }}>
+                              {dup.word}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#f59e0b', fontWeight: 700 }}>
+                              {dup.error}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineBreak: 'anywhere' }}>
+                              {dup.sentence.split(dup.word).map((chunk, cIdx, arr) => (
+                                <span key={cIdx}>
+                                  {chunk}
+                                  {cIdx < arr.length - 1 && (
+                                    <span style={{ background: 'rgba(249, 115, 22, 0.25)', color: '#fb923c', padding: '0 2px', borderRadius: '3px', fontWeight: 700 }}>
+                                      {dup.word}
                                     </span>
                                   )}
                                 </span>
