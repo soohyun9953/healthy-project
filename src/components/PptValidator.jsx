@@ -111,6 +111,7 @@ export default function PptValidator({ apiKey }) {
   const [checkEngKoMixed, setCheckEngKoMixed] = useState(true);
   // 추가 옵션: 동일 단어 중복 검증 (스네이크 케이스 규칙 적용)
   const [check_duplicate_words, set_check_duplicate_words] = useState(true);
+  const [checkPageRange, setCheckPageRange] = useState(true);
   
   // 결과 데이터 저장
   const [typoResults, setTypoResults] = useState([]);
@@ -120,7 +121,8 @@ export default function PptValidator({ apiKey }) {
   const [engKoMixedResults, setEngKoMixedResults] = useState([]);
   // 동일 단어 중복 검증 결과 저장 (스네이크 케이스 규칙 적용)
   const [duplicate_results, set_duplicate_results] = useState([]);
-  const [fileStats, setFileStats] = useState([]); // [{ name: '', typos: 0, numberingErrors: 0, altTextErrors: 0, forbiddenErrors: 0, engKoMixedErrors: 0, duplicateErrors: 0 }]
+  const [pageRangeResults, setPageRangeResults] = useState([]);
+  const [fileStats, setFileStats] = useState([]); // [{ name: '', typos: 0, numberingErrors: 0, altTextErrors: 0, forbiddenErrors: 0, engKoMixedErrors: 0, duplicateErrors: 0, startPage: 1, endPage: 1, totalSlides: 1 }]
   
   const [activeResultTab, setActiveResultTab] = useState('summary'); // summary, typo, numbering, altText, forbidden
   const [userDictText, setUserDictText] = useState(() => {
@@ -176,6 +178,7 @@ export default function PptValidator({ apiKey }) {
     setForbiddenResults([]);
     setEngKoMixedResults([]);
     set_duplicate_results([]);
+    setPageRangeResults([]);
     setFileStats([]);
   };
 
@@ -205,8 +208,8 @@ export default function PptValidator({ apiKey }) {
   // PPTX 검증 핵심 프로세스
   const handleValidate = async () => {
     if (pptFiles.length === 0) return;
-    if (!checkTypos && !checkNumbering && !checkAltText && !checkForbiddenWords && !checkEngKoMixed && !check_duplicate_words) {
-      alert('오탈자, 넘버링, 대체텍스트, 특정 단어, 영어/한글 혼용 단어, 동일 단어 중복 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
+    if (!checkTypos && !checkNumbering && !checkAltText && !checkForbiddenWords && !checkEngKoMixed && !check_duplicate_words && !checkPageRange) {
+      alert('오탈자, 넘버링, 대체텍스트, 특정 단어, 영어/한글 혼용 단어, 동일 단어 중복, 페이지 범위 분석 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
       return;
     }
     setIsProcessing(true);
@@ -217,6 +220,7 @@ export default function PptValidator({ apiKey }) {
     const allForbiddens = [];
     const allEngKoMixed = [];
     const all_duplicates = [];
+    const allPageRanges = [];
     const stats = [];
     const userDict = parseUserDictionary();
     const mergedDict = { ...TYPO_DICTIONARY, ...userDict };
@@ -391,6 +395,12 @@ export default function PptValidator({ apiKey }) {
               }
             }
           }
+          allPageRanges.push({
+            fileName: file.name,
+            startPage: 1,
+            endPage: section_files.length,
+            totalSlides: section_files.length
+          });
         } else {
         // 1. 모든 슬라이드 파일 추출 및 정렬
         const slideFiles = Object.keys(zip.files).filter(p => 
@@ -402,6 +412,7 @@ export default function PptValidator({ apiKey }) {
         });
 
         const slideList = []; // 각 슬라이드의 타이틀 정보 및 텍스트 데이터 수집용
+        const detectedPages = []; // 파일별 감지된 페이지 번호 수집용
 
         // 2. 각 슬라이드 XML 해석
         for (let sIdx = 0; sIdx < slideFiles.length; sIdx++) {
@@ -681,8 +692,28 @@ export default function PptValidator({ apiKey }) {
               leftTitle: leftTitle ? leftTitle.text : '',
               rightTitle: rightTitle ? rightTitle.text : ''
             });
+
+            if (rightTitle && rightTitle.text) {
+              const pageMatch = rightTitle.text.match(/(?:Page|P\.|-)?\s*(\d+)\s*(?:-)?$/i);
+              if (pageMatch) {
+                detectedPages.push(parseInt(pageMatch[1], 10));
+              }
+            }
           }
         }
+
+        let startPage = 1;
+        let endPage = slideFiles.length;
+        if (detectedPages.length > 0) {
+          startPage = Math.min(...detectedPages);
+          endPage = Math.max(...detectedPages);
+        }
+        allPageRanges.push({
+          fileName: file.name,
+          startPage,
+          endPage,
+          totalSlides: slideFiles.length
+        });
 
         // 5. 상단 넘버링 규칙 검증 분석
         // 5-1. 좌측 넘버링 시퀀스 검증
@@ -913,7 +944,10 @@ export default function PptValidator({ apiKey }) {
           altTextErrors: fileAltErrorsCount,
           forbiddenErrors: fileForbiddenCount,
           engKoMixedErrors: fileEngKoMixedCount,
-          duplicateErrors: file_duplicate_count
+          duplicateErrors: file_duplicate_count,
+          startPage: allPageRanges[allPageRanges.length - 1]?.startPage || 1,
+          endPage: allPageRanges[allPageRanges.length - 1]?.endPage || 1,
+          totalSlides: allPageRanges[allPageRanges.length - 1]?.totalSlides || 1
         });
       }
 
@@ -923,6 +957,7 @@ export default function PptValidator({ apiKey }) {
       setForbiddenResults(allForbiddens);
       setEngKoMixedResults(allEngKoMixed);
       set_duplicate_results(all_duplicates);
+      setPageRangeResults(allPageRanges);
       setFileStats(stats);
       setIsValidated(true);
       setActiveResultTab('summary');
@@ -942,7 +977,8 @@ export default function PptValidator({ apiKey }) {
       altTextResults.length === 0 && 
       forbiddenResults.length === 0 &&
       engKoMixedResults.length === 0 &&
-      duplicate_results.length === 0
+      duplicate_results.length === 0 &&
+      pageRangeResults.length === 0
     ) {
       alert('출력할 검증 결과 데이터가 존재하지 않습니다.');
       return;
@@ -1039,6 +1075,19 @@ export default function PptValidator({ apiKey }) {
       }));
       const duplicateSheet = XLSX.utils.json_to_sheet(duplicateRows);
       XLSX.utils.book_append_sheet(workbook, duplicateSheet, '중복단어_점검결과');
+    }
+
+    // 7. 페이지 범위 및 수량 분석 시트 데이터 구성
+    if (checkPageRange) {
+      const pageRangeRows = pageRangeResults.map((p, idx) => ({
+        '순번': idx + 1,
+        '파일명': p.fileName,
+        '시작페이지': p.startPage,
+        '최종 페이지': p.endPage,
+        '총 페이지수': p.totalSlides
+      }));
+      const pageRangeSheet = XLSX.utils.json_to_sheet(pageRangeRows);
+      XLSX.utils.book_append_sheet(workbook, pageRangeSheet, '페이지범위_분석결과');
     }
 
     // 엑셀 파일 다운로드 실행
@@ -1345,6 +1394,36 @@ export default function PptValidator({ apiKey }) {
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>동일 단어/기호가 연속으로 두 번 기재된 오탈자(예: (ISP)(ISP), 데이터 데이터) 검출</span>
                 </div>
               </div>
+
+              {/* 7. 페이지 범위 및 수량 분석 */}
+              <div 
+                onClick={() => setCheckPageRange(prev => !prev)}
+                style={{ 
+                  background: checkPageRange ? 'rgba(20, 184, 166, 0.05)' : 'rgba(255, 255, 255, 0.01)', 
+                  border: checkPageRange ? '1px solid rgba(20, 184, 166, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px', 
+                  padding: '12px 16px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={checkPageRange} 
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setCheckPageRange(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#14b8a6' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>페이지 범위 및 수량 분석</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>각 파일의 시작 페이지, 최종 페이지 번호 및 총 페이지수(슬라이드 수) 분석</span>
+                </div>
+              </div>
             </div>
 
             <button
@@ -1493,7 +1572,7 @@ TBD
           </div>
 
           {/* 종합 요약 카드 */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '16px' }}>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>검증 파일 수</span>
               <span style={{ fontSize: '24px', fontWeight: 900, color: 'var(--text-primary)' }}>{pptFiles.length}개 파일</span>
@@ -1521,6 +1600,12 @@ TBD
             <div style={{ background: check_duplicate_words ? 'rgba(249, 115, 22, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: check_duplicate_words ? '1px solid rgba(249, 115, 22, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <span style={{ fontSize: '13px', color: check_duplicate_words ? '#fb923c' : 'var(--text-muted)', fontWeight: 600 }}>동일 단어 중복 건수</span>
               <span style={{ fontSize: '24px', fontWeight: 900, color: check_duplicate_words ? '#f97316' : 'var(--text-muted)' }}>{check_duplicate_words ? `${duplicate_results.length}건` : '비활성'}</span>
+            </div>
+            <div style={{ background: checkPageRange ? 'rgba(20, 184, 166, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkPageRange ? '1px solid rgba(20, 184, 166, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: checkPageRange ? '#2dd4bf' : 'var(--text-muted)', fontWeight: 600 }}>분석 페이지 범위</span>
+              <span style={{ fontSize: '15px', fontWeight: 800, color: checkPageRange ? 'var(--text-primary)' : 'var(--text-muted)', marginTop: '4px' }}>
+                {checkPageRange ? (pageRangeResults.length > 0 ? `${pageRangeResults[0].startPage}p ~ ${pageRangeResults[0].endPage}p` : '분석 완료') : '비활성'}
+              </span>
             </div>
           </div>
 
@@ -1662,6 +1747,26 @@ TBD
                   🔁 동일 단어 중복 ({duplicate_results.length})
                 </button>
               )}
+              {checkPageRange && (
+                <button 
+                  onClick={() => setActiveResultTab('pageRange')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'pageRange' ? 'rgba(20, 184, 166, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'pageRange' ? '#14b8a6' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  📄 페이지 범위 분석 ({pageRangeResults.length})
+                </button>
+              )}
             </div>
 
             {/* 탭 1: 파일별 점검 요약 */}
@@ -1677,6 +1782,9 @@ TBD
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>특정 단어 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>영한 혼용 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>중복 단어 검출</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>시작페이지</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>최종 페이지</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>총 페이지수</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>종합 상태</th>
                     </tr>
                   </thead>
@@ -1709,6 +1817,15 @@ TBD
                           </td>
                           <td style={{ padding: '14px 8px', color: !check_duplicate_words ? 'var(--text-muted)' : stat.duplicateErrors > 0 ? '#f97316' : 'var(--text-muted)', fontWeight: 700 }}>
                             {check_duplicate_words ? (stat.duplicateErrors > 0 ? `${stat.duplicateErrors}건` : '없음') : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !checkPageRange ? 'var(--text-muted)' : 'var(--text-secondary)', fontWeight: 600 }}>
+                            {checkPageRange ? `${stat.startPage}p` : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !checkPageRange ? 'var(--text-muted)' : 'var(--text-secondary)', fontWeight: 600 }}>
+                            {checkPageRange ? `${stat.endPage}p` : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !checkPageRange ? 'var(--text-muted)' : 'var(--text-secondary)', fontWeight: 600 }}>
+                            {checkPageRange ? `${stat.totalSlides}장` : '비활성'}
                           </td>
                           <td style={{ padding: '14px 8px' }}>
                             {totalErrors === 0 ? (
@@ -2039,6 +2156,52 @@ TBD
                                   )}
                                 </span>
                               ))}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 탭 8: 페이지 범위 분석 결과 목록 */}
+            {activeResultTab === 'pageRange' && (
+              <div style={{ marginTop: '16px' }}>
+                {pageRangeResults.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 페이지 범위 분석 데이터가 없습니다. 먼저 파일 검증을 진행해 주세요.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '220px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>시작페이지</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>최종 페이지</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>총 페이지수</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>참고 사항</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pageRangeResults.map((p, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '220px' }} title={p.fileName}>
+                              {p.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#14b8a6', fontWeight: 700 }}>
+                              {p.startPage} 페이지
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#14b8a6', fontWeight: 700 }}>
+                              {p.endPage} 페이지
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-primary)', fontWeight: 700 }}>
+                              {p.totalSlides} 장 (슬라이드 수)
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                              시작 번호 {p.startPage}p부터 최종 번호 {p.endPage}p까지 스캔되었으며, 물리적인 총 수량은 {p.totalSlides}장으로 감지되었습니다.
                             </td>
                           </tr>
                         ))}
