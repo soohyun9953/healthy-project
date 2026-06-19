@@ -703,11 +703,32 @@ export default function PptValidator({ apiKey }) {
         }
 
         let startPage = 1;
-        let endPage = slideFiles.length;
-        if (detectedPages.length > 0) {
-          startPage = Math.min(...detectedPages);
-          endPage = Math.max(...detectedPages);
+        try {
+          const presXmlStr = await zip.file('ppt/presentation.xml').async('text');
+          const presParser = new DOMParser();
+          const presDoc = presParser.parseFromString(presXmlStr, 'application/xml');
+          let presEl = presDoc.getElementsByTagName('p:presentation')[0] || presDoc.getElementsByTagName('presentation')[0];
+          if (!presEl) {
+            const allEls = presDoc.getElementsByTagName('*');
+            for (let i = 0; i < allEls.length; i++) {
+              const el = allEls[i];
+              const localName = el.localName || el.tagName.split(':').pop();
+              if (localName === 'presentation') {
+                presEl = el;
+                break;
+              }
+            }
+          }
+          if (presEl) {
+            const attrVal = presEl.getAttribute('firstSlideNum');
+            if (attrVal !== null && attrVal !== undefined) {
+              startPage = parseInt(attrVal, 10);
+            }
+          }
+        } catch (presErr) {
+          console.warn('ppt/presentation.xml 파싱 실패. 기본값 1 적용:', presErr);
         }
+        const endPage = startPage + slideFiles.length - 1;
         allPageRanges.push({
           fileName: file.name,
           startPage,
@@ -945,9 +966,9 @@ export default function PptValidator({ apiKey }) {
           forbiddenErrors: fileForbiddenCount,
           engKoMixedErrors: fileEngKoMixedCount,
           duplicateErrors: file_duplicate_count,
-          startPage: allPageRanges[allPageRanges.length - 1]?.startPage || 1,
-          endPage: allPageRanges[allPageRanges.length - 1]?.endPage || 1,
-          totalSlides: allPageRanges[allPageRanges.length - 1]?.totalSlides || 1
+          startPage: allPageRanges[allPageRanges.length - 1]?.startPage ?? 1,
+          endPage: allPageRanges[allPageRanges.length - 1]?.endPage ?? 1,
+          totalSlides: allPageRanges[allPageRanges.length - 1]?.totalSlides ?? 1
         });
       }
 
