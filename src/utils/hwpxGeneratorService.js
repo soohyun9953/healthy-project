@@ -252,6 +252,8 @@ export async function generateReportFromTemplate(hwpxTemplateFile, dataFiles, ap
             } else {
                 // 두 번째 단락부터는 기존 문단 노드를 복제(Clone)하여 스타일에 어긋나지 않게 추가
                 targetNode = originalNode.cloneNode(true);
+                // 복제본의 중복 고유 ID 속성 제거 (한글 프로그램 '파일 손상' 에러 방지)
+                removeAllIdAttributes(targetNode);
                 // 복제된 노드를 이전 노드 바로 다음에 삽입
                 originalNode.parentNode.insertBefore(targetNode, lastInsertedNode.nextSibling);
                 lastInsertedNode = targetNode;
@@ -300,4 +302,27 @@ export async function generateReportFromTemplate(hwpxTemplateFile, dataFiles, ap
     // 다운로드 결과를 트래킹하기 위해 치환 건수 메타데이터 주입
     finalBuffer.fusedCount = replaceCount;
     return finalBuffer;
+}
+
+/**
+ * DOM 노드와 그 하위 자식들의 모든 'id' 속성을 제거하는 재귀 헬퍼 함수
+ */
+function removeAllIdAttributes(node) {
+    if (!node || node.nodeType !== 1) return;
+    
+    // attributes 배열을 복사하여 순회하며 localName이 'id'인 속성 완전 제거
+    const attrs = Array.from(node.attributes);
+    for (let i = 0; i < attrs.length; i++) {
+        if (attrs[i].localName === 'id') {
+            node.removeAttributeNode(attrs[i]);
+        }
+    }
+    
+    // 자식 엘리먼트들에 대해 재귀 호출
+    const children = node.children;
+    if (children) {
+        for (let i = 0; i < children.length; i++) {
+            removeAllIdAttributes(children[i]);
+        }
+    }
 }
