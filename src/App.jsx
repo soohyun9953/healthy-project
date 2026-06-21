@@ -87,7 +87,7 @@ function App() {
       'law-mcp': 'AI 법률 자문(로컬 RAG)',
       erd: 'AI ERD 설계',
       ppt: 'PPT 생성(표준산출물)',
-      'hwpx-report': 'HWPX 생성(표준보고서)',
+      'hwpx-report': '(작업중)HWPX생성(표준보고서)',
       library: '참고자료 라이브러리',
       meeting: 'AI 회의록 생성',
       aippt: '(작업중)AI PPT 디자이너',
@@ -144,7 +144,6 @@ function App() {
 
   const tabs = [
     { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316' },
-    { id: 'hwpx-report', label: 'HWPX 생성(표준보고서)', icon: FileText, color: '#10b981' },
     { id: 'ppt-verify', label: 'PPT 검증(표준산출물)', icon: ShieldAlert, color: '#e11d48' },
     { id: 'main', label: 'AI 산출물 검증', icon: Shield, color: 'var(--accent-blue)' },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)' },
@@ -156,6 +155,7 @@ function App() {
     { id: 'aippt', label: '(작업중)AI PPT 디자이너', icon: Presentation, color: '#ec4899' },
     { id: 'rag', label: '프로젝트 RAG 지식베이스', icon: Database, color: 'var(--accent-blue)' },
     { id: 'ismpda', label: '(작업중)ISMP DA 검증 대시보드', icon: Sliders, color: 'var(--accent-purple)' },
+    { id: 'hwpx-report', label: '(작업중)HWPX생성(표준보고서)', icon: FileText, color: '#10b981' },
   ];
 
   const activeTabData = tabs.find(t => t.id === activeTab);
