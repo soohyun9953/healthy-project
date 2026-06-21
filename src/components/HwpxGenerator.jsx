@@ -13,6 +13,10 @@ function HwpxGenerator({ apiKey }) {
   const [generatedBlob, setGeneratedBlob] = useState(null);
   const [selectedModel, setSelectedModel] = useState('auto');
 
+  // 드래그 상태 추가
+  const [isTemplateDragActive, setIsTemplateDragActive] = useState(false);
+  const [isMaterialsDragActive, setIsMaterialsDragActive] = useState(false);
+
   const templateInputRef = useRef(null);
   const materialsInputRef = useRef(null);
 
@@ -54,6 +58,71 @@ function HwpxGenerator({ apiKey }) {
       return combined;
     });
     setIsGenerated(false);
+  };
+
+  // 템플릿 드래그앤드롭 핸들러
+  const handleTemplateDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setIsTemplateDragActive(true);
+    } else if (e.type === "dragleave") {
+      setIsTemplateDragActive(false);
+    }
+  };
+
+  const handleTemplateDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsTemplateDragActive(false);
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      if (!file.name.endsWith('.hwpx')) {
+        alert('템플릿 양식은 반드시 HWPX (.hwpx) 파일이어야 합니다.');
+        return;
+      }
+      setTemplateFile(file);
+      setIsGenerated(false);
+    }
+  };
+
+  // 참고자료 드래그앤드롭 핸들러
+  const handleMaterialsDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setIsMaterialsDragActive(true);
+    } else if (e.type === "dragleave") {
+      setIsMaterialsDragActive(false);
+    }
+  };
+
+  const handleMaterialsDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsMaterialsDragActive(false);
+    const files = Array.from(e.dataTransfer.files);
+    const validFiles = files.filter(file => {
+      const name = file.name.toLowerCase();
+      return name.endsWith('.pptx') || name.endsWith('.hwpx') || name.endsWith('.md') || name.endsWith('.txt');
+    });
+
+    if (validFiles.length !== files.length) {
+      alert('지원되지 않는 포맷의 파일은 제외되었습니다. (PPTX, HWPX, MD, TXT만 가능)');
+    }
+
+    if (validFiles.length > 0) {
+      setMaterialFiles(prev => {
+        const combined = [...prev];
+        validFiles.forEach(file => {
+          if (!combined.some(c => c.name === file.name && c.size === file.size)) {
+            combined.push(file);
+          }
+        });
+        return combined;
+      });
+      setIsGenerated(false);
+    }
   };
 
   const removeMaterialFile = (index) => {
@@ -157,8 +226,13 @@ function HwpxGenerator({ apiKey }) {
             
             <div 
               onClick={() => templateInputRef.current?.click()}
+              onDragEnter={handleTemplateDrag}
+              onDragOver={handleTemplateDrag}
+              onDragLeave={handleTemplateDrag}
+              onDrop={handleTemplateDrop}
               style={{ 
-                border: '2px dashed var(--panel-border)', 
+                border: isTemplateDragActive ? '2px dashed #10b981' : '2px dashed var(--panel-border)', 
+                background: isTemplateDragActive ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
                 borderRadius: '12px', 
                 padding: '30px 20px', 
                 textAlign: 'center', 
@@ -168,7 +242,8 @@ function HwpxGenerator({ apiKey }) {
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '10px'
+                gap: '10px',
+                transform: isTemplateDragActive ? 'scale(1.01)' : 'none'
               }}
               className="interactive-card"
             >
@@ -198,8 +273,13 @@ function HwpxGenerator({ apiKey }) {
             
             <div 
               onClick={() => materialsInputRef.current?.click()}
+              onDragEnter={handleMaterialsDrag}
+              onDragOver={handleMaterialsDrag}
+              onDragLeave={handleMaterialsDrag}
+              onDrop={handleMaterialsDrop}
               style={{ 
-                border: '2px dashed var(--panel-border)', 
+                border: isMaterialsDragActive ? '2px dashed var(--accent-blue)' : '2px dashed var(--panel-border)', 
+                background: isMaterialsDragActive ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
                 borderRadius: '12px', 
                 padding: '30px 20px', 
                 textAlign: 'center', 
@@ -209,7 +289,8 @@ function HwpxGenerator({ apiKey }) {
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '10px'
+                gap: '10px',
+                transform: isMaterialsDragActive ? 'scale(1.01)' : 'none'
               }}
               className="interactive-card"
             >
