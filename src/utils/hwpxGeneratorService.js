@@ -285,6 +285,14 @@ export async function generateReportFromTemplate(hwpxTemplateFile, dataFiles, ap
     const updatedXmlStr = serializer.serializeToString(xmlDoc);
     templateZip.file(section0Path, updatedXmlStr);
 
+    // 디지털 서명 무결성 검증 우회: 본문 내용 치환으로 인한 '문서 손상/변조' 경고를 방지하기 위해 
+    // META-INF 디렉토리 및 하위 서명 파일들을 완전히 제거합니다.
+    Object.keys(templateZip.files).forEach(filePath => {
+        if (filePath.startsWith('META-INF/') || filePath === 'META-INF') {
+            templateZip.remove(filePath);
+        }
+    });
+
     // HWPX 파일 압축 빌드
     const finalBuffer = await templateZip.generateAsync({ type: 'blob' });
     if (onProgress) onProgress("보고서 HWPX 파일 다운로드 준비 완료!");
