@@ -10,6 +10,7 @@ import AiPptDesigner from './components/AiPptDesigner';
 import RagKnowledgeBase from './components/RagKnowledgeBase';
 import IsmpDaDashboard from './components/IsmpDaDashboard';
 import PptValidator from './components/PptValidator';
+import HwpxGenerator from './components/HwpxGenerator';
 import { 
   Shield, 
   ShieldAlert,
@@ -86,6 +87,7 @@ function App() {
       'law-mcp': 'AI 법률 자문(로컬 RAG)',
       erd: 'AI ERD 설계',
       ppt: 'PPT 생성(표준산출물)',
+      'hwpx-report': 'HWPX 생성(표준보고서)',
       library: '참고자료 라이브러리',
       meeting: 'AI 회의록 생성',
       aippt: '(작업중)AI PPT 디자이너',
@@ -142,6 +144,7 @@ function App() {
 
   const tabs = [
     { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316' },
+    { id: 'hwpx-report', label: 'HWPX 생성(표준보고서)', icon: FileText, color: '#10b981' },
     { id: 'ppt-verify', label: 'PPT 검증(표준산출물)', icon: ShieldAlert, color: '#e11d48' },
     { id: 'main', label: 'AI 산출물 검증', icon: Shield, color: 'var(--accent-blue)' },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)' },
@@ -421,6 +424,7 @@ function App() {
 
         <div className="content-body">
           {activeTab === 'main' && <DocumentValidator apiKey={apiKey} />}
+          {activeTab === 'hwpx-report' && <HwpxGenerator apiKey={apiKey} />}
           {activeTab === 'ismpda' && <IsmpDaDashboard />}
           {activeTab === 'typo' && <TypoValidator apiKey={apiKey} />}
           {activeTab === 'law' && <LawConsultant apiKey={apiKey} isMcpMode={false} />}
