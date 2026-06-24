@@ -319,7 +319,9 @@ export default function AiPptDesigner({ apiKey }) {
                     </div>
                     <div>
                         <h2 style={{ margin: 0, fontSize: '24px', color: 'var(--text-primary)', letterSpacing: '-0.5px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            AI PPT 디자이너 <span style={{ padding: '4px 8px', background: 'rgba(236, 72, 153, 0.15)', color: '#ec4899', fontSize: '12px', borderRadius: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>BETA</span>
+                            AI PPT 디자이너
+                            <Sparkles size={18} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))' }} />
+                            <span style={{ padding: '4px 8px', background: 'rgba(236, 72, 153, 0.15)', color: '#ec4899', fontSize: '12px', borderRadius: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>BETA</span>
                         </h2>
                         <p style={{ margin: '6px 0 0', fontSize: '14.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                             아무 텍스트나 기존 PPT 파일을 넣으세요. AI가 내용을 구조화하고 의미 전달이 명확한 프리미엄 디자인 PPT로 자동 재구성해 드립니다.

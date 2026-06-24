@@ -888,7 +888,10 @@ export default function PptGenerator() {
                         <Presentation size={24} color="var(--accent-blue)" />
                     </div>
                     <div>
-                        <h2 style={{ margin: 0, fontSize: '20px', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>PPT 스마트 편집기</h2>
+                        <h2 style={{ margin: 0, fontSize: '20px', color: 'var(--text-primary)', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            PPT 스마트 편집기
+                            <Sparkles size={18} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))' }} />
+                        </h2>
                         <p style={{ margin: '4px 0 0', fontSize: '13.5px', color: 'var(--text-secondary)' }}>
                             데이터 매핑을 통한 PPT 생성 또는 텍스트 서식 일괄 변경 기능을 제공합니다.
                         </p>
@@ -1139,7 +1142,7 @@ export default function PptGenerator() {
                                 {isGenerating ? (
                                     <><Loader2 size={20} className="animate-spin" /> 파워포인트 문서 자동 치환 및 생성 중...</>
                                 ) : (
-                                    <><Play size={20} fill={(!excelFile || !pptTemplate) ? 'none' : 'currentColor'} /> 엑셀 ↔ PPT 자동 매핑 및 파일 변환 시작</>
+                                    <><Sparkles size={20} /> 엑셀 ↔ PPT 자동 매핑 및 파일 변환 시작</>
                                 )}
                             </button>
                         </div>
@@ -1623,7 +1626,7 @@ export default function PptGenerator() {
                                 {isProcessingBatch ? (
                                     <><Loader2 size={20} className="animate-spin" /> 폴더에 순차적으로 적용 및 저장 중...</>
                                 ) : (
-                                    <><Play size={20} /> 저장할 폴더 선택 및 일괄 편집 실행</>
+                                    <><Sparkles size={20} /> 저장할 폴더 선택 및 일괄 편집 실행</>
                                 )}
                             </button>
                             
@@ -1958,7 +1961,7 @@ export default function PptGenerator() {
                                 {isProcessingAnimation ? (
                                     <><Loader2 size={22} className="animate-spin" /> 전 슬라이드 객체 분석 및 애니메이션 주입 중...</>
                                 ) : (
-                                    <><Play size={22} /> 스마트 애니메이션 적용 및 저장</>
+                                    <><Sparkles size={22} /> 스마트 애니메이션 적용 및 저장</>
                                 )}
                             </button>
                         </div>

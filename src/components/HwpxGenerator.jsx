@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { FileText, Upload, RefreshCw, CheckCircle2, ChevronRight, HelpCircle, AlertCircle, FileSpreadsheet, Eye, Play } from 'lucide-react';
+import { FileText, Upload, RefreshCw, CheckCircle2, ChevronRight, HelpCircle, AlertCircle, FileSpreadsheet, Eye, Play, Sparkles } from 'lucide-react';
 import { generateReportFromTemplate } from '../utils/hwpxGeneratorService.js';
 import { FALLBACK_MODELS } from '../utils/geminiModels.js';
 
@@ -194,6 +194,7 @@ function HwpxGenerator({ apiKey }) {
         <div>
           <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '22px', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
             <FileText size={28} color="#10b981" /> HWPX 생성 (표준보고서)
+            <Sparkles size={18} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))' }} />
           </h2>
           <p style={{ margin: '8px 0 0 0', fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
             HWPX 샘플 양식 보고서와 풍부한 참고 자료(PPTX, HWPX, MD 등)를 바탕으로, 스타일 서식을 그대로 유지한 채 보고서를 자동 완성합니다.<br />
@@ -426,7 +427,7 @@ function HwpxGenerator({ apiKey }) {
                     transition: 'all 0.3s ease'
                   }}
                 >
-                  <Play size={18} /> 보고서 생성 및 조립 실행
+                  <Sparkles size={18} /> 보고서 생성 및 조립 실행
                 </button>
               )}
             </div>

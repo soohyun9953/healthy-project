@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, FileText, Database, Info, ExternalLink, ChevronRight, FileType, Clock, HardDrive, Filter, RefreshCw, Loader2, Send, Bot, User, MessageSquare, Upload, Plus, Trash2, Copy, Check } from 'lucide-react';
+import { Search, FileText, Database, Info, ExternalLink, ChevronRight, FileType, Clock, HardDrive, Filter, RefreshCw, Loader2, Send, Bot, User, MessageSquare, Upload, Plus, Trash2, Copy, Check, Sparkles } from 'lucide-react';
 import { loadRagData, searchRag } from '../utils/ragService';
 import { askRagQuestion } from '../llmAnalyzer';
 import { processFile } from '../utils/fileExtractor';
@@ -249,7 +249,10 @@ const RagKnowledgeBase = ({ apiKey }) => {
                         <Database size={28} color="var(--accent-blue)" />
                     </div>
                     <div>
-                        <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>프로젝트 RAG 지식베이스</h2>
+                        <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            프로젝트 RAG 지식베이스
+                            <Sparkles size={16} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))' }} />
+                        </h2>
                         <p style={{ margin: '4px 0 0', fontSize: '14px', color: 'var(--text-secondary)' }}>데스크탑 산출물 폴더 기반 인덱싱 데이터 ({stats.count}개 파일, {stats.size}MB)</p>
                     </div>
                 </div>
@@ -555,7 +558,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                                     transition: 'all 0.2s'
                                                 }}
                                             >
-                                                <Send size={20} />
+                                                <Sparkles size={20} />
                                             </button>
                                         </div>
                                     </div>

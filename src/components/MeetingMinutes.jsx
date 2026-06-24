@@ -368,7 +368,10 @@ export default function MeetingMinutes({ apiKey }) {
           <Mic size={20} color="white" />
         </div>
         <div>
-          <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>AI 회의록 생성기</h2>
+          <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            AI 회의록 생성기
+            <Sparkles size={16} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))' }} />
+          </h2>
           <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>음성 파일 업로드 → 화자 분류 → 결정사항·액션아이템 자동 추출</p>
         </div>
       </div>

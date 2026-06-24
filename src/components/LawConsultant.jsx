@@ -190,8 +190,9 @@ function LawConsultant({ apiKey, isMcpMode = false }) {
       <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
         {isMcpMode ? <Scale size={24} color="var(--accent-purple)" /> : <Sparkles size={24} color="var(--success-color)" />}
         <div>
-          <h2 style={{ margin: 0, fontSize: '18px', color: 'var(--text-primary)' }}>
+          <h2 style={{ margin: 0, fontSize: '18px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {isMcpMode ? 'AI 법률/규정 자문 (로컬 RAG)' : 'AI 법률 자문(제미나이)'}
+            <Sparkles size={16} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))' }} />
           </h2>
           <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
             {isMcpMode ? '내부 벡터 DB 기반 실무 검토 및 오프라인 해설 지원' : '실시간 검색 없는 Gemini 내부 지식 기반 빠른 해설'}
@@ -325,7 +326,7 @@ function LawConsultant({ apiKey, isMcpMode = false }) {
                     display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, fontSize: '13px', transition: 'all 0.2s'
                 }}
             >
-                <Send size={16} /> 질문하기
+                <Sparkles size={16} /> 질문하기
             </button>
         </div>
         <p style={{ margin: '8px 0 0 4px', fontSize: '11px', color: 'var(--text-secondary)' }}>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Database, Download, FileText, Upload, Loader2, Play, CheckCircle2, AlertCircle, Info, Trash2, X, ChevronDown, Code2, BarChart3, BookOpen, Eye, Copy, Check, FileSpreadsheet, Maximize2 } from 'lucide-react';
+import { Database, Download, FileText, Upload, Loader2, Play, CheckCircle2, AlertCircle, Info, Trash2, X, ChevronDown, Code2, BarChart3, BookOpen, Eye, Copy, Check, FileSpreadsheet, Maximize2, Sparkles } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import mermaid from 'mermaid';
 import { analyzeERDWithLLM } from '../erdAnalyzer';
@@ -778,7 +778,10 @@ const ErdGenerator = ({ apiKey }) => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <Database size={20} color="var(--accent-purple)" />
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>AI 데이터베이스(ERD) 설계</h3>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                AI 데이터베이스(ERD) 설계
+                <Sparkles size={16} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))' }} />
+              </h3>
             </div>
             {(inputText || fileName) && (
               <button onClick={handleReset} className="interactive"
@@ -873,7 +876,7 @@ const ErdGenerator = ({ apiKey }) => {
               ) : cooldown > 0 ? (
                 <AlertCircle size={20} />
               ) : (
-                <Play size={20} fill="currentColor" />
+                <Sparkles size={20} />
               )}
               {isAnalyzing && !result
                 ? progressMsg || 'AI 분석 중...' 
@@ -897,7 +900,7 @@ const ErdGenerator = ({ apiKey }) => {
                   transition: 'all 0.3s ease',
                   boxShadow: (isAnalyzing || !feedback.trim() || cooldown > 0) ? 'none' : '0 8px 20px rgba(168,85,247,0.2)'
                 }}>
-                {isAnalyzing ? <Loader2 size={20} className="animate-spin" /> : <Play size={20} fill="currentColor" />}
+                {isAnalyzing ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
                 {isAnalyzing ? progressMsg || '요청 반영 중...' : '추가 요청사항 반영하기'}
               </button>
             )}

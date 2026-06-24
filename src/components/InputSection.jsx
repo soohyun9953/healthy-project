@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Target, FileText, Play, Loader2, Upload, X, ClipboardList, AlertCircle, FileSpreadsheet, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { Target, FileText, Play, Loader2, Upload, X, ClipboardList, AlertCircle, FileSpreadsheet, ChevronLeft, ChevronRight, Trash2, Sparkles } from 'lucide-react';
 import { processFile, ALL_ACCEPT, getFileExtension, classifyFile } from '../utils/fileExtractor';
 
 // ── 파일 타입 아이콘/라벨 ──────────────────────────────────────
@@ -504,7 +504,7 @@ export default function InputSection({ onAnalyze, isAnalyzing, isTypoMode = fals
                     </>
                 ) : (
                     <>
-                        <Play size={22} fill="currentColor" />
+                        <Sparkles size={22} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))' }} />
                         {isTypoMode ? '문서 품질 정밀 점검 시작' : '엄격한 AI 검증 시작'}
                     </>
                 )}

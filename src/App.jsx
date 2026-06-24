@@ -40,7 +40,8 @@ import {
   EyeOff,
   Sun,
   Moon,
-  Sliders
+  Sliders,
+  Sparkles
 } from 'lucide-react';
 import { processFile } from './utils/fileExtractor';
 
@@ -143,19 +144,19 @@ function App() {
   }, []);
 
   const tabs = [
-    { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316' },
-    { id: 'ppt-verify', label: 'PPT 검증(표준산출물)', icon: ShieldAlert, color: '#e11d48' },
-    { id: 'main', label: 'AI 산출물 검증', icon: Shield, color: 'var(--accent-blue)' },
-    { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)' },
-    { id: 'law', label: 'AI 법률 자문(제미나이)', icon: MessageSquare, color: 'var(--success-color)' },
-    { id: 'law-mcp', label: 'AI 법률 자문(로컬 RAG)', icon: MessageSquare, color: 'var(--accent-purple)' },
-    { id: 'erd', label: 'AI ERD 설계', icon: Database, color: 'var(--warning-color)' },
-    { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6' },
-    { id: 'library', label: '참고자료 라이브러리', icon: Activity, color: '#64748b' },
-    { id: 'aippt', label: '(작업중)AI PPT 디자이너', icon: Presentation, color: '#ec4899' },
-    { id: 'rag', label: '프로젝트 RAG 지식베이스', icon: Database, color: 'var(--accent-blue)' },
-    { id: 'ismpda', label: '(작업중)ISMP DA 검증 대시보드', icon: Sliders, color: 'var(--accent-purple)' },
-    { id: 'hwpx-report', label: '(작업중)HWPX생성(표준보고서)', icon: FileText, color: '#10b981' },
+    { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316', useGemini: true },
+    { id: 'ppt-verify', label: 'PPT 검증(표준산출물)', icon: ShieldAlert, color: '#e11d48', useGemini: false },
+    { id: 'main', label: 'AI 산출물 검증', icon: Shield, color: 'var(--accent-blue)', useGemini: true },
+    { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
+    { id: 'law', label: 'AI 법률 자문(제미나이)', icon: MessageSquare, color: 'var(--success-color)', useGemini: true },
+    { id: 'law-mcp', label: 'AI 법률 자문(로컬 RAG)', icon: MessageSquare, color: 'var(--accent-purple)', useGemini: true },
+    { id: 'erd', label: 'AI ERD 설계', icon: Database, color: 'var(--warning-color)', useGemini: true },
+    { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6', useGemini: true },
+    { id: 'library', label: '참고자료 라이브러리', icon: Activity, color: '#64748b', useGemini: false },
+    { id: 'aippt', label: '(작업중)AI PPT 디자이너', icon: Presentation, color: '#ec4899', useGemini: true },
+    { id: 'rag', label: '프로젝트 RAG 지식베이스', icon: Database, color: 'var(--accent-blue)', useGemini: true },
+    { id: 'ismpda', label: '(작업중)ISMP DA 검증 대시보드', icon: Sliders, color: 'var(--accent-purple)', useGemini: false },
+    { id: 'hwpx-report', label: '(작업중)HWPX생성(표준보고서)', icon: FileText, color: '#10b981', useGemini: true },
   ];
 
   const activeTabData = tabs.find(t => t.id === activeTab);
@@ -210,10 +211,36 @@ function App() {
                   });
                 }}
               >
-                <div className="nav-icon-wrapper" style={{ color: isActive ? tab.color : 'inherit' }}>
+                <div className="nav-icon-wrapper" style={{ color: isActive ? tab.color : 'inherit', position: 'relative' }}>
                   <Icon size={20} />
+                  {tab.useGemini && (
+                    <Sparkles 
+                      size={10} 
+                      style={{ 
+                        position: 'absolute', 
+                        top: '-4px', 
+                        right: '-4px', 
+                        color: '#38bdf8',
+                        filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.7))'
+                      }} 
+                    />
+                  )}
                 </div>
-                {!isSidebarCollapsed && <span>{tab.label}</span>}
+                {!isSidebarCollapsed && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {tab.label}
+                    {tab.useGemini && (
+                      <Sparkles 
+                        size={13} 
+                        style={{ 
+                          color: '#38bdf8', 
+                          filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))',
+                          flexShrink: 0
+                        }} 
+                      />
+                    )}
+                  </span>
+                )}
                 {isActive && !isSidebarCollapsed && <div className="active-indicator" style={{ backgroundColor: tab.color }} />}
               </button>
             );
@@ -230,10 +257,30 @@ function App() {
             <button className="mobile-menu-btn" onClick={() => setIsMobileMenuOpen(true)}>
               <Menu size={24} />
             </button>
-            <div className="breadcrumb">
+            <div className="breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span className="breadcrumb-parent">Validator Space</span>
               <span className="breadcrumb-separator">/</span>
-              <span className="breadcrumb-current">{activeTabData?.label}</span>
+              <span className="breadcrumb-current" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {activeTabData?.label}
+                {activeTabData?.useGemini && (
+                  <span style={{ 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    gap: '4px', 
+                    fontSize: '10px', 
+                    fontWeight: 700, 
+                    color: '#38bdf8', 
+                    background: 'rgba(56, 189, 248, 0.1)', 
+                    border: '1px solid rgba(56, 189, 248, 0.25)', 
+                    padding: '2px 8px', 
+                    borderRadius: '12px',
+                    marginLeft: '6px',
+                    filter: 'drop-shadow(0 0 1px rgba(56, 189, 248, 0.2))'
+                  }}>
+                    <Sparkles size={10} /> Gemini AI
+                  </span>
+                )}
+              </span>
             </div>
           </div>
 
