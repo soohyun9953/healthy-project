@@ -112,9 +112,11 @@ export default function PptValidator({ apiKey }) {
   // 추가 옵션: 동일 단어 중복 검증 (스네이크 케이스 규칙 적용)
   const [check_duplicate_words, set_check_duplicate_words] = useState(true);
   const [checkPageRange, setCheckPageRange] = useState(true);
+  const [checkMacImages, setCheckMacImages] = useState(true);
   
   // 결과 데이터 저장
   const [typoResults, setTypoResults] = useState([]);
+  const [macImageResults, setMacImageResults] = useState([]);
   const [numberingResults, setNumberingResults] = useState([]);
   const [altTextResults, setAltTextResults] = useState([]);
   const [forbiddenResults, setForbiddenResults] = useState([]);
@@ -179,6 +181,7 @@ export default function PptValidator({ apiKey }) {
     setEngKoMixedResults([]);
     set_duplicate_results([]);
     setPageRangeResults([]);
+    setMacImageResults([]);
     setFileStats([]);
   };
 
@@ -221,6 +224,7 @@ export default function PptValidator({ apiKey }) {
     const allEngKoMixed = [];
     const all_duplicates = [];
     const allPageRanges = [];
+    const allMacImageErrors = [];
     const stats = [];
     const userDict = parseUserDictionary();
     const mergedDict = { ...TYPO_DICTIONARY, ...userDict };
@@ -233,6 +237,7 @@ export default function PptValidator({ apiKey }) {
         let fileForbiddenCount = 0;
         let fileEngKoMixedCount = 0;
         let file_duplicate_count = 0;
+        let fileMacImageCount = 0;
 
         const arrayBuffer = await file.arrayBuffer();
         const zip = await JSZip.loadAsync(arrayBuffer);
@@ -411,6 +416,10 @@ export default function PptValidator({ apiKey }) {
           return numA - numB;
         });
 
+        // 미디어 리소스 목록 추출 (맥 이미지 누락 대조용)
+        const mediaFiles = Object.keys(zip.files).filter(p => p.startsWith('ppt/media/'));
+        const mediaFilesLower = mediaFiles.map(m => m.toLowerCase());
+ 
         const slideList = []; // 각 슬라이드의 타이틀 정보 및 텍스트 데이터 수집용
         const detectedPages = []; // 파일별 감지된 페이지 번호 수집용
 
@@ -667,6 +676,118 @@ export default function PptValidator({ apiKey }) {
           // 4. 슬라이드 상단 타이틀 수집 및 넘버링 분류 준비
           // 보통 상단 타이틀은 Y 좌표가 약 1,300,000 EMU 이하인 개체에 해당
           // 전체 슬라이드 X 중앙선은 대략 6,000,000 EMU
+          // 3-6. 맥 이미지 누락 검증 수행
+          if (checkMacImages) {
+            const slideRelsPath = slidePath.replace('ppt/slides/slide', 'ppt/slides/_rels/slide') + '.rels';
+            let relsMap = {};
+            if (zip.files[slideRelsPath]) {
+              try {
+                const relsXmlStr = await zip.file(slideRelsPath).async('text');
+                const relsDoc = parser.parseFromString(relsXmlStr, 'application/xml');
+                const relationships = relsDoc.getElementsByTagName('Relationship');
+                for (let rIdx = 0; rIdx < relationships.length; rIdx++) {
+                  const rel = relationships[rIdx];
+                  const rId = rel.getAttribute('Id');
+                  const target = rel.getAttribute('Target');
+                  const type = rel.getAttribute('Type');
+                  relsMap[rId] = { target, type };
+                }
+              } catch (relsErr) {
+                console.warn(`${slideRelsPath} 관계 파일 파싱 실패:`, relsErr);
+              }
+            }
+
+            const blipNodes = xmlDoc.getElementsByTagName('*');
+            const blips = [];
+            for (let bIdx = 0; bIdx < blipNodes.length; bIdx++) {
+              const bNode = blipNodes[bIdx];
+              const bName = bNode.localName || bNode.tagName.split(':').pop();
+              if (bName === 'blip') {
+                let rEmbed = bNode.getAttribute('r:embed') || bNode.getAttribute('embed') || bNode.getAttribute('r:link') || bNode.getAttribute('link');
+                if (!rEmbed) {
+                  const embedAttr = bNode.getAttributeNodeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed') || 
+                                    bNode.getAttributeNodeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'link');
+                  if (embedAttr) rEmbed = embedAttr.value;
+                }
+                if (rEmbed) {
+                  blips.push(rEmbed);
+                }
+              }
+            }
+
+            blips.forEach(rId => {
+              const relInfo = relsMap[rId];
+              if (!relInfo) {
+                const exists = allMacImageErrors.some(e => 
+                  e.fileName === file.name && 
+                  e.slideNum === slideNum && 
+                  e.rId === rId
+                );
+                if (!exists) {
+                  allMacImageErrors.push({
+                    fileName: file.name,
+                    slideNum,
+                    errorType: '관계 정의 누락 (Relationship Missing)',
+                    rId,
+                    targetPath: '없음',
+                    desc: `슬라이드 내 이미지가 관계 ID "${rId}"를 참조하고 있으나, 관계 정의(.rels) 파일에 해당 ID가 누락되어 이미지가 표시되지 않습니다.`
+                  });
+                  fileMacImageCount++;
+                }
+              } else {
+                const target = relInfo.target;
+                let cleanTarget = target;
+                if (target.startsWith('../')) {
+                  cleanTarget = 'ppt/' + target.replace('../', '');
+                } else if (target.startsWith('media/')) {
+                  cleanTarget = 'ppt/' + target;
+                } else if (!target.startsWith('ppt/')) {
+                  cleanTarget = 'ppt/media/' + target;
+                }
+
+                const cleanTargetLower = cleanTarget.toLowerCase();
+                const fileExists = mediaFilesLower.includes(cleanTargetLower);
+                const isExternal = target.includes('://') || target.startsWith('/') || /^[a-zA-Z]:/.test(target);
+
+                if (isExternal) {
+                  const exists = allMacImageErrors.some(e => 
+                    e.fileName === file.name && 
+                    e.slideNum === slideNum && 
+                    e.rId === rId
+                  );
+                  if (!exists) {
+                    allMacImageErrors.push({
+                      fileName: file.name,
+                      slideNum,
+                      errorType: '외부 절대 경로 참조 (External Link)',
+                      rId,
+                      targetPath: target,
+                      desc: `이미지가 외부 절대 경로 "${target}"로 연결되어 있어 다른 기기에서 열었을 때 깨질 수 있습니다.`
+                    });
+                    fileMacImageCount++;
+                  }
+                } else if (!fileExists) {
+                  const exists = allMacImageErrors.some(e => 
+                    e.fileName === file.name && 
+                    e.slideNum === slideNum && 
+                    e.rId === rId
+                  );
+                  if (!exists) {
+                    allMacImageErrors.push({
+                      fileName: file.name,
+                      slideNum,
+                      errorType: '이미지 파일 누락 (Media File Missing)',
+                      rId,
+                      targetPath: cleanTarget,
+                      desc: `관계 정의 상 이미지 경로는 "${cleanTarget}"이나, PPTX 파일 내부에 리소스 파일이 실제로 누락되어 있습니다.`
+                    });
+                    fileMacImageCount++;
+                  }
+                }
+              }
+            });
+          }
+
           if (checkNumbering) {
             const headerShapes = shapes.filter(s => s.y !== null && s.y < 1300000);
             
@@ -906,8 +1027,7 @@ export default function PptValidator({ apiKey }) {
                     const lastIdx = targetLen - 1;
                     
                     // 복귀 대상 레벨의 마지막 자리가 이전 같은 자리에 있던 값보다 증가하지 않거나 어긋났을 때
-                    // 하지만 보통 복귀 시 시퀀스 스킵이 일어나지 않는지만 체크
-                    // 간단하게 시퀀스가 1만큼 증가하는지 검증
+                    // 하지만 간단하게 시퀀스가 1만큼 증가하는지 검증
                   }
                 }
               } else {
@@ -966,6 +1086,7 @@ export default function PptValidator({ apiKey }) {
           forbiddenErrors: fileForbiddenCount,
           engKoMixedErrors: fileEngKoMixedCount,
           duplicateErrors: file_duplicate_count,
+          macImageErrors: fileMacImageCount,
           startPage: allPageRanges[allPageRanges.length - 1]?.startPage ?? 1,
           endPage: allPageRanges[allPageRanges.length - 1]?.endPage ?? 1,
           totalSlides: allPageRanges[allPageRanges.length - 1]?.totalSlides ?? 1
@@ -979,6 +1100,7 @@ export default function PptValidator({ apiKey }) {
       setEngKoMixedResults(allEngKoMixed);
       set_duplicate_results(all_duplicates);
       setPageRangeResults(allPageRanges);
+      setMacImageResults(allMacImageErrors);
       setFileStats(stats);
       setIsValidated(true);
       setActiveResultTab('summary');
@@ -999,7 +1121,8 @@ export default function PptValidator({ apiKey }) {
       forbiddenResults.length === 0 &&
       engKoMixedResults.length === 0 &&
       duplicate_results.length === 0 &&
-      pageRangeResults.length === 0
+      pageRangeResults.length === 0 &&
+      macImageResults.length === 0
     ) {
       alert('출력할 검증 결과 데이터가 존재하지 않습니다.');
       return;
@@ -1109,6 +1232,21 @@ export default function PptValidator({ apiKey }) {
       }));
       const pageRangeSheet = XLSX.utils.json_to_sheet(pageRangeRows);
       XLSX.utils.book_append_sheet(workbook, pageRangeSheet, '페이지범위_분석결과');
+    }
+
+    // 8. 맥 이미지 누락 시트 데이터 구성
+    if (checkMacImages) {
+      const macImageRows = macImageResults.map((m, idx) => ({
+        '순번': idx + 1,
+        '대상 파일명': m.fileName,
+        '페이지수': `${m.slideNum} 페이지`,
+        '오류 유형': m.errorType,
+        '관계 ID': m.rId,
+        '대상 경로': m.targetPath,
+        '상세 설명': m.desc
+      }));
+      const macImageSheet = XLSX.utils.json_to_sheet(macImageRows);
+      XLSX.utils.book_append_sheet(workbook, macImageSheet, '맥이미지_누락결과');
     }
 
     // 엑셀 파일 다운로드 실행
@@ -1445,6 +1583,36 @@ export default function PptValidator({ apiKey }) {
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>각 파일의 시작 페이지, 최종 페이지 번호 및 총 페이지수(슬라이드 수) 분석</span>
                 </div>
               </div>
+
+              {/* 8. 맥(Mac) 이미지 누락 검증 */}
+              <div 
+                onClick={() => setCheckMacImages(prev => !prev)}
+                style={{ 
+                  background: checkMacImages ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.01)', 
+                  border: checkMacImages ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px', 
+                  padding: '12px 16px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={checkMacImages} 
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setCheckMacImages(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#10b981' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>맥(Mac) 이미지 누락 검증</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>맥 OS 파워포인트 저장 시 발생하는 일부 이미지(Media) 리소스 누락/깨짐 여부 검출</span>
+                </div>
+              </div>
             </div>
 
             <button
@@ -1622,11 +1790,9 @@ TBD
               <span style={{ fontSize: '13px', color: check_duplicate_words ? '#fb923c' : 'var(--text-muted)', fontWeight: 600 }}>동일 단어 중복 건수</span>
               <span style={{ fontSize: '24px', fontWeight: 900, color: check_duplicate_words ? '#f97316' : 'var(--text-muted)' }}>{check_duplicate_words ? `${duplicate_results.length}건` : '비활성'}</span>
             </div>
-            <div style={{ background: checkPageRange ? 'rgba(20, 184, 166, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkPageRange ? '1px solid rgba(20, 184, 166, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '13px', color: checkPageRange ? '#2dd4bf' : 'var(--text-muted)', fontWeight: 600 }}>분석 페이지 범위</span>
-              <span style={{ fontSize: '15px', fontWeight: 800, color: checkPageRange ? 'var(--text-primary)' : 'var(--text-muted)', marginTop: '4px' }}>
-                {checkPageRange ? (pageRangeResults.length > 0 ? `${pageRangeResults[0].startPage}p ~ ${pageRangeResults[0].endPage}p` : '분석 완료') : '비활성'}
-              </span>
+            <div style={{ background: checkMacImages ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkMacImages ? '1px solid rgba(16, 185, 129, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: checkMacImages ? '#34d399' : 'var(--text-muted)', fontWeight: 600 }}>맥 이미지 누락 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: checkMacImages ? '#10b981' : 'var(--text-muted)' }}>{checkMacImages ? `${macImageResults.length}건` : '비활성'}</span>
             </div>
           </div>
 
@@ -1788,6 +1954,26 @@ TBD
                   📄 페이지 범위 분석 ({pageRangeResults.length})
                 </button>
               )}
+              {checkMacImages && (
+                <button 
+                  onClick={() => setActiveResultTab('macImages')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'macImages' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'macImages' ? '#10b981' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  🖼️ 맥 이미지 누락 ({macImageResults.length})
+                </button>
+              )}
             </div>
 
             {/* 탭 1: 파일별 점검 요약 */}
@@ -1803,6 +1989,7 @@ TBD
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>특정 단어 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>영한 혼용 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>중복 단어 검출</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>맥 이미지 누락</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>시작페이지</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>최종 페이지</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>총 페이지수</th>
@@ -1817,7 +2004,8 @@ TBD
                         (checkAltText ? stat.altTextErrors : 0) +
                         (checkForbiddenWords ? stat.forbiddenErrors : 0) +
                         (checkEngKoMixed ? stat.engKoMixedErrors : 0) +
-                        (check_duplicate_words ? stat.duplicateErrors : 0);
+                        (check_duplicate_words ? stat.duplicateErrors : 0) +
+                        (checkMacImages ? stat.macImageErrors : 0);
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }}>
                           <td style={{ padding: '14px 8px', fontWeight: 600 }}>{stat.name}</td>
@@ -1838,6 +2026,9 @@ TBD
                           </td>
                           <td style={{ padding: '14px 8px', color: !check_duplicate_words ? 'var(--text-muted)' : stat.duplicateErrors > 0 ? '#f97316' : 'var(--text-muted)', fontWeight: 700 }}>
                             {check_duplicate_words ? (stat.duplicateErrors > 0 ? `${stat.duplicateErrors}건` : '없음') : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !checkMacImages ? 'var(--text-muted)' : stat.macImageErrors > 0 ? '#10b981' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {checkMacImages ? (stat.macImageErrors > 0 ? `${stat.macImageErrors}건` : '없음') : '비활성'}
                           </td>
                           <td style={{ padding: '14px 8px', color: !checkPageRange ? 'var(--text-muted)' : 'var(--text-secondary)', fontWeight: 600 }}>
                             {checkPageRange ? `${stat.startPage}p` : '비활성'}
@@ -2223,6 +2414,56 @@ TBD
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                               시작 번호 {p.startPage}p부터 최종 번호 {p.endPage}p까지 스캔되었으며, 물리적인 총 수량은 {p.totalSlides}장으로 감지되었습니다.
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 탭 9: 맥 이미지 누락 검출 목록 */}
+            {activeResultTab === 'macImages' && (
+              <div style={{ marginTop: '16px' }}>
+                {macImageResults.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 맥 저장으로 인한 이미지 누락/깨짐 오류가 검출되지 않았습니다!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>페이지수</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>오류 유형</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>관계 ID</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>대상 경로</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>상세 가이드 설명</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {macImageResults.map((m, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={m.fileName}>
+                              {m.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {m.slideNum} 페이지
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#10b981', fontWeight: 700 }}>
+                              {m.errorType}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#f59e0b', fontWeight: 700 }}>
+                              {m.rId}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '11px', lineBreak: 'anywhere' }}>
+                              {m.targetPath}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                              {m.desc}
                             </td>
                           </tr>
                         ))}
