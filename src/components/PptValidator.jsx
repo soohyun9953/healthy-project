@@ -934,6 +934,7 @@ export default function PptValidator({ apiKey }) {
             const slide_titles = slide.titles || [];
             let lastTitleText = ''; 
             let lastPureTitle = ''; 
+            let lastPureTitleWithoutNum = ''; 
             let lastHasAltPages = false;
             let lastCurrentAltPage = null;
             let lastTotalAltPage = null;
@@ -997,8 +998,8 @@ export default function PptValidator({ apiKey }) {
 
                   if (last_sibling_val !== undefined) {
                     if (current_val === last_sibling_val) {
-                      // 동일 번호 반복: 연속 페이지(1/2 등) 표기가 없으면 중복 오류
-                      if (!hasAltPages) {
+                      // 동일 번호 반복: 1단 넘버링(중분류 등, 예: "1", "2")이 아니고, 연속 페이지(1/2 등) 표기가 없으면 중복 오류
+                      if (!hasAltPages && parts.length > 1) {
                         allNumberings.push({
                           fileName: file.name,
                           slideNum: slide.slideNum,
@@ -1045,7 +1046,7 @@ export default function PptValidator({ apiKey }) {
 
               // 연속 페이지 (1/4) 형식의 연속성 세부 검사
               if (lastTitleText) {
-                if (hasAltPages && lastHasAltPages && pureTitle === lastPureTitle) {
+                if (hasAltPages && lastHasAltPages && pureTitleWithoutNum === lastPureTitleWithoutNum) {
                   if (totalAltPage !== lastTotalAltPage) {
                     allNumberings.push({
                       fileName: file.name,
@@ -1084,7 +1085,7 @@ export default function PptValidator({ apiKey }) {
                 }
               }
 
-              if (hasAltPages && (!lastHasAltPages || pureTitle !== lastPureTitle)) {
+              if (hasAltPages && (!lastHasAltPages || pureTitleWithoutNum !== lastPureTitleWithoutNum)) {
                 if (currentAltPage !== 1) {
                   allNumberings.push({
                     fileName: file.name,
@@ -1100,6 +1101,7 @@ export default function PptValidator({ apiKey }) {
 
               lastTitleText = text;
               lastPureTitle = pureTitle;
+              lastPureTitleWithoutNum = pureTitleWithoutNum;
               lastHasAltPages = hasAltPages;
               lastCurrentAltPage = currentAltPage;
               lastTotalAltPage = totalAltPage;
