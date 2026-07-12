@@ -798,13 +798,19 @@ export default function PptValidator({ apiKey }) {
           }
 
           if (checkNumbering) {
-            const headerShapes = shapes.filter(s => s.y !== null && s.y < 1500000);
+            // 헤더 수집: y좌표가 있으면 상단 영역(y<1500000), y=null인 레이아웃 상속 도형은 넘버링 패턴으로 판단
+            const num_title_regex = /^\s*([0-9]+(\.[0-9]+)*)[\s\.]|^\s*(I{1,3}|IV|V|VI{0,3}|IX|X)\b/i;
+            const headerShapes = shapes.filter(s => {
+              if (s.y !== null) return s.y < 1500000;
+              return num_title_regex.test(s.text);
+            });
             
             let leftTitles = [];
             let rightTitle = '';
             
             headerShapes.forEach(hs => {
-              if (hs.x !== null && hs.x < 6000000) {
+              // x=null(레이아웃 상속)이거나 x<6000000이면 좌측 타이틀
+              if (hs.x === null || hs.x < 6000000) {
                 const is_dup = leftTitles.some(t => t.text.trim() === hs.text.trim());
                 if (!is_dup) {
                   leftTitles.push(hs);
