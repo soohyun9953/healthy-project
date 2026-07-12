@@ -952,6 +952,10 @@ export default function PptValidator({ apiKey }) {
                 pureTitle = text.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
               }
 
+              // 순수 제목 추출: 넘버링 숫자 접두사(1., 1.1 등) 제거 후 실제 제목 텍스트만 추출
+              // 예: "1.1 재무구조 및 대외신용평가 현황" → "재무구조 및 대외신용평가 현황"
+              const pureTitleWithoutNum = pureTitle.replace(/^\s*[0-9]+(\.[0-9]+)*[\s\.]+/, '').trim();
+
               // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
               const numMatch = text.match(num_regex);
               
@@ -963,21 +967,22 @@ export default function PptValidator({ apiKey }) {
                   const current_val = parts[parts.length - 1];
 
                   // 1. 동일 넘버링이 다른 슬라이드에서 쓰였는데, 제목 텍스트가 다르면 오류 검출
+                  // pureTitleWithoutNum: 넘버링 숫자를 제거한 순수 제목만으로 비교
                   const existingTitle = numbering_title_map[rawNumStr];
                   if (existingTitle !== undefined) {
-                    if (existingTitle !== pureTitle) {
+                    if (existingTitle !== pureTitleWithoutNum) {
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
                         area: '좌측 타이틀',
                         text,
                         error: `동일 넘버링 내 타이틀 텍스트 불일치 (${rawNumStr})`,
-                        guide: `넘버링 "${rawNumStr}"에 대해 이전 슬라이드("${existingTitle}")와 현재 슬라이드("${pureTitle}")의 타이틀 텍스트가 서로 일치하지 않습니다.`
+                        guide: `넘버링 "${rawNumStr}"에 대해 이전 슬라이드("${rawNumStr} ${existingTitle}")와 현재 슬라이드("${pureTitle}")의 타이틀 텍스트가 서로 일치하지 않습니다.`
                       });
                       fileNumErrorsCount++;
                     }
                   } else {
-                    numbering_title_map[rawNumStr] = pureTitle;
+                    numbering_title_map[rawNumStr] = pureTitleWithoutNum;
                   }
 
                   // 2. 형제 노드 간의 순차적(sequential) 검증 진행
@@ -985,7 +990,21 @@ export default function PptValidator({ apiKey }) {
                   const last_sibling_val = sibling_tracker[parent_path];
 
                   if (last_sibling_val !== undefined) {
-                    if (current_val !== last_sibling_val + 1) {
+                    if (current_val === last_sibling_val) {
+                      // 동일 번호 반복: 연속 페이지(1/2 등) 표기가 없으면 중복 오류
+                      if (!hasAltPages) {
+                        allNumberings.push({
+                          fileName: file.name,
+                          slideNum: slide.slideNum,
+                          area: '좌측 타이틀',
+                          text,
+                          error: `넘버링 중복 사용 오류 (${rawNumStr})`,
+                          guide: `이전 슬라이드에서 이미 "${rawNumStr}" 번호가 사용되었습니다. 넘버링이 동일한데 제목이 다르다면 오류입니다. 순차적으로 다음 번호로 증가시켜야 합니다.`
+                        });
+                        fileNumErrorsCount++;
+                      }
+                    } else if (current_val !== last_sibling_val + 1) {
+                      // 순서 건너뜀 (시퀀스 단절)
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
@@ -1011,8 +1030,10 @@ export default function PptValidator({ apiKey }) {
                       fileNumErrorsCount++;
                     }
                   }
-                  // 트래커 기록 갱신
-                  sibling_tracker[parent_path] = current_val;
+                  // 트래커 기록 갱신 (연속 페이지인 경우에도 번호를 유지하여 다음 연속 장에서 비교 가능하도록)
+                  if (!hasAltPages || current_val !== last_sibling_val) {
+                    sibling_tracker[parent_path] = current_val;
+                  }
                 }
               }
 
