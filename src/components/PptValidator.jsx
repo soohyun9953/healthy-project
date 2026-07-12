@@ -805,7 +805,10 @@ export default function PptValidator({ apiKey }) {
             
             headerShapes.forEach(hs => {
               if (hs.x !== null && hs.x < 6000000) {
-                leftTitles.push(hs);
+                const is_dup = leftTitles.some(t => t.text.trim() === hs.text.trim());
+                if (!is_dup) {
+                  leftTitles.push(hs);
+                }
               } else if (hs.x !== null && hs.x >= 6000000) {
                 if (!rightTitle || hs.y < (rightTitle.y || 99999999)) {
                   rightTitle = hs;
@@ -816,33 +819,19 @@ export default function PptValidator({ apiKey }) {
             leftTitles.sort((a, b) => a.y - b.y);
 
             let majorTitleText = '';
-            let subTitleText = '';
-
             const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
-            const num_regex = /^\s*([0-9]+(\.[0-9]+)*)\b/;
 
             leftTitles.forEach(t => {
               const txt = t.text.trim();
               if (roman_regex.test(txt)) {
                 majorTitleText = txt;
-              } else if (num_regex.test(txt) || txt.includes('/') || txt.includes('(')) {
-                if (!subTitleText) {
-                  subTitleText = txt;
-                }
-              } else {
-                if (!subTitleText && !majorTitleText) {
-                  subTitleText = txt;
-                } else if (majorTitleText && !subTitleText) {
-                  subTitleText = txt;
-                }
               }
             });
 
             slideList.push({
               slideNum,
               majorTitle: majorTitleText,
-              subTitle: subTitleText,
-              leftTitle: subTitleText || majorTitleText || '',
+              titles: leftTitles.map(t => t.text.trim()).filter(Boolean),
               rightTitle: rightTitle ? rightTitle.text : ''
             });
 
@@ -892,13 +881,6 @@ export default function PptValidator({ apiKey }) {
         // 5. 상단 넘버링 규칙 검증 분석
         // 5-1. 좌측 넘버링 시퀀스 검증
         if (checkNumbering) {
-          let lastParts = []; // 이전 슬라이드의 넘버링 분할 [Major, Minor, Sub...]
-          let lastTitleText = ''; // 이전 슬라이드의 목차 타이틀 텍스트 보관용
-          let lastPureTitle = ''; // 이전 슬라이드의 괄호 제외 순수 제목
-          let lastHasAltPages = false;
-          let lastCurrentAltPage = null;
-          let lastTotalAltPage = null;
-
           // 대주제 추적 및 검증용 상태 변수
           let current_major_roman = '';
           let current_major_val = null;
@@ -912,6 +894,7 @@ export default function PptValidator({ apiKey }) {
           const sibling_tracker = {};
 
           const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
+          const num_regex = /^\s*([0-9]+(\.[0-9]+)*)[\s\.]/;
 
           for (let i = 0; i < slideList.length; i++) {
             const slide = slideList[i];
@@ -941,182 +924,184 @@ export default function PptValidator({ apiKey }) {
               }
             }
 
-            const text = slide.subTitle; // 검증 대상은 소주제 타이틀
-            if (!text) continue;
+            // 슬라이드 내 모든 수집된 타이틀 순차 검증 (1단, 2단, 3단 통합 순회)
+            const slide_titles = slide.titles || [];
+            let lastTitleText = ''; 
+            let lastPureTitle = ''; 
+            let lastHasAltPages = false;
+            let lastCurrentAltPage = null;
+            let lastTotalAltPage = null;
 
-            // "목차 명칭 (1/4)" 정규식 파싱
-            const altPageMatch = text.match(/\((\d+)\/(\d+)\)\s*$/);
-            let hasAltPages = false;
-            let currentAltPage = null;
-            let totalAltPage = null;
-            let pureTitle = text.trim();
-
-            if (altPageMatch) {
-              hasAltPages = true;
-              currentAltPage = parseInt(altPageMatch[1], 10);
-              totalAltPage = parseInt(altPageMatch[2], 10);
-              pureTitle = text.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
-            }
-
-            // 동일 목차 타이틀 반복 감지 및 연속 페이지 검증
-            if (lastTitleText) {
-              if (hasAltPages && lastHasAltPages && pureTitle === lastPureTitle) {
-                // 연속 페이지 흐름 검증
-                if (totalAltPage !== lastTotalAltPage) {
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: '목차 전체 페이지 수 불일치',
-                    guide: `연속 목차의 전체 페이지 수(분모)가 이전 슬라이드(${lastTotalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
-                  });
-                  fileNumErrorsCount++;
-                }
-                
-                if (currentAltPage !== lastCurrentAltPage + 1) {
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: '목차 연속 페이지 번호 단절',
-                    guide: `연속된 목차 페이지 번호가 순차적으로 증가하지 않았습니다. (이전: ${lastCurrentAltPage}/${lastTotalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
-                  });
-                  fileNumErrorsCount++;
-                }
-
-                if (currentAltPage > totalAltPage) {
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: '목차 페이지 범위 초과',
-                    guide: `목차 페이지 번호(${currentAltPage})가 전체 페이지 수(${totalAltPage})를 초과하였습니다.`
-                  });
-                  fileNumErrorsCount++;
-                }
-              } else if (text.trim() === lastTitleText.trim()) {
-                allNumberings.push({
-                  fileName: file.name,
-                  slideNum: slide.slideNum,
-                  area: '좌측 타이틀',
-                  text,
-                  error: '동일 목차(타이틀) 반복 검출',
-                  guide: `이전 슬라이드와 좌측 타이틀 명칭("${text}")이 완전히 동일합니다. 중복 기재가 아니며 여러 슬라이드로 나뉘어 이어지는 내용이라면 "(1/4)" 형태로 연속 페이지 번호를 지정해 주세요.`
-                });
-                fileNumErrorsCount++;
-              }
-            }
-
-            // 첫 연속 페이지 진입 검증
-            if (hasAltPages && (!lastHasAltPages || pureTitle !== lastPureTitle)) {
-              if (currentAltPage !== 1) {
-                allNumberings.push({
-                  fileName: file.name,
-                  slideNum: slide.slideNum,
-                  area: '좌측 타이틀',
-                  text,
-                  error: '목차 페이지 시작 번호 오류',
-                  guide: `연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${currentAltPage}/${totalAltPage})`
-                });
-                fileNumErrorsCount++;
-              }
-            }
-
-            lastTitleText = text;
-            lastPureTitle = pureTitle;
-            lastHasAltPages = hasAltPages;
-            lastCurrentAltPage = currentAltPage;
-            lastTotalAltPage = totalAltPage;
-
-            // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
-            const numMatch = text.match(/^([0-9]+(\.[0-9]+)*)[\s\.]/);
-            
-            if (numMatch) {
-              const rawNumStr = numMatch[1];
-              const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
+            for (let tIdx = 0; tIdx < slide_titles.length; tIdx++) {
+              const text = slide_titles[tIdx];
               
-              // 대주제(로마자)와의 넘버링 일치 검증
-              if (current_major_val !== null) {
-                if (parts[0] !== current_major_val) {
+              // 대주제 텍스트 자체는 아래의 세부 넘버링(숫자) 검증에서는 제외
+              if (roman_regex.test(text)) continue;
+
+              // "목차 명칭 (1/4)" 정규식 파싱
+              const altPageMatch = text.match(/\((\d+)\/(\d+)\)\s*$/);
+              let hasAltPages = false;
+              let currentAltPage = null;
+              let totalAltPage = null;
+              let pureTitle = text.trim();
+
+              if (altPageMatch) {
+                hasAltPages = true;
+                currentAltPage = parseInt(altPageMatch[1], 10);
+                totalAltPage = parseInt(altPageMatch[2], 10);
+                pureTitle = text.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
+              }
+
+              // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
+              const numMatch = text.match(num_regex);
+              
+              if (numMatch) {
+                const rawNumStr = numMatch[1];
+                const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
+                
+                // 대주제(로마자)와의 넘버링 일치 검증
+                if (current_major_val !== null) {
+                  if (parts[0] !== current_major_val) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: `대주제-소주제 넘버링 불일치 (대주제: ${current_major_roman}(${current_major_val}) ➜ 소주제 시작: ${parts[0]})`,
+                      guide: `상단 대주제 장 번호('${current_major_roman}', 값: ${current_major_val})와 소주제의 첫 번째 자릿수('${parts[0]}')가 서로 맞지 않습니다. 대주제에 맞춰 소주제 일련번호를 수정해 주세요. (예: '${current_major_val}.' 또는 '${current_major_val}.1'로 변경 권장)`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                }
+
+                // [조건 1] 목차 넘버링이 동일한데 제목이 다르면 오류
+                const existingTitle = numbering_title_map[rawNumStr];
+                if (existingTitle !== undefined) {
+                  if (existingTitle !== pureTitle) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: '동일 넘버링 내 목차 제목 불일치',
+                      guide: `동일한 넘버링 번호('${rawNumStr}')에 대해 이전 슬라이드에서는 '${existingTitle}'로 기술되어 있었으나, 현재 슬라이드에서는 '${pureTitle}'로 다르게 작성되어 있습니다. 오타가 아닌지 확인해 주세요.`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                } else {
+                  numbering_title_map[rawNumStr] = pureTitle;
+                }
+
+                // [조건 2] 넘버링이 순차적으로 진행되지 않으면 오류 (부모 경로별 자식 순차성 통합 검증)
+                const parent_path = parts.slice(0, -1).join('.');
+                const current_val = parts[parts.length - 1];
+                const last_sibling_val = sibling_tracker[parent_path];
+
+                if (last_sibling_val !== undefined) {
+                  if (current_val === last_sibling_val) {
+                    // 중복 검출 (이전 슬라이드의 타이틀과 겹치거나 동일 슬라이드 내 중복인 경우)
+                    // 단, 연속 페이지 (1/4) 등 표시가 있는 상태라면 중복 에러에서 제외해 줍니다.
+                    if (!hasAltPages) {
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '좌측 타이틀',
+                        text,
+                        error: `넘버링 중복 검출 (${rawNumStr})`,
+                        guide: `이전 슬라이드와 동일한 넘버링입니다. 숫자를 확인해 순차 증가하도록 변경해 주세요.`
+                      });
+                      fileNumErrorsCount++;
+                    }
+                  } else if (current_val !== last_sibling_val + 1) {
+                    // 순차 단절
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: `넘버링 순차성 단절 (${parent_path ? parent_path + '.' : ''}${last_sibling_val} ➜ ${rawNumStr})`,
+                      guide: `동일 계층 하위에서 일련번호가 순차적으로 1씩 증가하지 않고 누락/단절되었습니다. (이전: ${parent_path ? parent_path + '.' : ''}${last_sibling_val} ➜ 권장: ${parent_path ? parent_path + '.' : ''}${last_sibling_val + 1})`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                } else {
+                  // 부모 계층 아래 최초의 자식 노드 진입 시에는 반드시 1이어야 함
+                  if (current_val !== 1) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: `하위 넘버링 시작값 오류 (${rawNumStr})`,
+                      guide: `새로운 하위 계층으로 진입할 때 일련번호는 항상 1부터 순차 시작해야 합니다. (${parent_path ? parent_path + '.1' : '1.'} 권장)`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                }
+                // 트래커 기록 갱신
+                sibling_tracker[parent_path] = current_val;
+              }
+
+              // 연속 페이지 (1/4) 형식의 연속성 세부 검사
+              if (lastTitleText) {
+                if (hasAltPages && lastHasAltPages && pureTitle === lastPureTitle) {
+                  if (totalAltPage !== lastTotalAltPage) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: '목차 전체 페이지 수 불일치',
+                      guide: `연속 목차의 전체 페이지 수(분모)가 이전 슬라이드(${lastTotalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                  
+                  if (currentAltPage !== lastCurrentAltPage + 1) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: '목차 연속 페이지 번호 단절',
+                      guide: `연속된 목차 페이지 번호가 순차적으로 증가하지 않았습니다. (이전: ${lastCurrentAltPage}/${lastTotalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
+                    });
+                    fileNumErrorsCount++;
+                  }
+
+                  if (currentAltPage > totalAltPage) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: '목차 페이지 범위 초과',
+                      guide: `목차 페이지 번호(${currentAltPage})가 전체 페이지 수(${totalAltPage})를 초과하였습니다.`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                }
+              }
+
+              if (hasAltPages && (!lastHasAltPages || pureTitle !== lastPureTitle)) {
+                if (currentAltPage !== 1) {
                   allNumberings.push({
                     fileName: file.name,
                     slideNum: slide.slideNum,
                     area: '좌측 타이틀',
                     text,
-                    error: `대주제-소주제 넘버링 불일치 (대주제: ${current_major_roman}(${current_major_val}) ➜ 소주제 시작: ${parts[0]})`,
-                    guide: `상단 대주제 장 번호('${current_major_roman}', 값: ${current_major_val})와 소주제의 첫 번째 자릿수('${parts[0]}')가 서로 맞지 않습니다. 대주제에 맞춰 소주제 일련번호를 수정해 주세요. (예: '${current_major_val}.' 또는 '${current_major_val}.1'로 변경 권장)`
+                    error: '목차 페이지 시작 번호 오류',
+                    guide: `연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${currentAltPage}/${totalAltPage})`
                   });
                   fileNumErrorsCount++;
                 }
               }
 
-              // [조건 1] 목차 넘버링이 동일한데 제목이 다르면 오류
-              const existingTitle = numbering_title_map[rawNumStr];
-              if (existingTitle !== undefined) {
-                if (existingTitle !== pureTitle) {
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: '동일 넘버링 내 목차 제목 불일치',
-                    guide: `동일한 넘버링 번호('${rawNumStr}')에 대해 이전 슬라이드에서는 '${existingTitle}'로 기술되어 있었으나, 현재 슬라이드에서는 '${pureTitle}'로 다르게 작성되어 있습니다. 오타가 아닌지 확인해 주세요.`
-                  });
-                  fileNumErrorsCount++;
-                }
-              } else {
-                numbering_title_map[rawNumStr] = pureTitle;
-              }
-
-              // [조건 2] 넘버링이 순차적으로 진행되지 않으면 오류 (부모 경로별 자식 순차성 통합 검증)
-              const parent_path = parts.slice(0, -1).join('.');
-              const current_val = parts[parts.length - 1];
-              const last_sibling_val = sibling_tracker[parent_path];
-
-              if (last_sibling_val !== undefined) {
-                if (current_val === last_sibling_val) {
-                  // 중복 검출
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: `넘버링 중복 검출 (${rawNumStr})`,
-                    guide: `이전 슬라이드와 동일한 넘버링입니다. 숫자를 확인해 순차 증가하도록 변경해 주세요.`
-                  });
-                  fileNumErrorsCount++;
-                } else if (current_val !== last_sibling_val + 1) {
-                  // 순차 단절
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: `넘버링 순차성 단절 (${parent_path ? parent_path + '.' : ''}${last_sibling_val} ➜ ${rawNumStr})`,
-                    guide: `동일 계층 하위에서 일련번호가 순차적으로 1씩 증가하지 않고 누락/단절되었습니다. (이전: ${parent_path ? parent_path + '.' : ''}${last_sibling_val} ➜ 권장: ${parent_path ? parent_path + '.' : ''}${last_sibling_val + 1})`
-                  });
-                  fileNumErrorsCount++;
-                }
-              } else {
-                // 부모 계층 아래 최초의 자식 노드 진입 시에는 반드시 1이어야 함
-                if (current_val !== 1) {
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: `하위 넘버링 시작값 오류 (${rawNumStr})`,
-                    guide: `새로운 하위 계층으로 진입할 때 일련번호는 항상 1부터 순차 시작해야 합니다. (${parent_path ? parent_path + '.1' : '1.'} 권장)`
-                  });
-                  fileNumErrorsCount++;
-                }
-              }
-              // 트래커 기록 갱신
-              sibling_tracker[parent_path] = current_val;
-              lastParts = parts; // 업데이트
+              lastTitleText = text;
+              lastPureTitle = pureTitle;
+              lastHasAltPages = hasAltPages;
+              lastCurrentAltPage = currentAltPage;
+              lastTotalAltPage = totalAltPage;
             }
           }
 
