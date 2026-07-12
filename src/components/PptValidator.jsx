@@ -899,6 +899,9 @@ export default function PptValidator({ apiKey }) {
           // 넘버링 순차성 검증을 위한 부모 경로별 마지막 자식 값 추적 맵
           const sibling_tracker = {};
 
+          // 연속 페이지((순번/전체수)) 트래커 맵 (슬라이드 내 다른 헤더로 인한 상태 덮어쓰기 간섭 방지용)
+          const alt_page_tracker = {};
+
           const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
           const num_regex = /^\s*([0-9]+(\.[0-9]+)*)[\s\.]/;
 
@@ -932,12 +935,6 @@ export default function PptValidator({ apiKey }) {
 
             // 슬라이드 내 모든 수집된 타이틀 순차 검증 (1단, 2단, 3단 통합 순회)
             const slide_titles = slide.titles || [];
-            let lastTitleText = ''; 
-            let lastPureTitle = ''; 
-            let lastPureTitleWithoutNum = ''; 
-            let lastHasAltPages = false;
-            let lastCurrentAltPage = null;
-            let lastTotalAltPage = null;
 
             for (let tIdx = 0; tIdx < slide_titles.length; tIdx++) {
               const text = slide_titles[tIdx];
@@ -1044,29 +1041,30 @@ export default function PptValidator({ apiKey }) {
                 }
               }
 
-              // 연속 페이지 (1/4) 형식의 연속성 세부 검사
-              if (lastTitleText) {
-                if (hasAltPages && lastHasAltPages && pureTitleWithoutNum === lastPureTitleWithoutNum) {
-                  if (totalAltPage !== lastTotalAltPage) {
+              // 3. 연속 페이지 (1/4) 형식의 연속성 세부 검사 (alt_page_tracker 기반 독립 검사)
+              if (hasAltPages) {
+                const prevPageInfo = alt_page_tracker[pureTitle];
+                if (prevPageInfo && prevPageInfo.slideNum === slide.slideNum - 1) {
+                  if (totalAltPage !== prevPageInfo.totalAltPage) {
                     allNumberings.push({
                       fileName: file.name,
                       slideNum: slide.slideNum,
                       area: '좌측 타이틀',
                       text,
                       error: '목차 전체 페이지 수 불일치',
-                      guide: `연속 목차의 전체 페이지 수(분모)가 이전 슬라이드(${lastTotalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
+                      guide: `연속 목차의 전체 페이지 수(분모)가 이전 슬라이드(${prevPageInfo.totalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
                     });
                     fileNumErrorsCount++;
                   }
                   
-                  if (currentAltPage !== lastCurrentAltPage + 1) {
+                  if (currentAltPage !== prevPageInfo.currentAltPage + 1) {
                     allNumberings.push({
                       fileName: file.name,
                       slideNum: slide.slideNum,
                       area: '좌측 타이틀',
                       text,
                       error: '목차 연속 페이지 번호 단절',
-                      guide: `연속된 목차 페이지 번호가 순차적으로 증가하지 않았습니다. (이전: ${lastCurrentAltPage}/${lastTotalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
+                      guide: `연속된 목차 페이지 번호가 순차적으로 증가하지 않았습니다. (이전: ${prevPageInfo.currentAltPage}/${prevPageInfo.totalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
                     });
                     fileNumErrorsCount++;
                   }
@@ -1082,29 +1080,28 @@ export default function PptValidator({ apiKey }) {
                     });
                     fileNumErrorsCount++;
                   }
+                } else {
+                  // 직전 슬라이드에 연속되는 목차가 없었던 경우 시작 번호는 무조건 1이어야 함
+                  if (currentAltPage !== 1) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: '목차 페이지 시작 번호 오류',
+                      guide: `연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${currentAltPage}/${totalAltPage})`
+                    });
+                    fileNumErrorsCount++;
+                  }
                 }
-              }
 
-              if (hasAltPages && (!lastHasAltPages || pureTitleWithoutNum !== lastPureTitleWithoutNum)) {
-                if (currentAltPage !== 1) {
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: '목차 페이지 시작 번호 오류',
-                    guide: `연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${currentAltPage}/${totalAltPage})`
-                  });
-                  fileNumErrorsCount++;
-                }
+                // 현재 슬라이드의 연속 목차 상태 등록
+                alt_page_tracker[pureTitle] = {
+                  slideNum: slide.slideNum,
+                  currentAltPage,
+                  totalAltPage
+                };
               }
-
-              lastTitleText = text;
-              lastPureTitle = pureTitle;
-              lastPureTitleWithoutNum = pureTitleWithoutNum;
-              lastHasAltPages = hasAltPages;
-              lastCurrentAltPage = currentAltPage;
-              lastTotalAltPage = totalAltPage;
             }
           }
 
