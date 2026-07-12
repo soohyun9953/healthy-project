@@ -933,6 +933,72 @@ export default function PptValidator({ apiKey }) {
               }
             }
 
+            // 1-2) 2단/3단 타이틀 간의 구조적 계층 관계 정합성 검증 (원칙 2, 3, 4)
+            const subTitles = (slide.titles || []).filter(text => !roman_regex.test(text));
+            if (subTitles.length === 2) {
+              const level2Title = subTitles[0];
+              const level3Title = subTitles[1];
+              
+              const level2Parts = level2Title.split('>').map(s => s.trim());
+              const level3Parts = level3Title.split('>').map(s => s.trim());
+              
+              const getNumDepth = (txt) => {
+                const match = txt.match(num_regex);
+                if (!match) return 0;
+                return match[1].split('.').length;
+              };
+              
+              const l2Depths = level2Parts.map(getNumDepth);
+              const l3Depths = level3Parts.map(getNumDepth);
+              const l3MainDepth = l3Depths[0];
+              
+              if (l3MainDepth === 2) {
+                // 원칙 2: 중분류(1.1)가 3단 타이틀로 오는 케이스 -> 2단은 대분류(1.) 단독 구조
+                const isL2Valid = level2Parts.length === 1 && l2Depths[0] === 1;
+                if (!isL2Valid) {
+                  allNumberings.push({
+                    fileName: file.name,
+                    slideNum: slide.slideNum,
+                    area: '좌측 타이틀',
+                    text: `${level2Title} / ${level3Title}`,
+                    error: '타이틀 계층 규칙 위반 (원칙 2)',
+                    guide: `중분류(${level3Parts[0]})가 3단 타이틀로 올 경우, 2단 타이틀은 '대분류' 단독 구조(예: "1. 제목")여야 합니다. (현재 2단: "${level2Title}")`
+                  });
+                  fileNumErrorsCount++;
+                }
+              } else if (l3MainDepth === 3) {
+                if (level3Parts.length === 1) {
+                  // 원칙 3: 소분류(1.1.1) 단독이 3단 타이틀로 오는 케이스 -> 2단은 대분류 > 중분류 구조
+                  const isL2Valid = level2Parts.length === 2 && l2Depths[0] === 1 && l2Depths[1] === 2;
+                  if (!isL2Valid) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text: `${level2Title} / ${level3Title}`,
+                      error: '타이틀 계층 규칙 위반 (원칙 3)',
+                      guide: `소분류(${level3Parts[0]})가 3단 타이틀로 올 경우, 2단 타이틀은 '대분류 > 중분류' 구조(예: "1. 대분류 > 1.1 중분류")여야 합니다. (현재 2단: "${level2Title}")`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                } else if (level3Parts.length > 1) {
+                  // 원칙 4: 소분류 하위가 3단 타이틀로 오는 케이스 -> 2단은 대분류 > 중분류 구조
+                  const isL2Valid = level2Parts.length === 2 && l2Depths[0] === 1 && l2Depths[1] === 2;
+                  if (!isL2Valid) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text: `${level2Title} / ${level3Title}`,
+                      error: '타이틀 계층 규칙 위반 (원칙 4)',
+                      guide: `소분류 하위가 3단 타이틀로 올 경우, 2단 타이틀은 '대분류 > 중분류' 구조(예: "1. 대분류 > 1.1 중분류")여야 합니다. (현재 2단: "${level2Title}")`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                }
+              }
+            }
+
             // 슬라이드 내 모든 수집된 타이틀 순차 검증 (1단, 2단, 3단 통합 순회)
             const slide_titles = slide.titles || [];
 
