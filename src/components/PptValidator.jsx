@@ -902,18 +902,42 @@ export default function PptValidator({ apiKey }) {
           // 대주제 추적 및 검증용 상태 변수
           let current_major_roman = '';
           let current_major_val = null;
+          let last_major_val = null;
+          let last_major_roman = '';
+
+          // 넘버링별 타이틀 불일치 검증을 위한 해시 맵
+          const numbering_title_map = {};
+
+          // 넘버링 순차성 검증을 위한 부모 경로별 마지막 자식 값 추적 맵
+          const sibling_tracker = {};
 
           const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
 
           for (let i = 0; i < slideList.length; i++) {
             const slide = slideList[i];
             
-            // 1) 대주제(로마자) 정보 업데이트
+            // 1) 대주제(로마자) 정보 업데이트 및 대주제 자체의 순차성 검증
             if (slide.majorTitle) {
               const major_match = slide.majorTitle.match(roman_regex);
               if (major_match) {
                 current_major_roman = major_match[1];
                 current_major_val = roman_to_int(current_major_roman);
+
+                if (last_major_val !== null && current_major_val !== last_major_val) {
+                  if (current_major_val !== last_major_val + 1) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text: slide.majorTitle,
+                      error: '대주제 로마자 순차성 단절',
+                      guide: `대주제 장 번호가 순차적으로 증가하지 않고 단절되었습니다. (이전: ${last_major_roman} ➜ 현재: ${current_major_roman})`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                }
+                last_major_val = current_major_val;
+                last_major_roman = current_major_roman;
               }
             }
 
@@ -1014,7 +1038,7 @@ export default function PptValidator({ apiKey }) {
               const rawNumStr = numMatch[1];
               const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
               
-              // 대주제(로마자)와의 넘버링 일치 검증 추가
+              // 대주제(로마자)와의 넘버링 일치 검증
               if (current_major_val !== null) {
                 if (parts[0] !== current_major_val) {
                   allNumberings.push({
@@ -1029,9 +1053,32 @@ export default function PptValidator({ apiKey }) {
                 }
               }
 
-              if (lastParts.length > 0) {
-                // 1. 중복 감지
-                if (rawNumStr === lastParts.join('.')) {
+              // [조건 1] 목차 넘버링이 동일한데 제목이 다르면 오류
+              const existingTitle = numbering_title_map[rawNumStr];
+              if (existingTitle !== undefined) {
+                if (existingTitle !== pureTitle) {
+                  allNumberings.push({
+                    fileName: file.name,
+                    slideNum: slide.slideNum,
+                    area: '좌측 타이틀',
+                    text,
+                    error: '동일 넘버링 내 목차 제목 불일치',
+                    guide: `동일한 넘버링 번호('${rawNumStr}')에 대해 이전 슬라이드에서는 '${existingTitle}'로 기술되어 있었으나, 현재 슬라이드에서는 '${pureTitle}'로 다르게 작성되어 있습니다. 오타가 아닌지 확인해 주세요.`
+                  });
+                  fileNumErrorsCount++;
+                }
+              } else {
+                numbering_title_map[rawNumStr] = pureTitle;
+              }
+
+              // [조건 2] 넘버링이 순차적으로 진행되지 않으면 오류 (부모 경로별 자식 순차성 통합 검증)
+              const parent_path = parts.slice(0, -1).join('.');
+              const current_val = parts[parts.length - 1];
+              const last_sibling_val = sibling_tracker[parent_path];
+
+              if (last_sibling_val !== undefined) {
+                if (current_val === last_sibling_val) {
+                  // 중복 검출
                   allNumberings.push({
                     fileName: file.name,
                     slideNum: slide.slideNum,
@@ -1041,65 +1088,34 @@ export default function PptValidator({ apiKey }) {
                     guide: `이전 슬라이드와 동일한 넘버링입니다. 숫자를 확인해 순차 증가하도록 변경해 주세요.`
                   });
                   fileNumErrorsCount++;
-                } else {
-                  // 2. 레벨 및 순차 증가 유효성 체크
-                  const lenDiff = parts.length - lastParts.length;
-                  
-                  if (lenDiff === 0) {
-                    // 동일 레벨: 마지막 자리가 1 증가해야 함
-                    const lastIdx = parts.length - 1;
-                    if (parts[lastIdx] !== lastParts[lastIdx] + 1) {
-                      allNumberings.push({
-                        fileName: file.name,
-                        slideNum: slide.slideNum,
-                        area: '좌측 타이틀',
-                        text,
-                        error: `넘버링 시퀀스 불일치 (${lastParts.join('.')} ➜ ${rawNumStr})`,
-                        guide: `동일 레벨에서는 마지막 번호가 순차적으로 1씩 증가해야 합니다. (${lastParts.slice(0, -1).concat(lastParts[lastIdx] + 1).join('.')} 권장)`
-                      });
-                      fileNumErrorsCount++;
-                    }
-                  } else if (lenDiff > 0) {
-                    // 하위 레벨로 진입: 진입 시 첫 자리는 무조건 1이어야 함 (예: 1.1 ➜ 1.1.1)
-                    // 또한 상위 부모 레벨 번호는 이전과 같아야 함
-                    let parentMatch = true;
-                    for (let k = 0; k < lastParts.length; k++) {
-                      if (parts[k] !== lastParts[k]) parentMatch = false;
-                    }
-                    
-                    const newPart = parts[parts.length - 1];
-                    
-                    if (!parentMatch || newPart !== 1) {
-                      allNumberings.push({
-                        fileName: file.name,
-                        slideNum: slide.slideNum,
-                        area: '좌측 타이틀',
-                        text,
-                        error: `하위 넘버링 시작값 오류 (${lastParts.join('.')} ➜ ${rawNumStr})`,
-                        guide: `하위 계층으로 진입할 때 하위 번호는 항상 1부터 순차 시작해야 합니다. (${lastParts.join('.')}.1 권장)`
-                      });
-                      fileNumErrorsCount++;
-                    }
-                  } else if (lenDiff < 0) {
-                    // 상위 레벨로 복귀: 복귀한 레벨의 번호가 이전 기록된 값보다 증가했는지 확인
-                    // 예: 1.1.2 ➜ 1.2 또는 2
-                    // 필요 시 여기에 복귀 시퀀스 정밀 대조 추가 가능
-                  }
-                }
-              } else {
-                // 첫 번째 검출된 넘버링: 대주제(로마자) 정보가 없을 때만 1 권장 경고
-                if (current_major_val === null && parts[0] !== 1 && parts.length === 1) {
+                } else if (current_val !== last_sibling_val + 1) {
+                  // 순차 단절
                   allNumberings.push({
                     fileName: file.name,
                     slideNum: slide.slideNum,
                     area: '좌측 타이틀',
                     text,
-                    error: `넘버링 시작 번호 부적합 (${rawNumStr})`,
-                    guide: `최초 대주제 넘버링은 1부터 시작하는 것을 권장합니다.`
+                    error: `넘버링 순차성 단절 (${parent_path ? parent_path + '.' : ''}${last_sibling_val} ➜ ${rawNumStr})`,
+                    guide: `동일 계층 하위에서 일련번호가 순차적으로 1씩 증가하지 않고 누락/단절되었습니다. (이전: ${parent_path ? parent_path + '.' : ''}${last_sibling_val} ➜ 권장: ${parent_path ? parent_path + '.' : ''}${last_sibling_val + 1})`
+                  });
+                  fileNumErrorsCount++;
+                }
+              } else {
+                // 부모 계층 아래 최초의 자식 노드 진입 시에는 반드시 1이어야 함
+                if (current_val !== 1) {
+                  allNumberings.push({
+                    fileName: file.name,
+                    slideNum: slide.slideNum,
+                    area: '좌측 타이틀',
+                    text,
+                    error: `하위 넘버링 시작값 오류 (${rawNumStr})`,
+                    guide: `새로운 하위 계층으로 진입할 때 일련번호는 항상 1부터 순차 시작해야 합니다. (${parent_path ? parent_path + '.1' : '1.'} 권장)`
                   });
                   fileNumErrorsCount++;
                 }
               }
+              // 트래커 기록 갱신
+              sibling_tracker[parent_path] = current_val;
               lastParts = parts; // 업데이트
             }
           }
