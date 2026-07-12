@@ -959,87 +959,61 @@ export default function PptValidator({ apiKey }) {
                 const rawNumStr = numMatch[1];
                 const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
                 
-                // 대주제(로마자)와의 넘버링 일치 검증
-                if (current_major_val !== null) {
-                  if (parts[0] !== current_major_val) {
-                    allNumberings.push({
-                      fileName: file.name,
-                      slideNum: slide.slideNum,
-                      area: '좌측 타이틀',
-                      text,
-                      error: `대주제-소주제 넘버링 불일치 (대주제: ${current_major_roman}(${current_major_val}) ➜ 소주제 시작: ${parts[0]})`,
-                      guide: `상단 대주제 장 번호('${current_major_roman}', 값: ${current_major_val})와 소주제의 첫 번째 자릿수('${parts[0]}')가 서로 맞지 않습니다. 대주제에 맞춰 소주제 일련번호를 수정해 주세요. (예: '${current_major_val}.' 또는 '${current_major_val}.1'로 변경 권장)`
-                    });
-                    fileNumErrorsCount++;
-                  }
-                }
+                if (parts.length > 0) {
+                  const current_val = parts[parts.length - 1];
 
-                // [조건 1] 목차 넘버링이 동일한데 제목이 다르면 오류
-                const existingTitle = numbering_title_map[rawNumStr];
-                if (existingTitle !== undefined) {
-                  if (existingTitle !== pureTitle) {
-                    allNumberings.push({
-                      fileName: file.name,
-                      slideNum: slide.slideNum,
-                      area: '좌측 타이틀',
-                      text,
-                      error: '동일 넘버링 내 목차 제목 불일치',
-                      guide: `동일한 넘버링 번호('${rawNumStr}')에 대해 이전 슬라이드에서는 '${existingTitle}'로 기술되어 있었으나, 현재 슬라이드에서는 '${pureTitle}'로 다르게 작성되어 있습니다. 오타가 아닌지 확인해 주세요.`
-                    });
-                    fileNumErrorsCount++;
-                  }
-                } else {
-                  numbering_title_map[rawNumStr] = pureTitle;
-                }
-
-                // [조건 2] 넘버링이 순차적으로 진행되지 않으면 오류 (부모 경로별 자식 순차성 통합 검증)
-                const parent_path = parts.slice(0, -1).join('.');
-                const current_val = parts[parts.length - 1];
-                const last_sibling_val = sibling_tracker[parent_path];
-
-                if (last_sibling_val !== undefined) {
-                  if (current_val === last_sibling_val) {
-                    // 중복 검출 (이전 슬라이드의 타이틀과 겹치거나 동일 슬라이드 내 중복인 경우)
-                    // 단, 연속 페이지 (1/4) 등 표시가 있는 상태라면 중복 에러에서 제외해 줍니다.
-                    if (!hasAltPages) {
+                  // 1. 동일 넘버링이 다른 슬라이드에서 쓰였는데, 제목 텍스트가 다르면 오류 검출
+                  const existingTitle = numbering_title_map[rawNumStr];
+                  if (existingTitle !== undefined) {
+                    if (existingTitle !== pureTitle) {
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
                         area: '좌측 타이틀',
                         text,
-                        error: `넘버링 중복 검출 (${rawNumStr})`,
-                        guide: `이전 슬라이드와 동일한 넘버링입니다. 숫자를 확인해 순차 증가하도록 변경해 주세요.`
+                        error: `동일 넘버링 내 타이틀 텍스트 불일치 (${rawNumStr})`,
+                        guide: `넘버링 "${rawNumStr}"에 대해 이전 슬라이드("${existingTitle}")와 현재 슬라이드("${pureTitle}")의 타이틀 텍스트가 서로 일치하지 않습니다.`
                       });
                       fileNumErrorsCount++;
                     }
-                  } else if (current_val !== last_sibling_val + 1) {
-                    // 순차 단절
-                    allNumberings.push({
-                      fileName: file.name,
-                      slideNum: slide.slideNum,
-                      area: '좌측 타이틀',
-                      text,
-                      error: `넘버링 순차성 단절 (${parent_path ? parent_path + '.' : ''}${last_sibling_val} ➜ ${rawNumStr})`,
-                      guide: `동일 계층 하위에서 일련번호가 순차적으로 1씩 증가하지 않고 누락/단절되었습니다. (이전: ${parent_path ? parent_path + '.' : ''}${last_sibling_val} ➜ 권장: ${parent_path ? parent_path + '.' : ''}${last_sibling_val + 1})`
-                    });
-                    fileNumErrorsCount++;
+                  } else {
+                    numbering_title_map[rawNumStr] = pureTitle;
                   }
-                } else {
-                  // 부모 계층 아래 최초의 자식 노드 진입 시에는 반드시 1이어야 함
-                  if (current_val !== 1) {
-                    allNumberings.push({
-                      fileName: file.name,
-                      slideNum: slide.slideNum,
-                      area: '좌측 타이틀',
-                      text,
-                      error: `하위 넘버링 시작값 오류 (${rawNumStr})`,
-                      guide: `새로운 하위 계층으로 진입할 때 일련번호는 항상 1부터 순차 시작해야 합니다. (${parent_path ? parent_path + '.1' : '1.'} 권장)`
-                    });
-                    fileNumErrorsCount++;
+
+                  // 2. 형제 노드 간의 순차적(sequential) 검증 진행
+                  const parent_path = parts.slice(0, -1).join('.');
+                  const last_sibling_val = sibling_tracker[parent_path];
+
+                  if (last_sibling_val !== undefined) {
+                    if (current_val !== last_sibling_val + 1) {
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '좌측 타이틀',
+                        text,
+                        error: `넘버링 시퀀스 단절 (${rawNumStr})`,
+                        guide: `동일 계층 수준 내에서 일련번호는 순차적으로 1씩 증가해야 합니다. (이전 형제 값: ${last_sibling_val} ➜ 현재 표기: ${current_val})`
+                      });
+                      fileNumErrorsCount++;
+                    }
+                  } else {
+                    // 부모 계층 아래 최초의 자식 노드 진입 시에는 반드시 1이어야 함 (로마자 대주제 제외)
+                    const isRoman = roman_regex.test(text);
+                    if (!isRoman && current_val !== 1) {
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '좌측 타이틀',
+                        text,
+                        error: `하위 넘버링 시작값 오류 (${rawNumStr})`,
+                        guide: `새로운 하위 계층으로 진입할 때 일련번호는 항상 1부터 순차 시작해야 합니다. (${parent_path ? parent_path + '.1' : '1.'} 권장)`
+                      });
+                      fileNumErrorsCount++;
+                    }
                   }
+                  // 트래커 기록 갱신
+                  sibling_tracker[parent_path] = current_val;
                 }
-                // 트래커 기록 갱신
-                sibling_tracker[parent_path] = current_val;
               }
 
               // 연속 페이지 (1/4) 형식의 연속성 세부 검사
