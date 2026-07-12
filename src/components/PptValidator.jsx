@@ -98,6 +98,15 @@ const check_word_boundary = (text, match_index, matched_length, duplicated_word)
   return true;
 };
 
+// ── 로마자 변환 헬퍼 함수 ─────────────────────────
+const roman_to_int = (roman) => {
+  const map = {
+    'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5,
+    'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10
+  };
+  return map[roman.toUpperCase()] || null;
+};
+
 export default function PptValidator({ apiKey }) {
   const [pptFiles, setPptFiles] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -789,28 +798,51 @@ export default function PptValidator({ apiKey }) {
           }
 
           if (checkNumbering) {
-            const headerShapes = shapes.filter(s => s.y !== null && s.y < 1300000);
+            const headerShapes = shapes.filter(s => s.y !== null && s.y < 1500000);
             
-            let leftTitle = '';
+            let leftTitles = [];
             let rightTitle = '';
             
             headerShapes.forEach(hs => {
               if (hs.x !== null && hs.x < 6000000) {
-                // 좌측 상단 영역
-                if (!leftTitle || hs.y < (leftTitle.y || 99999999)) {
-                  leftTitle = hs; // 가장 위쪽에 있는 상단 타이틀 선택
-                }
+                leftTitles.push(hs);
               } else if (hs.x !== null && hs.x >= 6000000) {
-                // 우측 상단 영역
                 if (!rightTitle || hs.y < (rightTitle.y || 99999999)) {
                   rightTitle = hs;
                 }
               }
             });
 
+            leftTitles.sort((a, b) => a.y - b.y);
+
+            let majorTitleText = '';
+            let subTitleText = '';
+
+            const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
+            const num_regex = /^\s*([0-9]+(\.[0-9]+)*)\b/;
+
+            leftTitles.forEach(t => {
+              const txt = t.text.trim();
+              if (roman_regex.test(txt)) {
+                majorTitleText = txt;
+              } else if (num_regex.test(txt) || txt.includes('/') || txt.includes('(')) {
+                if (!subTitleText) {
+                  subTitleText = txt;
+                }
+              } else {
+                if (!subTitleText && !majorTitleText) {
+                  subTitleText = txt;
+                } else if (majorTitleText && !subTitleText) {
+                  subTitleText = txt;
+                }
+              }
+            });
+
             slideList.push({
               slideNum,
-              leftTitle: leftTitle ? leftTitle.text : '',
+              majorTitle: majorTitleText,
+              subTitle: subTitleText,
+              leftTitle: subTitleText || majorTitleText || '',
               rightTitle: rightTitle ? rightTitle.text : ''
             });
 
@@ -860,7 +892,6 @@ export default function PptValidator({ apiKey }) {
         // 5. 상단 넘버링 규칙 검증 분석
         // 5-1. 좌측 넘버링 시퀀스 검증
         if (checkNumbering) {
-          let expectedMajor = 1;
           let lastParts = []; // 이전 슬라이드의 넘버링 분할 [Major, Minor, Sub...]
           let lastTitleText = ''; // 이전 슬라이드의 목차 타이틀 텍스트 보관용
           let lastPureTitle = ''; // 이전 슬라이드의 괄호 제외 순수 제목
@@ -868,10 +899,25 @@ export default function PptValidator({ apiKey }) {
           let lastCurrentAltPage = null;
           let lastTotalAltPage = null;
 
+          // 대주제 추적 및 검증용 상태 변수
+          let current_major_roman = '';
+          let current_major_val = null;
+
+          const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
+
           for (let i = 0; i < slideList.length; i++) {
             const slide = slideList[i];
-            const text = slide.leftTitle;
             
+            // 1) 대주제(로마자) 정보 업데이트
+            if (slide.majorTitle) {
+              const major_match = slide.majorTitle.match(roman_regex);
+              if (major_match) {
+                current_major_roman = major_match[1];
+                current_major_val = roman_to_int(current_major_roman);
+              }
+            }
+
+            const text = slide.subTitle; // 검증 대상은 소주제 타이틀
             if (!text) continue;
 
             // "목차 명칭 (1/4)" 정규식 파싱
@@ -962,13 +1008,27 @@ export default function PptValidator({ apiKey }) {
             lastTotalAltPage = totalAltPage;
 
             // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
-            // 또는 로마자 "I. ", 괄호 "(1) " 등 검출
             const numMatch = text.match(/^([0-9]+(\.[0-9]+)*)[\s\.]/);
             
             if (numMatch) {
               const rawNumStr = numMatch[1];
               const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
               
+              // 대주제(로마자)와의 넘버링 일치 검증 추가
+              if (current_major_val !== null) {
+                if (parts[0] !== current_major_val) {
+                  allNumberings.push({
+                    fileName: file.name,
+                    slideNum: slide.slideNum,
+                    area: '좌측 타이틀',
+                    text,
+                    error: `대주제-소주제 넘버링 불일치 (대주제: ${current_major_roman}(${current_major_val}) ➜ 소주제 시작: ${parts[0]})`,
+                    guide: `상단 대주제 장 번호('${current_major_roman}', 값: ${current_major_val})와 소주제의 첫 번째 자릿수('${parts[0]}')가 서로 맞지 않습니다. 대주제에 맞춰 소주제 일련번호를 수정해 주세요. (예: '${current_major_val}.' 또는 '${current_major_val}.1'로 변경 권장)`
+                  });
+                  fileNumErrorsCount++;
+                }
+              }
+
               if (lastParts.length > 0) {
                 // 1. 중복 감지
                 if (rawNumStr === lastParts.join('.')) {
@@ -1023,16 +1083,12 @@ export default function PptValidator({ apiKey }) {
                   } else if (lenDiff < 0) {
                     // 상위 레벨로 복귀: 복귀한 레벨의 번호가 이전 기록된 값보다 증가했는지 확인
                     // 예: 1.1.2 ➜ 1.2 또는 2
-                    const targetLen = parts.length;
-                    const lastIdx = targetLen - 1;
-                    
-                    // 복귀 대상 레벨의 마지막 자리가 이전 같은 자리에 있던 값보다 증가하지 않거나 어긋났을 때
-                    // 하지만 간단하게 시퀀스가 1만큼 증가하는지 검증
+                    // 필요 시 여기에 복귀 시퀀스 정밀 대조 추가 가능
                   }
                 }
               } else {
-                // 첫 번째 검출된 넘버링: Major가 1 또는 다른 적절한 초기값인지 확인
-                if (parts[0] !== 1 && parts.length === 1) {
+                // 첫 번째 검출된 넘버링: 대주제(로마자) 정보가 없을 때만 1 권장 경고
+                if (current_major_val === null && parts[0] !== 1 && parts.length === 1) {
                   allNumberings.push({
                     fileName: file.name,
                     slideNum: slide.slideNum,
