@@ -38,6 +38,7 @@ const TYPO_DICTIONARY = {
   '금새': { correction: '금세', desc: '금세(금시에의 준말)가 올바른 맞춤법 표기입니다.', type: '맞춤법' },
   '희안하다': { correction: '희한하다', desc: '희한하다(稀罕-)가 올바른 표기입니다.', type: '맞춤법' },
   '설레임': { correction: '설렘', desc: '설레다의 명사형은 설렘이 올바른 맞춤법입니다.', type: '맞춤법' },
+  '와부': { correction: '외부', desc: '외부(外部)의 오타 표기입니다.', type: '맞춤법' },
   
   // 외래어 표기법 오류
   '아키텍쳐': { correction: '아키텍처', desc: '외래어 표기법에 의하면 아키텍처(Architecture)가 표준입니다.', type: '외래어 표기' },
