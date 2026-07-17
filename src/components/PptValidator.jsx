@@ -407,6 +407,7 @@ export default function PptValidator({ apiKey }) {
   const [check_ai_typos, set_check_ai_typos] = useState(false);
   const [check_external_api, set_check_external_api] = useState(false);
   const [external_api_url, set_external_api_url] = useState('');
+  const [external_server_status, set_external_server_status] = useState('unknown'); // 'unknown' | 'checking' | 'running' | 'stopped'
   const [checkNumbering, setCheckNumbering] = useState(true);
   const [checkAltText, setCheckAltText] = useState(true);
   const [checkForbiddenWords, setCheckForbiddenWords] = useState(true);
@@ -2053,7 +2054,15 @@ export default function PptValidator({ apiKey }) {
 
               {/* 외부 전문 맞춤법 검사 API 연동 옵션 */}
               <div
-                onClick={() => set_check_external_api(prev => !prev)}
+                onClick={() => {
+                  const next = !check_external_api;
+                  set_check_external_api(next);
+                  // 체크박스 ON 시 로컬 서버 URL 자동 입력
+                  if (next && !external_api_url) {
+                    set_external_api_url('http://localhost:8000/check');
+                    set_external_server_status('unknown');
+                  }
+                }}
                 style={{
                   background: check_external_api ? 'rgba(234, 179, 8, 0.05)' : 'rgba(255, 255, 255, 0.01)',
                   border: check_external_api ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid var(--panel-border)',
@@ -2071,37 +2080,127 @@ export default function PptValidator({ apiKey }) {
                   checked={check_external_api}
                   onChange={(e) => {
                     e.stopPropagation();
-                    set_check_external_api(e.target.checked);
+                    const next = e.target.checked;
+                    set_check_external_api(next);
+                    if (next && !external_api_url) {
+                      set_external_api_url('http://localhost:8000/check');
+                      set_external_server_status('unknown');
+                    }
                   }}
                   style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#eab308', marginTop: '2px' }}
                 />
-                <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>외부 전문 맞춤법 API 연동</span>
                     <span style={{ fontSize: '10px', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>옵션</span>
                   </div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>사내 맞춤법 서버 또는 공인 한국어 맞춤법 API와 실시간 연동</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>로컬 맞춤법 서버 또는 사내 API와 실시간 연동 (체크 시 자동 입력)</span>
+
                   {check_external_api && (
-                    <input
-                      type="text"
-                      placeholder="https://your-spell-check-api.com/check"
-                      value={external_api_url}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => { e.stopPropagation(); set_external_api_url(e.target.value); }}
-                      style={{
-                        marginTop: '4px',
-                        padding: '7px 10px',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(234, 179, 8, 0.5)',
-                        background: 'rgba(234, 179, 8, 0.05)',
-                        color: 'var(--text-primary)',
-                        fontSize: '12px',
-                        fontFamily: 'monospace',
-                        outline: 'none',
-                        width: '100%',
-                        boxSizing: 'border-box'
-                      }}
-                    />
+                    <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+
+                      {/* URL 입력창 */}
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          placeholder="http://localhost:8000/check"
+                          value={external_api_url}
+                          onChange={(e) => { set_external_api_url(e.target.value); set_external_server_status('unknown'); }}
+                          style={{
+                            flex: 1,
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(234, 179, 8, 0.5)',
+                            background: 'rgba(234, 179, 8, 0.05)',
+                            color: 'var(--text-primary)',
+                            fontSize: '12px',
+                            fontFamily: 'monospace',
+                            outline: 'none',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                        {/* 서버 상태 확인 버튼 */}
+                        <button
+                          onClick={async () => {
+                            set_external_server_status('checking');
+                            try {
+                              const health_url = external_api_url.replace('/check', '/health').replace('/check/', '/health');
+                              const res = await fetch(health_url, { signal: AbortSignal.timeout(3000) });
+                              set_external_server_status(res.ok ? 'running' : 'stopped');
+                            } catch {
+                              set_external_server_status('stopped');
+                            }
+                          }}
+                          style={{
+                            padding: '7px 12px',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(234, 179, 8, 0.5)',
+                            background: 'rgba(234, 179, 8, 0.1)',
+                            color: '#eab308',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {external_server_status === 'checking' ? '확인 중...' : '상태 확인'}
+                        </button>
+                      </div>
+
+                      {/* 서버 상태 표시 */}
+                      {external_server_status !== 'unknown' && (
+                        <div style={{
+                          display: 'flex', alignItems: 'flex-start', gap: '8px',
+                          padding: '10px 12px', borderRadius: '8px',
+                          background: external_server_status === 'running'
+                            ? 'rgba(34, 197, 94, 0.08)'
+                            : external_server_status === 'checking'
+                            ? 'rgba(234, 179, 8, 0.08)'
+                            : 'rgba(239, 68, 68, 0.08)',
+                          border: `1px solid ${
+                            external_server_status === 'running' ? 'rgba(34,197,94,0.3)'
+                            : external_server_status === 'checking' ? 'rgba(234,179,8,0.3)'
+                            : 'rgba(239,68,68,0.3)'
+                          }`
+                        }}>
+                          <span style={{ fontSize: '16px', lineHeight: 1 }}>
+                            {external_server_status === 'running' ? '🟢' : external_server_status === 'checking' ? '🟡' : '🔴'}
+                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                            <span style={{ fontSize: '12px', fontWeight: 700,
+                              color: external_server_status === 'running' ? '#22c55e'
+                                : external_server_status === 'checking' ? '#eab308' : '#ef4444'
+                            }}>
+                              {external_server_status === 'running' ? '서버 정상 실행 중' : external_server_status === 'checking' ? '서버 상태 확인 중...' : '서버가 실행되지 않음'}
+                            </span>
+                            {external_server_status === 'stopped' && (
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                                <div>📁 서버 실행 방법:</div>
+                                <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                  <div>① 파일 탐색기에서 아래 경로를 열어주세요</div>
+                                  <code style={{
+                                    display: 'block', padding: '4px 8px',
+                                    background: 'rgba(0,0,0,0.2)', borderRadius: '4px',
+                                    fontSize: '10px', userSelect: 'all',
+                                    color: '#fbbf24', wordBreak: 'break-all'
+                                  }}>
+                                    C:\Users\JEJU_MEC_3\Desktop\AI Coding\spell-check-server
+                                  </code>
+                                  <div>② <strong>서버실행.bat</strong> 파일을 더블클릭하세요</div>
+                                  <div>③ 서버 시작 후 [상태 확인] 버튼을 다시 눌러주세요</div>
+                                </div>
+                              </div>
+                            )}
+                            {external_server_status === 'running' && (
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                ✅ 검증 시 맞춤법 서버가 자동으로 연동됩니다
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
                   )}
                 </div>
               </div>
