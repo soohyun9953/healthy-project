@@ -266,7 +266,7 @@ const call_gemini_ai_typos = async (file_name, slides_text_map, api_key) => {
     document_content += `[Slide ${slide_num}]\n${slides_text_map[slide_num].join('\n')}\n\n`;
   });
 
-  const prompt = `당신은 공공 IT 사업 제안서·수행계획서·설계서 분야에 특화된 한국어 맞춤법 및 문서 교정 전문가입니다.
+  const prompt = `당신은 IT 전략 컨설팅(ISP/ISMP) 산출물 품질 검토기입니다.
 아래 슬라이드 텍스트를 **극도로 엄격(Strict Mode)**하게 분석하여, 다음 6가지 유형의 오류를 빠짐없이 찾아 주세요.
 
 [검사 유형 및 기준]
