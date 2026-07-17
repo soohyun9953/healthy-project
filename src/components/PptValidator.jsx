@@ -665,8 +665,44 @@ export default function PptValidator({ apiKey }) {
 
         const slides_text_map = {};
 
-        const arrayBuffer = await file.arrayBuffer();
-        const zip = await JSZip.loadAsync(arrayBuffer);
+        let arrayBuffer = await file.arrayBuffer();
+        let zip;
+        let isFilePatched = false;
+        let patchCount = 0;
+
+        try {
+          zip = await JSZip.loadAsync(arrayBuffer);
+        } catch (zipErr) {
+          const errorMsg = zipErr.message || '';
+          if (errorMsg.includes('CRC32') || errorMsg.includes('Corrupted') || errorMsg.includes('zip') || errorMsg.includes('inflate')) {
+            console.warn(`[CRC-32 오류 감지] 로컬 파이썬 서버를 활용한 복구 시도 시작: ${file.name}`);
+            try {
+              const formData = new FormData();
+              formData.append('file', file);
+
+              const fixResponse = await fetch('http://localhost:8000/fix-pptx', {
+                method: 'POST',
+                body: formData
+              });
+
+              if (fixResponse.ok) {
+                const fixedBlob = await fixResponse.blob();
+                arrayBuffer = await fixedBlob.arrayBuffer();
+                zip = await JSZip.loadAsync(arrayBuffer);
+                isFilePatched = true;
+                patchCount = parseInt(fixResponse.headers.get('X-Patched-Count') || '0', 10);
+                console.log(`[CRC-32 복구 성공] 더미 이미지 패치 완료. 패치 수: ${patchCount}개`);
+              } else {
+                throw new Error(`로컬 복구 서버 응답 실패: ${fixResponse.statusText}`);
+              }
+            } catch (patchErr) {
+              console.error(`[CRC-32 복구 실패]`, patchErr);
+              throw new Error(`파일 압축 구조(CRC-32)가 손상되었으며, 로컬 복구 서버(http://localhost:8000)를 통한 복구도 실패했습니다. 서버 실행 상태를 확인해 주세요. (에러: ${patchErr.message})`);
+            }
+          } else {
+            throw zipErr;
+          }
+        }
         
         const is_hwpx = file.name.endsWith('.hwpx');
         
@@ -1661,7 +1697,9 @@ export default function PptValidator({ apiKey }) {
           macImageErrors: fileMacImageCount,
           startPage: allPageRanges[allPageRanges.length - 1]?.startPage ?? 1,
           endPage: allPageRanges[allPageRanges.length - 1]?.endPage ?? 1,
-          totalSlides: allPageRanges[allPageRanges.length - 1]?.totalSlides ?? 1
+          totalSlides: allPageRanges[allPageRanges.length - 1]?.totalSlides ?? 1,
+          isFilePatched: isFilePatched,
+          patchCount: patchCount
         });
       }
 
@@ -3066,7 +3104,27 @@ TBD
                         (checkMacImages ? stat.macImageErrors : 0);
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }}>
-                          <td style={{ padding: '14px 8px', fontWeight: 600 }}>{stat.name}</td>
+                          <td style={{ padding: '14px 8px', fontWeight: 600 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span>{stat.name}</span>
+                              {stat.isFilePatched && (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  width: 'fit-content',
+                                  fontSize: '10px',
+                                  background: 'rgba(239, 68, 68, 0.1)',
+                                  color: '#ef4444',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontWeight: 700
+                                }}>
+                                  🔧 CRC-32 복구됨 (손상 이미지 {stat.patchCount}개 대체)
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td style={{ padding: '14px 8px', color: !checkTypos ? 'var(--text-muted)' : stat.typos > 0 ? '#ef4444' : 'var(--text-muted)', fontWeight: 700 }}>
                             {checkTypos ? (stat.typos > 0 ? `${stat.typos}건` : '없음') : '비활성'}
                           </td>
