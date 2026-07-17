@@ -39,10 +39,8 @@ const TYPO_DICTIONARY = {
   '희안하다': { correction: '희한하다', desc: '희한하다(稀罕-)가 올바른 표기입니다.', type: '맞춤법' },
   '설레임': { correction: '설렘', desc: '설레다의 명사형은 설렘이 올바른 맞춤법입니다.', type: '맞춤법' },
   '와부': { correction: '외부', desc: '외부(外部)의 오타 표기입니다.', type: '맞춤법' },
-  '제사합니다': { correction: '제시합니다', desc: '비즈니스 제안 맥락상 제시합니다의 오타 표기입니다.', type: '맞춤법' },
-  '제사한': { correction: '제시한', desc: '비즈니스 제안 맥락상 제시한의 오타 표기입니다.', type: '맞춤법' },
-  '제사하며': { correction: '제시하며', desc: '비즈니스 제안 맥락상 제시하며의 오타 표기입니다.', type: '맞춤법' },
-  '제사하고': { correction: '제시하고', desc: '비즈니스 제안 맥락상 제시하고의 오타 표기입니다.', type: '맞춤법' },
+  '제사하다': { correction: '제시하다', desc: '비즈니스 제안 맥락상 제시하다의 오타 표기입니다.', type: '맞춤법' },
+  '계발하다': { correction: '개발하다', desc: '소프트웨어 개발 맥락상 개발하다의 오타 표기입니다.', type: '맞춤법' },
   
   // 외래어 표기법 오류
   '아키텍쳐': { correction: '아키텍처', desc: '외래어 표기법에 의하면 아키텍처(Architecture)가 표준입니다.', type: '외래어 표기' },
@@ -126,6 +124,88 @@ const validate_typo_match = (text, typo) => {
   return false;
 };
 
+// 한글 동사/형용사 어미 변화형을 자동으로 생성해 사전에 추가해주는 알고리즘 헬퍼 함수
+const generate_conjugation_rules = (dict) => {
+  const extended_dict = { ...dict };
+  
+  // 국어 어미 변화 정의 (하다 계열)
+  const HADA_ENDINGS = [
+    { suffix: '합니다', corr_suffix: '합니다' },
+    { suffix: '하고', corr_suffix: '하고' },
+    { suffix: '한', corr_suffix: '한' },
+    { suffix: '할', corr_suffix: '할' },
+    { suffix: '하며', corr_suffix: '하며' },
+    { suffix: '하면', corr_suffix: '하면' },
+    { suffix: '하므로', corr_suffix: '하므로' },
+    { suffix: '하여', corr_suffix: '하여' },
+    { suffix: '했다', corr_suffix: '했다' },
+    { suffix: '했음', corr_suffix: '했음' },
+    { suffix: '함', corr_suffix: '함' },
+    { suffix: '하되', corr_suffix: '하되' },
+    { suffix: '하는', corr_suffix: '하는' },
+    { suffix: '하신', corr_suffix: '하신' }
+  ];
+
+  // 되다 계열 어미 변화 정의
+  const DOEDA_ENDINGS = [
+    { suffix: '됩니다', corr_suffix: '됩니다' },
+    { suffix: '되고', corr_suffix: '되고' },
+    { suffix: '된', corr_suffix: '된' },
+    { suffix: '될', corr_suffix: '될' },
+    { suffix: '되며', corr_suffix: '되며' },
+    { suffix: '되면', corr_suffix: '되면' },
+    { suffix: '되므로', corr_suffix: '되므로' },
+    { suffix: '되어', corr_suffix: '되어' },
+    { suffix: '됐다', corr_suffix: '됐다' },
+    { suffix: '됐음', corr_suffix: '됐음' },
+    { suffix: '됨', corr_suffix: '됨' },
+    { suffix: '되되', corr_suffix: '되되' },
+    { suffix: '되는', corr_suffix: '되는' }
+  ];
+
+  Object.keys(dict).forEach(key => {
+    const item = dict[key];
+    
+    // 1. ~하다 계열 파생
+    if (key.endsWith('하다') && item.correction.endsWith('하다')) {
+      const typo_stem = key.substring(0, key.length - 2); // '제사'
+      const corr_stem = item.correction.substring(0, item.correction.length - 2); // '제시'
+      
+      HADA_ENDINGS.forEach(ending => {
+        const derived_typo = typo_stem + ending.suffix;
+        const derived_corr = corr_stem + ending.corr_suffix;
+        if (!extended_dict[derived_typo]) {
+          extended_dict[derived_typo] = {
+            correction: derived_corr,
+            desc: `어미 변화 규칙: [${key} ➜ ${item.correction}]의 파생형 오류입니다.`,
+            type: item.type
+          };
+        }
+      });
+    }
+
+    // 2. ~되다 계열 파생
+    if (key.endsWith('되다') && item.correction.endsWith('되다')) {
+      const typo_stem = key.substring(0, key.length - 2);
+      const corr_stem = item.correction.substring(0, item.correction.length - 2);
+      
+      DOEDA_ENDINGS.forEach(ending => {
+        const derived_typo = typo_stem + ending.suffix;
+        const derived_corr = corr_stem + ending.corr_suffix;
+        if (!extended_dict[derived_typo]) {
+          extended_dict[derived_typo] = {
+            correction: derived_corr,
+            desc: `어미 변화 규칙: [${key} ➜ ${item.correction}]의 파생형 오류입니다.`,
+            type: item.type
+          };
+        }
+      });
+    }
+  });
+
+  return extended_dict;
+};
+
 // 동일 단어 중복 검출 시 단어 경계(Boundary) 유효성 검사 헬퍼 함수 (스네이크 케이스 준수)
 const check_word_boundary = (text, match_index, matched_length, duplicated_word) => {
   const start1 = match_index;
@@ -192,22 +272,37 @@ const call_gemini_ai_typos = async (file_name, slides_text_map, api_key) => {
     document_content += `[Slide ${slide_num}]\n${slides_text_map[slide_num].join('\n')}\n\n`;
   });
 
-  const prompt = `당신은 한글 맞춤법 및 비즈니스 문서 교정의 최고 전문가입니다.
-다음 문서 텍스트를 면밀히 검토하여, 문맥적 오탈자, 맞춤법 오류, 띄어쓰기 오류, 비즈니스상 부적절한 단어, 공문서 격식에 어긋나는 표현을 교정해 주세요.
+  const prompt = `당신은 공공 IT 사업 제안서·수행계획서·설계서 분야에 특화된 한국어 맞춤법 및 문서 교정 전문가입니다.
+아래 슬라이드 텍스트를 **극도로 엄격(Strict Mode)**하게 분석하여, 다음 6가지 유형의 오류를 빠짐없이 찾아 주세요.
 
-[제약 사항]
-1. 단순 복합 명사의 붙여쓰기(예: 데이터전송)나 아라비아 숫자+의존명사 붙여쓰기(예: 3개)는 절대 오류로 지적하지 마십시오.
-2. 명백한 문맥적 오류 및 오탈자만 교정안으로 제시하십시오.
-3. 반드시 아래 JSON 배열 형식으로만 응답해야 하며, 그 외의 텍스트(설명 등)는 절대 포함하지 마십시오.
+[검사 유형 및 기준]
+1. **오타·오자**: 자모 오입력으로 인한 명백한 오타. 예) 제사합니다→제시합니다, 와부→외부, 아키텍쳐→아키텍처
+2. **혼동 어휘**: 의미가 달라지는 동음이의어/유사어 오용. 예) 결재(決裁)↔결제(決濟), 대표(代表)↔데표, 계발(啓發)↔개발(開發)
+3. **외래어 표기**: 국립국어원 외래어 표기법 위반. 예) 컨텐츠→콘텐츠, 레포트→리포트, 스케쥴→스케줄, 플렛폼→플랫폼
+4. **띄어쓰기 오류**: 조사·어미·의존명사 등 표준 띄어쓰기 위반. 예) 확인바랍니다→확인 바랍니다, 될수있는→될 수 있는
+5. **이중 피동·이중 부정**: 비문법적 표현. 예) ~되어지다(→~되다), ~지 않을 수가 없다
+6. **비격식·구어체 표현**: 공문서에 어울리지 않는 표현. 예) 이것보다→이보다, 좀→다소
+
+[절대 지적 금지 항목]
+- 복합명사 붙여쓰기 (예: 데이터전송, 클라우드인프라)
+- 숫자+의존명사 (예: 3개, 5단계, 2개월)
+- 영문 약어 및 전문 기술 용어 (예: AI, API, ISP, ISMP, UI, UX)
+- 고유명사(기관명, 시스템명)
+- 슬라이드 번호·날짜 등 형식 데이터
+
+[응답 규칙]
+- 반드시 아래 JSON 배열 형식으로만 응답하십시오. 다른 텍스트·마크다운·설명을 절대 포함하지 마십시오.
+- 오류가 없을 경우 빈 배열 []을 반환하십시오.
+- 동일 슬라이드에서 여러 오류가 있을 경우 각각 별도 항목으로 반환하십시오.
 
 [응답 JSON 형식]
 [
   {
     "slideNum": <슬라이드번호 (숫자)>,
     "originalText": "<오류가 포함된 문장 전체>",
-    "typo": "<오류 단어>",
-    "correction": "<교정 단어>",
-    "desc": "<오류 종류 및 원인 설명>"
+    "typo": "<오류 단어 또는 구절>",
+    "correction": "<교정 단어 또는 구절>",
+    "desc": "<오류 유형 및 간략 설명>"
   }
 ]
 
@@ -251,6 +346,57 @@ ${document_content}`;
   }
 };
 
+// 외부 전문 맞춤법 검사 API를 호출하는 비동기 함수 (선택 옵션)
+const call_external_spell_check = async (file_name, slides_text_map, api_url) => {
+  if (!api_url || !api_url.trim()) {
+    throw new Error('외부 맞춤법 검사 API URL이 설정되지 않았습니다. 설정에서 API 주소를 입력해 주세요.');
+  }
+
+  const results = [];
+
+  for (const slide_num of Object.keys(slides_text_map)) {
+    const text = slides_text_map[slide_num].join('\n');
+    if (!text.trim()) continue;
+
+    try {
+      const response = await fetch(api_url.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, slide: parseInt(slide_num, 10) })
+      });
+
+      if (!response.ok) {
+        console.warn(`외부 API 슬라이드 ${slide_num} 호출 실패: ${response.status}`);
+        continue;
+      }
+
+      const data = await response.json();
+
+      // 외부 API 응답 규격: { errors: [{ typo, correction, desc, sentence }] }
+      if (Array.isArray(data.errors)) {
+        data.errors.forEach(item => {
+          if (item.typo && item.correction) {
+            results.push({
+              fileName: file_name,
+              slideNum: parseInt(slide_num, 10),
+              sentence: item.sentence || text,
+              typo: item.typo,
+              correction: item.correction,
+              type: '외부 맞춤법 API',
+              desc: item.desc || '외부 맞춤법 검사 API 검출 항목',
+              isAi: true
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.warn(`외부 API 슬라이드 ${slide_num} 오류:`, err.message);
+    }
+  }
+
+  return results;
+};
+
 export default function PptValidator({ apiKey }) {
   const [pptFiles, setPptFiles] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -259,6 +405,8 @@ export default function PptValidator({ apiKey }) {
   // 검증 옵션 분리 상태
   const [checkTypos, setCheckTypos] = useState(true);
   const [check_ai_typos, set_check_ai_typos] = useState(false);
+  const [check_external_api, set_check_external_api] = useState(false);
+  const [external_api_url, set_external_api_url] = useState('');
   const [checkNumbering, setCheckNumbering] = useState(true);
   const [checkAltText, setCheckAltText] = useState(true);
   const [checkForbiddenWords, setCheckForbiddenWords] = useState(true);
@@ -502,7 +650,7 @@ export default function PptValidator({ apiKey }) {
     const allMacImageErrors = [];
     const stats = [];
     const userDict = parseUserDictionary();
-    const mergedDict = { ...TYPO_DICTIONARY, ...userDict };
+    const mergedDict = generate_conjugation_rules({ ...TYPO_DICTIONARY, ...userDict });
 
     try {
       for (const file of pptFiles) {
@@ -1489,6 +1637,18 @@ export default function PptValidator({ apiKey }) {
           }
         }
 
+        if (check_external_api && external_api_url) {
+          try {
+            const ext_typos = await call_external_spell_check(file.name, slides_text_map, external_api_url);
+            ext_typos.forEach(t => {
+              allTypos.push(t);
+              fileTyposCount++;
+            });
+          } catch (err) {
+            console.error("외부 맞춤법 API 검증 중 오류 발생:", err);
+          }
+        }
+
         stats.push({
           name: file.name,
           typos: fileTyposCount,
@@ -1888,6 +2048,61 @@ export default function PptValidator({ apiKey }) {
                     <Sparkles size={14} style={{ color: '#6366f1' }} />
                   </div>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Gemini AI를 이용한 실시간 문맥 맞춤법 및 문맥 오류 진단</span>
+                </div>
+              </div>
+
+              {/* 외부 전문 맞춤법 검사 API 연동 옵션 */}
+              <div
+                onClick={() => set_check_external_api(prev => !prev)}
+                style={{
+                  background: check_external_api ? 'rgba(234, 179, 8, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                  border: check_external_api ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={check_external_api}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    set_check_external_api(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#eab308', marginTop: '2px' }}
+                />
+                <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>외부 전문 맞춤법 API 연동</span>
+                    <span style={{ fontSize: '10px', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>옵션</span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>사내 맞춤법 서버 또는 공인 한국어 맞춤법 API와 실시간 연동</span>
+                  {check_external_api && (
+                    <input
+                      type="text"
+                      placeholder="https://your-spell-check-api.com/check"
+                      value={external_api_url}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => { e.stopPropagation(); set_external_api_url(e.target.value); }}
+                      style={{
+                        marginTop: '4px',
+                        padding: '7px 10px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(234, 179, 8, 0.5)',
+                        background: 'rgba(234, 179, 8, 0.05)',
+                        color: 'var(--text-primary)',
+                        fontSize: '12px',
+                        fontFamily: 'monospace',
+                        outline: 'none',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  )}
                 </div>
               </div>
 
