@@ -12,11 +12,15 @@ import {
   AlertCircle,
   ChevronRight,
   HelpCircle,
-  Info
+  Info,
+  Plus,
+  Trash2,
+  Sparkles
 } from 'lucide-react';
 
 // 오탈자 내장 사전 정의
 const TYPO_DICTIONARY = {
+  // 맞춤법 오류
   '역활': { correction: '역할', desc: '역할(役割)의 잘못된 표기입니다.', type: '맞춤법' },
   '되서': { correction: '돼서', desc: '되어서의 축약형인 돼서로 써야 합니다.', type: '맞춤법' },
   '바램': { correction: '바람', desc: '바라다에서 파생된 명사는 바람이 맞습니다.', type: '맞춤법' },
@@ -27,6 +31,13 @@ const TYPO_DICTIONARY = {
   '어의없다': { correction: '어이없다', desc: '어처구니없다 또는 어이없다가 올바른 표기입니다.', type: '맞춤법' },
   '않돼': { correction: '안 돼', desc: '안 되어의 축약형인 안 돼가 표준 표기입니다.', type: '맞춤법' },
   '안돼다': { correction: '안되다', desc: '일이나 현상이 좋지 않게 흘러갈 때는 안되다가 표준어입니다.', type: '맞춤법' },
+  '갯수': { correction: '개수', desc: '개수(個數)가 맞춤법에 부합하는 올바른 표기입니다.', type: '맞춤법' },
+  '댓가': { correction: '대가', desc: '대가(代價)가 맞춤법에 부합하는 올바른 표기입니다. 사이시옷이 들어가지 않습니다.', type: '맞춤법' },
+  '바꼈다': { correction: '바뀌었다', desc: '바뀌었다가 줄어든 말은 바뀌었다로 표기해야 합니다.', type: '맞춤법' },
+  '가게부': { correction: '가계부', desc: '가계부(家計簿)가 올바른 표기입니다.', type: '맞춤법' },
+  '금새': { correction: '금세', desc: '금세(금시에의 준말)가 올바른 맞춤법 표기입니다.', type: '맞춤법' },
+  '희안하다': { correction: '희한하다', desc: '희한하다(稀罕-)가 올바른 표기입니다.', type: '맞춤법' },
+  '설레임': { correction: '설렘', desc: '설레다의 명사형은 설렘이 올바른 맞춤법입니다.', type: '맞춤법' },
   
   // 외래어 표기법 오류
   '아키텍쳐': { correction: '아키텍처', desc: '외래어 표기법에 의하면 아키텍처(Architecture)가 표준입니다.', type: '외래어 표기' },
@@ -43,15 +54,71 @@ const TYPO_DICTIONARY = {
   '프로세씽': { correction: '프로세싱', desc: '프로세싱(Processing)이 올바른 외래어 표기입니다.', type: '외래어 표기' },
   '인터페이서': { correction: '인터페이스', desc: '인터페이스(Interface)가 표준 표기입니다.', type: '외래어 표기' },
   '코뮤니케이션': { correction: '커뮤니케이션', desc: '커뮤니케이션(Communication)이 올바른 외래어 표기입니다.', type: '외래어 표기' },
+  '넷트웍': { correction: '네트워크', desc: '네트워크(Network)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '메세지': { correction: '메시지', desc: '메시지(Message)가 표준 외래어 표기법에 부합합니다.', type: '외래어 표기' },
+  '네비게이션': { correction: '내비게이션', desc: '내비게이션(Navigation)이 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '카다로그': { correction: '카탈로그', desc: '카탈로그(Catalogue)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '심포지움': { correction: '심포지엄', desc: '심포지엄(Symposium)이 올바른 외래어 표기입니다.', type: '외래어 표기' },
+  '컨퍼런스': { correction: '콘퍼런스', desc: '콘퍼런스(Conference)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
   
-  // 비즈니스/용어 혼동
+  // 비즈니스/용어 혼동 및 순화어
   '임계치': { correction: '임계값', desc: '순화어 권고 사항에 의하면 임계값을 사용하는 것을 권장합니다.', type: '순화어/비즈니스' },
   '가이도라인': { correction: '가이드라인', desc: '가이드라인(Guideline)의 오타 표기입니다.', type: '순화어/비즈니스' },
   '임프라': { correction: '인프라', desc: '인프라(Infrastructure)의 오타 표기입니다.', type: '순화어/비즈니스' },
-  '넷트웍': { correction: '네트워크', desc: '네트워크가 올바른 한글 표기법입니다.', type: '외래어 표기' },
+  '구비서류': { correction: '제출서류', desc: '구비서류는 제출서류 또는 갖춤서류로 순화하여 사용하는 것이 권장됩니다.', type: '순화어/비즈니스' },
+  '시말서': { correction: '경위서', desc: '시말서는 경위서로 순화하여 쓰는 것이 비즈니스 표준에 가깝습니다.', type: '순화어/비즈니스' },
+  '도모하다': { correction: '꾀하다', desc: '가급적 쉬운 한글 표현인 꾀하다 혹은 마련하다 등으로 순화해 쓰는 것이 좋습니다.', type: '순화어/비즈니스' },
+  '노하우': { correction: '비법/비결', desc: '노하우(Know-how) 대신 비법, 전문 비결 등으로 순화하여 사용하는 것이 권장됩니다.', type: '순화어/비즈니스' },
+  '바이어': { correction: '구매자/거래처', desc: '바이어(Buyer) 대신 구매자 또는 거래처로 명시하는 것이 권장됩니다.', type: '순화어/비즈니스' },
+  '옵티마이징': { correction: '최적화', desc: '외래어 용어 대신 순화어인 최적화를 권장합니다.', type: '순화어/비즈니스' },
+  
+  // 띄어쓰기
   '개선방안': { correction: '개선 방안', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' },
   '일정계획': { correction: '일정 계획', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' },
-  '상세설계': { correction: '상세 설계', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' }
+  '상세설계': { correction: '상세 설계', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' },
+  '수행과제': { correction: '수행 과제', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' },
+  '요구사항': { correction: '요구 사항', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' }
+};
+
+// 오탈자 매칭 시 한국어 단어 경계 및 오탐 분석 헬퍼 함수 (스네이크 케이스 준수)
+const validate_typo_match = (text, typo) => {
+  let index = text.indexOf(typo);
+  while (index !== -1) {
+    const prev_char = index > 0 ? text[index - 1] : '';
+    const next_char = index + typo.length < text.length ? text[index + typo.length] : '';
+
+    const is_korean_or_alphanumeric = (char) => {
+      if (!char) return false;
+      return /[a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ]/.test(char);
+    };
+
+    // 1. 앞 문자 검증: 매칭된 단어 바로 앞에 한글이나 알파벳/숫자가 연속해서 오면 다른 단어의 일부로 판단하여 제외
+    // 예: '영역활성화'에서 '역활' 앞의 '영'
+    let is_prev_valid = true;
+    if (is_korean_or_alphanumeric(prev_char)) {
+      is_prev_valid = false;
+    }
+
+    // 2. 뒤 문자 검증: 매칭된 단어 바로 뒤에 한글이나 알파벳/숫자가 오되, 조사인 경우는 매칭 허용
+    // 한국어 조사의 대표적인 예: '이', '가', '을', '를', '은', '는', '에', '의', '도', '만', '과', '와', '로', '으로' 등
+    // 단, 조사 뒤에 추가로 한글이 더 오면 조사 결합이 아닌 다른 단어의 일부일 확률이 높음 (예: '역활성화' -> '성', '화'가 추가로 붙음)
+    let is_next_valid = true;
+    if (is_korean_or_alphanumeric(next_char)) {
+      const particle_regex = /^(이|가|을|를|은|는|에|의|도|만|과|와|로|로써|로서|으로|까지|부터|요|만)\b|^[.,;:!?()\s]/;
+      const remaining_text = text.substring(index + typo.length);
+      // 조사가 결합되었거나 바로 문장 부호/공백이 오는 경우라면 유효한 오탈자 매칭으로 봄
+      if (!particle_regex.test(remaining_text)) {
+        is_next_valid = false;
+      }
+    }
+
+    if (is_prev_valid && is_next_valid) {
+      return true;
+    }
+
+    index = text.indexOf(typo, index + 1);
+  }
+  return false;
 };
 
 // 동일 단어 중복 검출 시 단어 경계(Boundary) 유효성 검사 헬퍼 함수 (스네이크 케이스 준수)
@@ -107,6 +174,78 @@ const roman_to_int = (roman) => {
   return map[roman.toUpperCase()] || null;
 };
 
+// Gemini API를 직접 호출하여 문맥적인 오탈자 및 맞춤법을 진단받는 비동기 함수
+const call_gemini_ai_typos = async (file_name, slides_text_map, api_key) => {
+  const keys = String(api_key).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+  if (keys.length === 0) {
+    throw new Error('유효한 Gemini API 키가 없습니다. 설정 탭에서 API 키를 등록해 주세요.');
+  }
+  const key = keys[0];
+
+  let document_content = '';
+  Object.keys(slides_text_map).forEach(slide_num => {
+    document_content += `[Slide ${slide_num}]\n${slides_text_map[slide_num].join('\n')}\n\n`;
+  });
+
+  const prompt = `당신은 한글 맞춤법 및 비즈니스 문서 교정의 최고 전문가입니다.
+다음 문서 텍스트를 면밀히 검토하여, 문맥적 오탈자, 맞춤법 오류, 띄어쓰기 오류, 비즈니스상 부적절한 단어, 공문서 격식에 어긋나는 표현을 교정해 주세요.
+
+[제약 사항]
+1. 단순 복합 명사의 붙여쓰기(예: 데이터전송)나 아라비아 숫자+의존명사 붙여쓰기(예: 3개)는 절대 오류로 지적하지 마십시오.
+2. 명백한 문맥적 오류 및 오탈자만 교정안으로 제시하십시오.
+3. 반드시 아래 JSON 배열 형식으로만 응답해야 하며, 그 외의 텍스트(설명 등)는 절대 포함하지 마십시오.
+
+[응답 JSON 형식]
+[
+  {
+    "slideNum": <슬라이드번호 (숫자)>,
+    "originalText": "<오류가 포함된 문장 전체>",
+    "typo": "<오류 단어>",
+    "correction": "<교정 단어>",
+    "desc": "<오류 종류 및 원인 설명>"
+  }
+]
+
+[검토할 슬라이드 텍스트]
+${document_content}`;
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: 'application/json'
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const err_text = await response.text();
+    throw new Error(`Gemini API 호출 실패: ${err_text}`);
+  }
+
+  const res_json = await response.json();
+  const text_response = res_json.candidates[0].content.parts[0].text;
+  
+  try {
+    const parsed = JSON.parse(text_response.trim());
+    return parsed.map(item => ({
+      fileName: file_name,
+      slideNum: parseInt(item.slideNum || '1', 10),
+      sentence: item.originalText,
+      typo: item.typo,
+      correction: item.correction,
+      type: 'AI 맞춤법 (Gemini)',
+      desc: item.desc,
+      isAi: true // AI 검출 항목 식별용
+    }));
+  } catch (err) {
+    console.error('Gemini JSON 파싱 오류:', err, text_response);
+    return [];
+  }
+};
+
 export default function PptValidator({ apiKey }) {
   const [pptFiles, setPptFiles] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -114,6 +253,7 @@ export default function PptValidator({ apiKey }) {
   
   // 검증 옵션 분리 상태
   const [checkTypos, setCheckTypos] = useState(true);
+  const [check_ai_typos, set_check_ai_typos] = useState(false);
   const [checkNumbering, setCheckNumbering] = useState(true);
   const [checkAltText, setCheckAltText] = useState(true);
   const [checkForbiddenWords, setCheckForbiddenWords] = useState(true);
@@ -139,6 +279,127 @@ export default function PptValidator({ apiKey }) {
   const [userDictText, setUserDictText] = useState(() => {
     return localStorage.getItem('ppt_validator_user_dict') || '';
   }); // 사용자 정의 사전 입력란
+  const [userDictTab, setUserDictTab] = useState('table'); // 'table' 또는 'text'
+  const dictFileInputRef = useRef(null);
+  const [showDictModal, setShowDictModal] = useState(false);
+  const [dictFilterCategory, setDictFilterCategory] = useState('전체');
+
+  // 현재 사용자 사전을 [{typo, correction}] 리스트로 파싱하는 헬퍼
+  const get_user_dict_list = () => {
+    const list = [];
+    if (!userDictText.trim()) return list;
+    const lines = userDictText.split('\n');
+    lines.forEach(line => {
+      const parts = line.split(/[=➜➔>:\-]/);
+      if (parts.length >= 2) {
+        const typo = parts[0].trim();
+        const correction = parts[1].trim();
+        if (typo && correction) {
+          list.push({ typo, correction });
+        }
+      }
+    });
+    return list;
+  };
+
+  // 리스트를 다시 userDictText로 동기화
+  const save_user_dict_list = (list) => {
+    const text = list.map(item => `${item.typo} ➜ ${item.correction}`).join('\n');
+    setUserDictText(text);
+  };
+
+  // 행 추가
+  const handle_add_dict_row = (typo, correction) => {
+    if (!typo || !correction) return;
+    const list = get_user_dict_list();
+    if (list.some(item => item.typo === typo)) {
+      alert('이미 등록된 오탈자 단어입니다.');
+      return;
+    }
+    list.push({ typo, correction });
+    save_user_dict_list(list);
+  };
+
+  // 행 삭제
+  const handle_delete_dict_row = (typo) => {
+    const list = get_user_dict_list();
+    const filtered = list.filter(item => item.typo !== typo);
+    save_user_dict_list(filtered);
+  };
+
+  // 엑셀 내보내기 (다운로드)
+  const handle_export_dict_excel = () => {
+    const list = get_user_dict_list();
+    if (list.length === 0) {
+      alert('내보낼 오탈자 규칙이 없습니다. 먼저 규칙을 등록해 주세요.');
+      return;
+    }
+    const data = list.map(item => ({
+      '오탈자 단어': item.typo,
+      '교정 단어': item.correction
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '사용자 정의 사전');
+    XLSX.writeFile(workbook, '오탈자_사용자정의사전.xlsx');
+  };
+
+  // 템플릿 다운로드
+  const handle_download_dict_template = () => {
+    const sample_data = [
+      { '오탈자 단어': '아키택처', '교정 단어': '아키텍처' },
+      { '오탈자 단어': '스프링부터', '교정 단어': '스프링부트' }
+    ];
+    const worksheet = XLSX.utils.json_to_sheet(sample_data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '템플릿');
+    XLSX.writeFile(workbook, '오탈자_사전_템플릿.xlsx');
+  };
+
+  // 엑셀 가져오기 (업로드)
+  const handle_import_dict_excel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet_name = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheet_name];
+        const json = XLSX.utils.sheet_to_json(worksheet);
+
+        const list = get_user_dict_list();
+        let added_count = 0;
+
+        json.forEach(row => {
+          const typo = (row['오탈자 단어'] || row['오탈자'] || row['typo'] || '').toString().trim();
+          const correction = (row['교정 단어'] || row['교정'] || row['correction'] || '').toString().trim();
+
+          if (typo && correction) {
+            if (!list.some(item => item.typo === typo)) {
+              list.push({ typo, correction });
+              added_count++;
+            }
+          }
+        });
+
+        if (added_count > 0) {
+          save_user_dict_list(list);
+          alert(`엑셀 파일에서 ${added_count}개의 규칙을 성공적으로 가져왔습니다.`);
+        } else {
+          alert('가져올 새로운 규칙이 없거나 엑셀 포맷이 잘못되었습니다. [오탈자 단어], [교정 단어] 헤더가 포함되어 있는지 확인해 주세요.');
+        }
+      } catch (err) {
+        console.error('엑셀 파싱 실패:', err);
+        alert('엑셀 파일을 읽는 도중 오류가 발생했습니다.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
   const [forbiddenWordsText, setForbiddenWordsText] = useState(() => {
     const saved = localStorage.getItem('ppt_validator_forbidden_words');
     return saved !== null ? saved : "미정\n임시\nTBD\n검토필요\n작성중";
@@ -248,6 +509,8 @@ export default function PptValidator({ apiKey }) {
         let file_duplicate_count = 0;
         let fileMacImageCount = 0;
 
+        const slides_text_map = {};
+
         const arrayBuffer = await file.arrayBuffer();
         const zip = await JSZip.loadAsync(arrayBuffer);
         
@@ -287,11 +550,15 @@ export default function PptValidator({ apiKey }) {
                 const paragraph_text = p_text_list.join('').trim();
                 if (paragraph_text) {
                   const slideNum = sIdx + 1;
+                  if (!slides_text_map[slideNum]) {
+                    slides_text_map[slideNum] = [];
+                  }
+                  slides_text_map[slideNum].push(paragraph_text);
                   
                   // 1) 오탈자 점검
                   if (checkTypos) {
                     Object.keys(mergedDict).forEach(typo => {
-                      if (paragraph_text.includes(typo)) {
+                      if (paragraph_text.includes(typo) && validate_typo_match(paragraph_text, typo)) {
                         const exists = allTypos.some(t => 
                           t.fileName === file.name && 
                           t.slideNum === slideNum && 
@@ -500,6 +767,10 @@ export default function PptValidator({ apiKey }) {
 
               if (textContent) {
                 shapes.push({ x, y, cx, cy, text: textContent });
+                if (!slides_text_map[slideNum]) {
+                  slides_text_map[slideNum] = [];
+                }
+                slides_text_map[slideNum].push(textContent);
               }
             }
           }
@@ -513,7 +784,7 @@ export default function PptValidator({ apiKey }) {
               Object.keys(mergedDict).forEach(typo => {
                 // 한글 조사 등 경계 고려 정규식 생성
                 // 예: '역활이', '역활을'도 잡히도록 단어 포함 여부 검증
-                if (text.includes(typo)) {
+                if (text.includes(typo) && validate_typo_match(text, typo)) {
                   // 문장 내 중복 검출 방지
                   const exists = allTypos.some(t => 
                     t.fileName === file.name && 
@@ -1201,6 +1472,18 @@ export default function PptValidator({ apiKey }) {
         }
         }
 
+        if (check_ai_typos && apiKey) {
+          try {
+            const aiTypos = await call_gemini_ai_typos(file.name, slides_text_map, apiKey);
+            aiTypos.forEach(t => {
+              allTypos.push(t);
+              fileTyposCount++;
+            });
+          } catch (err) {
+            console.error("AI 오탈자 검증 중 오류 발생:", err);
+          }
+        }
+
         stats.push({
           name: file.name,
           typos: fileTyposCount,
@@ -1570,6 +1853,39 @@ export default function PptValidator({ apiKey }) {
                 </div>
               </div>
 
+              {/* 1-2. AI 오탈자 정밀 검증 */}
+              <div 
+                onClick={() => set_check_ai_typos(prev => !prev)}
+                style={{ 
+                  background: check_ai_typos ? 'rgba(99, 102, 241, 0.05)' : 'rgba(255, 255, 255, 0.01)', 
+                  border: check_ai_typos ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px', 
+                  padding: '12px 16px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={check_ai_typos} 
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    set_check_ai_typos(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#6366f1' }}
+                />
+                <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '2px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>AI 오탈자 정밀 검증</span>
+                    <Sparkles size={14} style={{ color: '#6366f1' }} />
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Gemini AI를 이용한 실시간 문맥 맞춤법 및 문맥 오류 진단</span>
+                </div>
+              </div>
+
               {/* 2. 넘버링 및 목차 검증 */}
               <div 
                 onClick={() => setCheckNumbering(prev => !prev)}
@@ -1816,37 +2132,294 @@ export default function PptValidator({ apiKey }) {
           
           {/* 사용자 정의 검증 사전 등록 */}
           <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <HelpCircle size={17} color="var(--accent-purple)" /> 사용자 정의 검사 규칙 (선택)
-            </h3>
-            <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-              프로젝트 고유 명사나 내장 사전에 존재하지 않는 특정 오탈자를 추가할 수 있습니다. <strong>[오타단어 ➜ 바른단어]</strong> 형태로 한 줄씩 기재해 주세요.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <HelpCircle size={17} color="var(--accent-purple)" /> 사용자 정의 검사 규칙
+              </h3>
+              {/* 탭 컨트롤러 */}
+              <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px' }}>
+                <button
+                  onClick={() => setUserDictTab('table')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    border: 'none',
+                    borderRadius: '6px',
+                    background: userDictTab === 'table' ? 'var(--panel-border)' : 'transparent',
+                    color: userDictTab === 'table' ? 'var(--text-primary)' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  표 편집
+                </button>
+                <button
+                  onClick={() => setUserDictTab('text')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    border: 'none',
+                    borderRadius: '6px',
+                    background: userDictTab === 'text' ? 'var(--panel-border)' : 'transparent',
+                    color: userDictTab === 'text' ? 'var(--text-primary)' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  텍스트 편집
+                </button>
+              </div>
+            </div>
+
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+              프로젝트 고유 명사나 내장 사전에 없는 오탈자 규칙을 설정해 검출 정확도를 향상시킬 수 있습니다.
             </p>
-            <textarea
-              value={userDictText}
-              onChange={(e) => setUserDictText(e.target.value)}
-              placeholder={`예시 입력:
+
+            {userDictTab === 'text' ? (
+              <textarea
+                value={userDictText}
+                onChange={(e) => setUserDictText(e.target.value)}
+                placeholder={`예시 입력:
 프로젝트명 ➜ 건강한 프로젝트
 아키택처 ➜ 아키텍처
 스프링부터 ➜ 스프링부트`}
-              style={{
-                width: '100%',
-                height: '140px',
-                padding: '12px',
-                background: 'rgba(0,0,0,0.2)',
-                border: '1px solid var(--panel-border)',
-                borderRadius: '10px',
-                color: 'var(--text-primary)',
-                fontSize: '13px',
-                fontFamily: 'monospace',
-                lineHeight: '1.6',
-                resize: 'none',
-                outline: 'none'
-              }}
-            />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-              <Info size={12} />
-              <span>내장 사전에 있는 규칙은 기본적으로 적용됩니다.</span>
+                style={{
+                  width: '100%',
+                  height: '180px',
+                  padding: '12px',
+                  background: 'rgba(0,0,0,0.2)',
+                  border: '1px solid var(--panel-border)',
+                  borderRadius: '10px',
+                  color: 'var(--text-primary)',
+                  fontSize: '13px',
+                  fontFamily: 'monospace',
+                  lineHeight: '1.6',
+                  resize: 'none',
+                  outline: 'none'
+                }}
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* 엑셀 관리 버튼바 */}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => dictFileInputRef.current?.click()}
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      background: 'rgba(99, 102, 241, 0.1)',
+                      border: '1px solid rgba(99, 102, 241, 0.2)',
+                      borderRadius: '8px',
+                      color: '#818cf8',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <FileSpreadsheet size={13} />
+                    가져오기
+                  </button>
+                  <button
+                    onClick={handle_export_dict_excel}
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid var(--panel-border)',
+                      borderRadius: '8px',
+                      color: 'var(--text-primary)',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <Download size={13} />
+                    내보내기
+                  </button>
+                  <button
+                    onClick={handle_download_dict_template}
+                    style={{
+                      padding: '8px 10px',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px dashed var(--panel-border)',
+                      borderRadius: '8px',
+                      color: 'var(--text-secondary)',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    템플릿 받기
+                  </button>
+                  <input
+                    type="file"
+                    ref={dictFileInputRef}
+                    onChange={handle_import_dict_excel}
+                    accept=".xlsx, .xls"
+                    style={{ display: 'none' }}
+                  />
+                </div>
+
+                {/* 행 추가 영역 */}
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    id="new-typo-input"
+                    type="text"
+                    placeholder="오타 단어"
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      background: 'rgba(0,0,0,0.2)',
+                      border: '1px solid var(--panel-border)',
+                      borderRadius: '8px',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                      outline: 'none'
+                    }}
+                  />
+                  <input
+                    id="new-corr-input"
+                    type="text"
+                    placeholder="올바른 단어"
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      background: 'rgba(0,0,0,0.2)',
+                      border: '1px solid var(--panel-border)',
+                      borderRadius: '8px',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const typoInput = document.getElementById('new-typo-input');
+                      const corrInput = document.getElementById('new-corr-input');
+                      if (typoInput && corrInput) {
+                        const tVal = typoInput.value.trim();
+                        const cVal = corrInput.value.trim();
+                        if (tVal && cVal) {
+                          handle_add_dict_row(tVal, cVal);
+                          typoInput.value = '';
+                          corrInput.value = '';
+                        } else {
+                          alert('단어를 입력해 주세요.');
+                        }
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <Plus size={14} />
+                    추가
+                  </button>
+                </div>
+
+                {/* 그리드형 표 */}
+                <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--panel-border)', borderRadius: '8px', background: 'rgba(0,0,0,0.1)' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                        <th style={{ padding: '8px', textAlign: 'left', fontWeight: 600 }}>오탈자 단어</th>
+                        <th style={{ padding: '8px', textAlign: 'left', fontWeight: 600 }}>교정 단어</th>
+                        <th style={{ padding: '8px', textAlign: 'center', width: '50px', fontWeight: 600 }}>삭제</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {get_user_dict_list().length === 0 ? (
+                        <tr>
+                          <td colSpan={3} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                            등록된 사용자 정의 규칙이 없습니다.
+                          </td>
+                        </tr>
+                      ) : (
+                        get_user_dict_list().map((item, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                            <td style={{ padding: '8px', color: '#f43f5e', fontWeight: 600 }}>{item.typo}</td>
+                            <td style={{ padding: '8px', color: 'var(--success-color)', fontWeight: 600 }}>{item.correction}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>
+                              <button
+                                onClick={() => handle_delete_dict_row(item.typo)}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: 'var(--text-muted)',
+                                  cursor: 'pointer',
+                                  padding: '4px',
+                                  borderRadius: '4px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                <Info size={12} />
+                <span>내장 사전에 있는 규칙은 기본적으로 적용됩니다.</span>
+              </div>
+              <button
+                onClick={() => setShowDictModal(true)}
+                style={{
+                  background: 'rgba(99, 102, 241, 0.1)',
+                  color: '#818cf8',
+                  border: '1px solid rgba(99, 102, 241, 0.2)',
+                  borderRadius: '6px',
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)';
+                  e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
+                  e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.2)';
+                }}
+              >
+                표준 사전 보기
+              </button>
             </div>
           </div>
 
@@ -2258,7 +2831,24 @@ TBD
                               {t.correction}
                             </td>
                             <td style={{ padding: '12px 8px' }}>
-                              <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px', fontSize: '11px' }}>{t.type}</span>
+                              {t.isAi ? (
+                                <span style={{ 
+                                  background: 'rgba(99, 102, 241, 0.15)', 
+                                  color: '#818cf8',
+                                  padding: '3px 8px', 
+                                  borderRadius: '6px', 
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  <Sparkles size={11} />
+                                  AI 맞춤법
+                                </span>
+                              ) : (
+                                <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px', fontSize: '11px' }}>{t.type}</span>
+                              )}
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineBreak: 'anywhere' }}>
                               {/* 매칭 단어 하이라이트 효과 */}
@@ -2670,6 +3260,137 @@ TBD
 
           </div>
 
+        </div>
+      )}
+
+      {/* 내장 오탈자 표준 사전 보기 모달 */}
+      {showDictModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'rgba(0, 0, 0, 0.65)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '650px',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            {/* 헤더 */}
+            <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--panel-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={16} color="#818cf8" />
+                내장 표준 오탈자 사전
+              </h3>
+              <button
+                onClick={() => setShowDictModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* 필터 탭 */}
+            <div style={{ padding: '10px 20px', display: 'flex', gap: '6px', borderBottom: '1px solid rgba(255,255,255,0.03)', overflowX: 'auto' }}>
+              {['전체', '맞춤법', '외래어 표기', '순화어/비즈니스', '띄어쓰기'].map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setDictFilterCategory(cat)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    background: dictFilterCategory === cat ? 'linear-gradient(135deg, #a855f7, #6366f1)' : 'rgba(255,255,255,0.05)',
+                    color: 'white',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {/* 본문 테이블 */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '10px 8px', fontWeight: 600, width: '120px' }}>오타 단어</th>
+                    <th style={{ padding: '10px 8px', fontWeight: 600, width: '120px' }}>교정 단어</th>
+                    <th style={{ padding: '10px 8px', fontWeight: 600 }}>설명</th>
+                    <th style={{ padding: '10px 8px', fontWeight: 600, width: '110px' }}>유형</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.keys(TYPO_DICTIONARY)
+                    .filter(key => dictFilterCategory === '전체' || TYPO_DICTIONARY[key].type === dictFilterCategory)
+                    .map((typo, idx) => {
+                      const item = TYPO_DICTIONARY[typo];
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                          <td style={{ padding: '10px 8px', color: '#f43f5e', fontWeight: 600 }}>{typo}</td>
+                          <td style={{ padding: '10px 8px', color: 'var(--success-color)', fontWeight: 600 }}>{item.correction}</td>
+                          <td style={{ padding: '10px 8px', color: 'var(--text-secondary)', fontSize: '12px' }}>{item.desc}</td>
+                          <td style={{ padding: '10px 8px' }}>
+                            <span style={{
+                              background: item.type === '맞춤법' ? 'rgba(239, 68, 68, 0.1)' : 
+                                          item.type === '외래어 표기' ? 'rgba(59, 130, 246, 0.1)' : 
+                                          item.type === '띄어쓰기' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                              color: item.type === '맞춤법' ? '#f87171' : 
+                                     item.type === '외래어 표기' ? '#60a5fa' : 
+                                     item.type === '띄어쓰기' ? '#fbbf24' : '#34d399',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 700
+                            }}>
+                              {item.type}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 푸터 */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--panel-border)', textAlign: 'right' }}>
+              <button
+                onClick={() => setShowDictModal(false)}
+                style={{
+                  padding: '8px 16px',
+                  background: 'rgba(255,255,255,0.08)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
