@@ -1574,7 +1574,7 @@ export default function PptValidator({ apiKey }) {
     };
 
     // 1. 오탈자 시트 데이터 구성
-    if (checkTypos) {
+    if (checkTypos || check_ai_typos) {
       const typoRows = typoResults.map((t, idx) => ({
         '순번': idx + 1,
         '대상 파일명': t.fileName,
