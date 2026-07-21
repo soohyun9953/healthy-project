@@ -253,6 +253,9 @@ export default function PptValidator({ apiKey }) {
             return numA - numB;
           });
           
+          let currentHwpxPage = 1;
+          let prevVertpos = -1;
+
           for (let sIdx = 0; sIdx < section_files.length; sIdx++) {
             const section_path = section_files[sIdx];
             const section_xml_str = await zip.file(section_path).async('text');
@@ -266,19 +269,40 @@ export default function PptValidator({ apiKey }) {
               const node = allNodes[i];
               const localName = node.localName || node.tagName.split(':').pop();
               if (localName === 'p') {
-                const tNodes = node.getElementsByTagName('*');
+                const childs = node.getElementsByTagName('*');
+                let hasPageBreak = false;
+                
+                for (let k = 0; k < childs.length; k++) {
+                  const cName = childs[k].localName || childs[k].tagName.split(':').pop();
+                  if (cName === 'pageBreak') {
+                    hasPageBreak = true;
+                  }
+                  if (cName === 'lineseg') {
+                    const vertpos = parseInt(childs[k].getAttribute('vertpos') || '0', 10);
+                    if (prevVertpos >= 0 && vertpos < prevVertpos && (prevVertpos - vertpos > 8000)) {
+                      currentHwpxPage++;
+                    }
+                    prevVertpos = vertpos;
+                  }
+                }
+
+                if (hasPageBreak && prevVertpos >= 0) {
+                  currentHwpxPage++;
+                  prevVertpos = -1;
+                }
+
+                const slideNum = currentHwpxPage;
+                
                 let p_text_list = [];
-                for (let j = 0; j < tNodes.length; j++) {
-                  const tNode = tNodes[j];
-                  const tLocalName = tNode.localName || tNode.tagName.split(':').pop();
-                  if (tLocalName === 't') {
-                    p_text_list.push(tNode.textContent || '');
+                for (let k = 0; k < childs.length; k++) {
+                  const cName = childs[k].localName || childs[k].tagName.split(':').pop();
+                  if (cName === 't') {
+                    p_text_list.push(childs[k].textContent || '');
                   }
                 }
                 const paragraph_text = p_text_list.join('').trim();
+                
                 if (paragraph_text) {
-                  const slideNum = sIdx + 1;
-                  
                   // 1) 오탈자 점검
                   if (checkTypos) {
                     Object.keys(mergedDict).forEach(typo => {
@@ -369,11 +393,9 @@ export default function PptValidator({ apiKey }) {
                       const duplicated_word = match[1];
                       const matched_text = match[0];
                       
-                      // 숫자로만 구성되었거나 숫자와 결합된 단순 기호 시퀀스인 경우 중복 검사 제외
                       const is_numeric = /^[0-9.,()\-/[\]\s]+$/.test(duplicated_word);
                       if (is_numeric) return;
 
-                      // 단어 경계가 제대로 지켜지지 않은 경우 제외 (예: xxxse sexxx 등)
                       if (!check_word_boundary(paragraph_text, match.index, match[0].length, duplicated_word)) return;
 
                       const exists = all_duplicates.some(e => 
@@ -400,11 +422,14 @@ export default function PptValidator({ apiKey }) {
               }
             }
           }
+
+          const calculatedTotalPages = Math.max(1, currentHwpxPage);
+
           allPageRanges.push({
             fileName: file.name,
             startPage: 1,
-            endPage: section_files.length,
-            totalSlides: section_files.length
+            endPage: calculatedTotalPages,
+            totalSlides: calculatedTotalPages
           });
         } else {
         // 1. 모든 슬라이드 파일 추출 및 정렬
