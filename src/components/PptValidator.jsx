@@ -12,11 +12,15 @@ import {
   AlertCircle,
   ChevronRight,
   HelpCircle,
-  Info
+  Info,
+  Plus,
+  Trash2,
+  Sparkles
 } from 'lucide-react';
 
 // 오탈자 내장 사전 정의
 const TYPO_DICTIONARY = {
+  // 맞춤법 오류
   '역활': { correction: '역할', desc: '역할(役割)의 잘못된 표기입니다.', type: '맞춤법' },
   '되서': { correction: '돼서', desc: '되어서의 축약형인 돼서로 써야 합니다.', type: '맞춤법' },
   '바램': { correction: '바람', desc: '바라다에서 파생된 명사는 바람이 맞습니다.', type: '맞춤법' },
@@ -27,6 +31,16 @@ const TYPO_DICTIONARY = {
   '어의없다': { correction: '어이없다', desc: '어처구니없다 또는 어이없다가 올바른 표기입니다.', type: '맞춤법' },
   '않돼': { correction: '안 돼', desc: '안 되어의 축약형인 안 돼가 표준 표기입니다.', type: '맞춤법' },
   '안돼다': { correction: '안되다', desc: '일이나 현상이 좋지 않게 흘러갈 때는 안되다가 표준어입니다.', type: '맞춤법' },
+  '갯수': { correction: '개수', desc: '개수(個數)가 맞춤법에 부합하는 올바른 표기입니다.', type: '맞춤법' },
+  '댓가': { correction: '대가', desc: '대가(代價)가 맞춤법에 부합하는 올바른 표기입니다. 사이시옷이 들어가지 않습니다.', type: '맞춤법' },
+  '바꼈다': { correction: '바뀌었다', desc: '바뀌었다가 줄어든 말은 바뀌었다로 표기해야 합니다.', type: '맞춤법' },
+  '가게부': { correction: '가계부', desc: '가계부(家計簿)가 올바른 표기입니다.', type: '맞춤법' },
+  '금새': { correction: '금세', desc: '금세(금시에의 준말)가 올바른 맞춤법 표기입니다.', type: '맞춤법' },
+  '희안하다': { correction: '희한하다', desc: '희한하다(稀罕-)가 올바른 표기입니다.', type: '맞춤법' },
+  '설레임': { correction: '설렘', desc: '설레다의 명사형은 설렘이 올바른 맞춤법입니다.', type: '맞춤법' },
+  '와부': { correction: '외부', desc: '외부(外部)의 오타 표기입니다.', type: '맞춤법' },
+  '제사하다': { correction: '제시하다', desc: '비즈니스 제안 맥락상 제시하다의 오타 표기입니다.', type: '맞춤법' },
+  '계발하다': { correction: '개발하다', desc: '소프트웨어 개발 맥락상 개발하다의 오타 표기입니다.', type: '맞춤법' },
   
   // 외래어 표기법 오류
   '아키텍쳐': { correction: '아키텍처', desc: '외래어 표기법에 의하면 아키텍처(Architecture)가 표준입니다.', type: '외래어 표기' },
@@ -43,15 +57,147 @@ const TYPO_DICTIONARY = {
   '프로세씽': { correction: '프로세싱', desc: '프로세싱(Processing)이 올바른 외래어 표기입니다.', type: '외래어 표기' },
   '인터페이서': { correction: '인터페이스', desc: '인터페이스(Interface)가 표준 표기입니다.', type: '외래어 표기' },
   '코뮤니케이션': { correction: '커뮤니케이션', desc: '커뮤니케이션(Communication)이 올바른 외래어 표기입니다.', type: '외래어 표기' },
+  '넷트웍': { correction: '네트워크', desc: '네트워크(Network)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '메세지': { correction: '메시지', desc: '메시지(Message)가 표준 외래어 표기법에 부합합니다.', type: '외래어 표기' },
+  '네비게이션': { correction: '내비게이션', desc: '내비게이션(Navigation)이 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '카다로그': { correction: '카탈로그', desc: '카탈로그(Catalogue)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
+  '심포지움': { correction: '심포지엄', desc: '심포지엄(Symposium)이 올바른 외래어 표기입니다.', type: '외래어 표기' },
+  '컨퍼런스': { correction: '콘퍼런스', desc: '콘퍼런스(Conference)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
   
-  // 비즈니스/용어 혼동
+  // 비즈니스/용어 혼동 및 순화어
   '임계치': { correction: '임계값', desc: '순화어 권고 사항에 의하면 임계값을 사용하는 것을 권장합니다.', type: '순화어/비즈니스' },
   '가이도라인': { correction: '가이드라인', desc: '가이드라인(Guideline)의 오타 표기입니다.', type: '순화어/비즈니스' },
   '임프라': { correction: '인프라', desc: '인프라(Infrastructure)의 오타 표기입니다.', type: '순화어/비즈니스' },
-  '넷트웍': { correction: '네트워크', desc: '네트워크가 올바른 한글 표기법입니다.', type: '외래어 표기' },
-  '개선방안': { correction: '개선 방안', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' },
-  '일정계획': { correction: '일정 계획', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' },
-  '상세설계': { correction: '상세 설계', desc: '가독성을 위해 띄어쓰기를 적용하는 것이 좋습니다.', type: '띄어쓰기' }
+  '구비서류': { correction: '제출서류', desc: '구비서류는 제출서류 또는 갖춤서류로 순화하여 사용하는 것이 권장됩니다.', type: '순화어/비즈니스' },
+  '시말서': { correction: '경위서', desc: '시말서는 경위서로 순화하여 쓰는 것이 비즈니스 표준에 가깝습니다.', type: '순화어/비즈니스' },
+  '도모하다': { correction: '꾀하다', desc: '가급적 쉬운 한글 표현인 꾀하다 혹은 마련하다 등으로 순화해 쓰는 것이 좋습니다.', type: '순화어/비즈니스' },
+  '노하우': { correction: '비법/비결', desc: '노하우(Know-how) 대신 비법, 전문 비결 등으로 순화하여 사용하는 것이 권장됩니다.', type: '순화어/비즈니스' },
+  '바이어': { correction: '구매자/거래처', desc: '바이어(Buyer) 대신 구매자 또는 거래처로 명시하는 것이 권장됩니다.', type: '순화어/비즈니스' },
+  '옵티마이징': { correction: '최적화', desc: '외래어 용어 대신 순화어인 최적화를 권장합니다.', type: '순화어/비즈니스' },
+  
+};
+
+// 오탈자 매칭 시 한국어 단어 경계 및 오탐 분석 헬퍼 함수 (스네이크 케이스 준수)
+const validate_typo_match = (text, typo) => {
+  let index = text.indexOf(typo);
+  while (index !== -1) {
+    const prev_char = index > 0 ? text[index - 1] : '';
+    const next_char = index + typo.length < text.length ? text[index + typo.length] : '';
+
+    const is_korean_or_alphanumeric = (char) => {
+      if (!char) return false;
+      return /[a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ]/.test(char);
+    };
+
+    // 1. 앞 문자 검증: 매칭된 단어 바로 앞에 한글이나 알파벳/숫자가 연속해서 오면 다른 단어의 일부로 판단하여 제외
+    // 예: '영역활성화'에서 '역활' 앞의 '영'
+    let is_prev_valid = true;
+    if (is_korean_or_alphanumeric(prev_char)) {
+      is_prev_valid = false;
+    }
+
+    // 2. 뒤 문자 검증: 매칭된 단어 바로 뒤에 한글이나 알파벳/숫자가 오되, 조사인 경우는 매칭 허용
+    // 한국어 조사의 대표적인 예: '이', '가', '을', '를', '은', '는', '에', '의', '도', '만', '과', '와', '로', '으로' 등
+    // 단, 조사 뒤에 추가로 한글이 더 오면 조사 결합이 아닌 다른 단어의 일부일 확률이 높음 (예: '역활성화' -> '성', '화'가 추가로 붙음)
+    let is_next_valid = true;
+    if (is_korean_or_alphanumeric(next_char)) {
+      const particle_regex = /^(이|가|을|를|은|는|에|의|도|만|과|와|로|로써|로서|으로|까지|부터|요|만)\b|^[.,;:!?()\s]/;
+      const remaining_text = text.substring(index + typo.length);
+      // 조사가 결합되었거나 바로 문장 부호/공백이 오는 경우라면 유효한 오탈자 매칭으로 봄
+      if (!particle_regex.test(remaining_text)) {
+        is_next_valid = false;
+      }
+    }
+
+    if (is_prev_valid && is_next_valid) {
+      return true;
+    }
+
+    index = text.indexOf(typo, index + 1);
+  }
+  return false;
+};
+
+// 한글 동사/형용사 어미 변화형을 자동으로 생성해 사전에 추가해주는 알고리즘 헬퍼 함수
+const generate_conjugation_rules = (dict) => {
+  const extended_dict = { ...dict };
+  
+  // 국어 어미 변화 정의 (하다 계열)
+  const HADA_ENDINGS = [
+    { suffix: '합니다', corr_suffix: '합니다' },
+    { suffix: '하고', corr_suffix: '하고' },
+    { suffix: '한', corr_suffix: '한' },
+    { suffix: '할', corr_suffix: '할' },
+    { suffix: '하며', corr_suffix: '하며' },
+    { suffix: '하면', corr_suffix: '하면' },
+    { suffix: '하므로', corr_suffix: '하므로' },
+    { suffix: '하여', corr_suffix: '하여' },
+    { suffix: '했다', corr_suffix: '했다' },
+    { suffix: '했음', corr_suffix: '했음' },
+    { suffix: '함', corr_suffix: '함' },
+    { suffix: '하되', corr_suffix: '하되' },
+    { suffix: '하는', corr_suffix: '하는' },
+    { suffix: '하신', corr_suffix: '하신' }
+  ];
+
+  // 되다 계열 어미 변화 정의
+  const DOEDA_ENDINGS = [
+    { suffix: '됩니다', corr_suffix: '됩니다' },
+    { suffix: '되고', corr_suffix: '되고' },
+    { suffix: '된', corr_suffix: '된' },
+    { suffix: '될', corr_suffix: '될' },
+    { suffix: '되며', corr_suffix: '되며' },
+    { suffix: '되면', corr_suffix: '되면' },
+    { suffix: '되므로', corr_suffix: '되므로' },
+    { suffix: '되어', corr_suffix: '되어' },
+    { suffix: '됐다', corr_suffix: '됐다' },
+    { suffix: '됐음', corr_suffix: '됐음' },
+    { suffix: '됨', corr_suffix: '됨' },
+    { suffix: '되되', corr_suffix: '되되' },
+    { suffix: '되는', corr_suffix: '되는' }
+  ];
+
+  Object.keys(dict).forEach(key => {
+    const item = dict[key];
+    
+    // 1. ~하다 계열 파생
+    if (key.endsWith('하다') && item.correction.endsWith('하다')) {
+      const typo_stem = key.substring(0, key.length - 2); // '제사'
+      const corr_stem = item.correction.substring(0, item.correction.length - 2); // '제시'
+      
+      HADA_ENDINGS.forEach(ending => {
+        const derived_typo = typo_stem + ending.suffix;
+        const derived_corr = corr_stem + ending.corr_suffix;
+        if (!extended_dict[derived_typo]) {
+          extended_dict[derived_typo] = {
+            correction: derived_corr,
+            desc: `어미 변화 규칙: [${key} ➜ ${item.correction}]의 파생형 오류입니다.`,
+            type: item.type
+          };
+        }
+      });
+    }
+
+    // 2. ~되다 계열 파생
+    if (key.endsWith('되다') && item.correction.endsWith('되다')) {
+      const typo_stem = key.substring(0, key.length - 2);
+      const corr_stem = item.correction.substring(0, item.correction.length - 2);
+      
+      DOEDA_ENDINGS.forEach(ending => {
+        const derived_typo = typo_stem + ending.suffix;
+        const derived_corr = corr_stem + ending.corr_suffix;
+        if (!extended_dict[derived_typo]) {
+          extended_dict[derived_typo] = {
+            correction: derived_corr,
+            desc: `어미 변화 규칙: [${key} ➜ ${item.correction}]의 파생형 오류입니다.`,
+            type: item.type
+          };
+        }
+      });
+    }
+  });
+
+  return extended_dict;
 };
 
 // 동일 단어 중복 검출 시 단어 경계(Boundary) 유효성 검사 헬퍼 함수 (스네이크 케이스 준수)
@@ -98,6 +244,153 @@ const check_word_boundary = (text, match_index, matched_length, duplicated_word)
   return true;
 };
 
+// ── 로마자 변환 헬퍼 함수 ─────────────────────────
+const roman_to_int = (roman) => {
+  const map = {
+    'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5,
+    'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10
+  };
+  return map[roman.toUpperCase()] || null;
+};
+
+// Gemini API를 직접 호출하여 문맥적인 오탈자 및 맞춤법을 진단받는 비동기 함수
+const call_gemini_ai_typos = async (file_name, slides_text_map, api_key) => {
+  const keys = String(api_key).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+  if (keys.length === 0) {
+    throw new Error('유효한 Gemini API 키가 없습니다. 설정 탭에서 API 키를 등록해 주세요.');
+  }
+  const key = keys[0];
+
+  let document_content = '';
+  Object.keys(slides_text_map).forEach(slide_num => {
+    document_content += `[Slide ${slide_num}]\n${slides_text_map[slide_num].join('\n')}\n\n`;
+  });
+
+  const prompt = `당신은 공공 IT 사업 제안서·수행계획서·설계서 분야에 특화된 한국어 맞춤법 및 문서 교정 전문가입니다.
+아래 슬라이드 텍스트를 **극도로 엄격(Strict Mode)**하게 분석하여, 다음 6가지 유형의 오류를 빠짐없이 찾아 주세요.
+
+[검사 유형 및 기준]
+1. **오타·오자**: 자모 오입력으로 인한 명백한 오타. 예) 제사합니다→제시합니다, 와부→외부, 아키텍쳐→아키텍처
+2. **혼동 어휘**: 의미가 달라지는 동음이의어/유사어 오용. 예) 결재(決裁)↔결제(決濟), 대표(代表)↔데표, 계발(啓發)↔개발(開發)
+3. **외래어 표기**: 국립국어원 외래어 표기법 위반. 예) 컨텐츠→콘텐츠, 레포트→리포트, 스케쥴→스케줄, 플렛폼→플랫폼
+4. **띄어쓰기 오류**: 조사·어미·의존명사 등 표준 띄어쓰기 위반. 예) 확인바랍니다→확인 바랍니다, 될수있는→될 수 있는
+5. **이중 피동·이중 부정**: 비문법적 표현. 예) ~되어지다(→~되다), ~지 않을 수가 없다
+6. **비격식·구어체 표현**: 공문서에 어울리지 않는 표현. 예) 이것보다→이보다, 좀→다소
+
+[절대 지적 금지 항목]
+- 복합명사 붙여쓰기 (예: 데이터전송, 클라우드인프라)
+- 숫자+의존명사 (예: 3개, 5단계, 2개월)
+- 영문 약어 및 전문 기술 용어 (예: AI, API, ISP, ISMP, UI, UX)
+- 고유명사(기관명, 시스템명)
+- 슬라이드 번호·날짜 등 형식 데이터
+
+[응답 규칙]
+- 반드시 아래 JSON 배열 형식으로만 응답하십시오. 다른 텍스트·마크다운·설명을 절대 포함하지 마십시오.
+- 오류가 없을 경우 빈 배열 []을 반환하십시오.
+- 동일 슬라이드에서 여러 오류가 있을 경우 각각 별도 항목으로 반환하십시오.
+
+[응답 JSON 형식]
+[
+  {
+    "slideNum": <슬라이드번호 (숫자)>,
+    "originalText": "<오류가 포함된 문장 전체>",
+    "typo": "<오류 단어 또는 구절>",
+    "correction": "<교정 단어 또는 구절>",
+    "desc": "<오류 유형 및 간략 설명>"
+  }
+]
+
+[검토할 슬라이드 텍스트]
+${document_content}`;
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: 'application/json'
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const err_text = await response.text();
+    throw new Error(`Gemini API 호출 실패: ${err_text}`);
+  }
+
+  const res_json = await response.json();
+  const text_response = res_json.candidates[0].content.parts[0].text;
+  
+  try {
+    const parsed = JSON.parse(text_response.trim());
+    return parsed.map(item => ({
+      fileName: file_name,
+      slideNum: parseInt(item.slideNum || '1', 10),
+      sentence: item.originalText,
+      typo: item.typo,
+      correction: item.correction,
+      type: 'AI 맞춤법 (Gemini)',
+      desc: item.desc,
+      isAi: true // AI 검출 항목 식별용
+    }));
+  } catch (err) {
+    console.error('Gemini JSON 파싱 오류:', err, text_response);
+    return [];
+  }
+};
+
+// 외부 전문 맞춤법 검사 API를 호출하는 비동기 함수 (선택 옵션)
+const call_external_spell_check = async (file_name, slides_text_map, api_url) => {
+  if (!api_url || !api_url.trim()) {
+    throw new Error('외부 맞춤법 검사 API URL이 설정되지 않았습니다. 설정에서 API 주소를 입력해 주세요.');
+  }
+
+  const results = [];
+
+  for (const slide_num of Object.keys(slides_text_map)) {
+    const text = slides_text_map[slide_num].join('\n');
+    if (!text.trim()) continue;
+
+    try {
+      const response = await fetch(api_url.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, slide: parseInt(slide_num, 10) })
+      });
+
+      if (!response.ok) {
+        console.warn(`외부 API 슬라이드 ${slide_num} 호출 실패: ${response.status}`);
+        continue;
+      }
+
+      const data = await response.json();
+
+      // 외부 API 응답 규격: { errors: [{ typo, correction, desc, sentence }] }
+      if (Array.isArray(data.errors)) {
+        data.errors.forEach(item => {
+          if (item.typo && item.correction) {
+            results.push({
+              fileName: file_name,
+              slideNum: parseInt(slide_num, 10),
+              sentence: item.sentence || text,
+              typo: item.typo,
+              correction: item.correction,
+              type: '외부 맞춤법 API',
+              desc: item.desc || '외부 맞춤법 검사 API 검출 항목',
+              isAi: true
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.warn(`외부 API 슬라이드 ${slide_num} 오류:`, err.message);
+    }
+  }
+
+  return results;
+};
+
 export default function PptValidator({ apiKey }) {
   const [pptFiles, setPptFiles] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -105,6 +398,10 @@ export default function PptValidator({ apiKey }) {
   
   // 검증 옵션 분리 상태
   const [checkTypos, setCheckTypos] = useState(true);
+  const [check_ai_typos, set_check_ai_typos] = useState(false);
+  const [check_external_api, set_check_external_api] = useState(false);
+  const [external_api_url, set_external_api_url] = useState('');
+  const [external_server_status, set_external_server_status] = useState('unknown'); // 'unknown' | 'checking' | 'running' | 'stopped'
   const [checkNumbering, setCheckNumbering] = useState(true);
   const [checkAltText, setCheckAltText] = useState(true);
   const [checkForbiddenWords, setCheckForbiddenWords] = useState(true);
@@ -130,6 +427,127 @@ export default function PptValidator({ apiKey }) {
   const [userDictText, setUserDictText] = useState(() => {
     return localStorage.getItem('ppt_validator_user_dict') || '';
   }); // 사용자 정의 사전 입력란
+  const [userDictTab, setUserDictTab] = useState('table'); // 'table' 또는 'text'
+  const dictFileInputRef = useRef(null);
+  const [showDictModal, setShowDictModal] = useState(false);
+  const [dictFilterCategory, setDictFilterCategory] = useState('전체');
+
+  // 현재 사용자 사전을 [{typo, correction}] 리스트로 파싱하는 헬퍼
+  const get_user_dict_list = () => {
+    const list = [];
+    if (!userDictText.trim()) return list;
+    const lines = userDictText.split('\n');
+    lines.forEach(line => {
+      const parts = line.split(/[=➜➔>:\-]/);
+      if (parts.length >= 2) {
+        const typo = parts[0].trim();
+        const correction = parts[1].trim();
+        if (typo && correction) {
+          list.push({ typo, correction });
+        }
+      }
+    });
+    return list;
+  };
+
+  // 리스트를 다시 userDictText로 동기화
+  const save_user_dict_list = (list) => {
+    const text = list.map(item => `${item.typo} ➜ ${item.correction}`).join('\n');
+    setUserDictText(text);
+  };
+
+  // 행 추가
+  const handle_add_dict_row = (typo, correction) => {
+    if (!typo || !correction) return;
+    const list = get_user_dict_list();
+    if (list.some(item => item.typo === typo)) {
+      alert('이미 등록된 오탈자 단어입니다.');
+      return;
+    }
+    list.push({ typo, correction });
+    save_user_dict_list(list);
+  };
+
+  // 행 삭제
+  const handle_delete_dict_row = (typo) => {
+    const list = get_user_dict_list();
+    const filtered = list.filter(item => item.typo !== typo);
+    save_user_dict_list(filtered);
+  };
+
+  // 엑셀 내보내기 (다운로드)
+  const handle_export_dict_excel = () => {
+    const list = get_user_dict_list();
+    if (list.length === 0) {
+      alert('내보낼 오탈자 규칙이 없습니다. 먼저 규칙을 등록해 주세요.');
+      return;
+    }
+    const data = list.map(item => ({
+      '오탈자 단어': item.typo,
+      '교정 단어': item.correction
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '사용자 정의 사전');
+    XLSX.writeFile(workbook, '오탈자_사용자정의사전.xlsx');
+  };
+
+  // 템플릿 다운로드
+  const handle_download_dict_template = () => {
+    const sample_data = [
+      { '오탈자 단어': '아키택처', '교정 단어': '아키텍처' },
+      { '오탈자 단어': '스프링부터', '교정 단어': '스프링부트' }
+    ];
+    const worksheet = XLSX.utils.json_to_sheet(sample_data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '템플릿');
+    XLSX.writeFile(workbook, '오탈자_사전_템플릿.xlsx');
+  };
+
+  // 엑셀 가져오기 (업로드)
+  const handle_import_dict_excel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet_name = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheet_name];
+        const json = XLSX.utils.sheet_to_json(worksheet);
+
+        const list = get_user_dict_list();
+        let added_count = 0;
+
+        json.forEach(row => {
+          const typo = (row['오탈자 단어'] || row['오탈자'] || row['typo'] || '').toString().trim();
+          const correction = (row['교정 단어'] || row['교정'] || row['correction'] || '').toString().trim();
+
+          if (typo && correction) {
+            if (!list.some(item => item.typo === typo)) {
+              list.push({ typo, correction });
+              added_count++;
+            }
+          }
+        });
+
+        if (added_count > 0) {
+          save_user_dict_list(list);
+          alert(`엑셀 파일에서 ${added_count}개의 규칙을 성공적으로 가져왔습니다.`);
+        } else {
+          alert('가져올 새로운 규칙이 없거나 엑셀 포맷이 잘못되었습니다. [오탈자 단어], [교정 단어] 헤더가 포함되어 있는지 확인해 주세요.');
+        }
+      } catch (err) {
+        console.error('엑셀 파싱 실패:', err);
+        alert('엑셀 파일을 읽는 도중 오류가 발생했습니다.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
   const [forbiddenWordsText, setForbiddenWordsText] = useState(() => {
     const saved = localStorage.getItem('ppt_validator_forbidden_words');
     return saved !== null ? saved : "미정\n임시\nTBD\n검토필요\n작성중";
@@ -227,7 +645,7 @@ export default function PptValidator({ apiKey }) {
     const allMacImageErrors = [];
     const stats = [];
     const userDict = parseUserDictionary();
-    const mergedDict = { ...TYPO_DICTIONARY, ...userDict };
+    const mergedDict = generate_conjugation_rules({ ...TYPO_DICTIONARY, ...userDict });
 
     try {
       for (const file of pptFiles) {
@@ -239,8 +657,46 @@ export default function PptValidator({ apiKey }) {
         let file_duplicate_count = 0;
         let fileMacImageCount = 0;
 
-        const arrayBuffer = await file.arrayBuffer();
-        const zip = await JSZip.loadAsync(arrayBuffer);
+        const slides_text_map = {};
+
+        let arrayBuffer = await file.arrayBuffer();
+        let zip;
+        let isFilePatched = false;
+        let patchCount = 0;
+
+        try {
+          zip = await JSZip.loadAsync(arrayBuffer);
+        } catch (zipErr) {
+          const errorMsg = zipErr.message || '';
+          if (errorMsg.includes('CRC32') || errorMsg.includes('Corrupted') || errorMsg.includes('zip') || errorMsg.includes('inflate')) {
+            console.warn(`[CRC-32 오류 감지] 로컬 파이썬 서버를 활용한 복구 시도 시작: ${file.name}`);
+            try {
+              const formData = new FormData();
+              formData.append('file', file);
+
+              const fixResponse = await fetch('http://localhost:8000/fix-pptx', {
+                method: 'POST',
+                body: formData
+              });
+
+              if (fixResponse.ok) {
+                const fixedBlob = await fixResponse.blob();
+                arrayBuffer = await fixedBlob.arrayBuffer();
+                zip = await JSZip.loadAsync(arrayBuffer);
+                isFilePatched = true;
+                patchCount = parseInt(fixResponse.headers.get('X-Patched-Count') || '0', 10);
+                console.log(`[CRC-32 복구 성공] 더미 이미지 패치 완료. 패치 수: ${patchCount}개`);
+              } else {
+                throw new Error(`로컬 복구 서버 응답 실패: ${fixResponse.statusText}`);
+              }
+            } catch (patchErr) {
+              console.error(`[CRC-32 복구 실패]`, patchErr);
+              throw new Error(`파일 압축 구조(CRC-32)가 손상되었으며, 로컬 복구 서버(http://localhost:8000)를 통한 복구도 실패했습니다. 서버 실행 상태를 확인해 주세요. (에러: ${patchErr.message})`);
+            }
+          } else {
+            throw zipErr;
+          }
+        }
         
         const is_hwpx = file.name.endsWith('.hwpx');
         
@@ -303,10 +759,16 @@ export default function PptValidator({ apiKey }) {
                 const paragraph_text = p_text_list.join('').trim();
                 
                 if (paragraph_text) {
+                  const slideNum = currentHwpxPage;
+                  if (!slides_text_map[slideNum]) {
+                    slides_text_map[slideNum] = [];
+                  }
+                  slides_text_map[slideNum].push(paragraph_text);
+
                   // 1) 오탈자 점검
                   if (checkTypos) {
                     Object.keys(mergedDict).forEach(typo => {
-                      if (paragraph_text.includes(typo)) {
+                      if (paragraph_text.includes(typo) && validate_typo_match(paragraph_text, typo)) {
                         const exists = allTypos.some(t => 
                           t.fileName === file.name && 
                           t.slideNum === slideNum && 
@@ -516,6 +978,10 @@ export default function PptValidator({ apiKey }) {
 
               if (textContent) {
                 shapes.push({ x, y, cx, cy, text: textContent });
+                if (!slides_text_map[slideNum]) {
+                  slides_text_map[slideNum] = [];
+                }
+                slides_text_map[slideNum].push(textContent);
               }
             }
           }
@@ -529,7 +995,7 @@ export default function PptValidator({ apiKey }) {
               Object.keys(mergedDict).forEach(typo => {
                 // 한글 조사 등 경계 고려 정규식 생성
                 // 예: '역활이', '역활을'도 잡히도록 단어 포함 여부 검증
-                if (text.includes(typo)) {
+                if (text.includes(typo) && validate_typo_match(text, typo)) {
                   // 문장 내 중복 검출 방지
                   const exists = allTypos.some(t => 
                     t.fileName === file.name && 
@@ -814,28 +1280,46 @@ export default function PptValidator({ apiKey }) {
           }
 
           if (checkNumbering) {
-            const headerShapes = shapes.filter(s => s.y !== null && s.y < 1300000);
+            // 헤더 수집: y좌표가 있으면 상단 영역(y<1500000), y=null인 레이아웃 상속 도형은 넘버링 패턴으로 판단
+            const num_title_regex = /^\s*([0-9]+(\.[0-9]+)*)[\s\.]|^\s*(I{1,3}|IV|V|VI{0,3}|IX|X)\b/i;
+            const headerShapes = shapes.filter(s => {
+              if (s.y !== null) return s.y < 1500000;
+              return num_title_regex.test(s.text);
+            });
             
-            let leftTitle = '';
+            let leftTitles = [];
             let rightTitle = '';
             
             headerShapes.forEach(hs => {
-              if (hs.x !== null && hs.x < 6000000) {
-                // 좌측 상단 영역
-                if (!leftTitle || hs.y < (leftTitle.y || 99999999)) {
-                  leftTitle = hs; // 가장 위쪽에 있는 상단 타이틀 선택
+              // x=null(레이아웃 상속)이거나 x<6000000이면 좌측 타이틀
+              if (hs.x === null || hs.x < 6000000) {
+                const is_dup = leftTitles.some(t => t.text.trim() === hs.text.trim());
+                if (!is_dup) {
+                  leftTitles.push(hs);
                 }
               } else if (hs.x !== null && hs.x >= 6000000) {
-                // 우측 상단 영역
                 if (!rightTitle || hs.y < (rightTitle.y || 99999999)) {
                   rightTitle = hs;
                 }
               }
             });
 
+            leftTitles.sort((a, b) => a.y - b.y);
+
+            let majorTitleText = '';
+            const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
+
+            leftTitles.forEach(t => {
+              const txt = t.text.trim();
+              if (roman_regex.test(txt)) {
+                majorTitleText = txt;
+              }
+            });
+
             slideList.push({
               slideNum,
-              leftTitle: leftTitle ? leftTitle.text : '',
+              majorTitle: majorTitleText,
+              titles: leftTitles.map(t => t.text.trim()).filter(Boolean),
               rightTitle: rightTitle ? rightTitle.text : ''
             });
 
@@ -885,191 +1369,287 @@ export default function PptValidator({ apiKey }) {
         // 5. 상단 넘버링 규칙 검증 분석
         // 5-1. 좌측 넘버링 시퀀스 검증
         if (checkNumbering) {
-          let expectedMajor = 1;
-          let lastParts = []; // 이전 슬라이드의 넘버링 분할 [Major, Minor, Sub...]
-          let lastTitleText = ''; // 이전 슬라이드의 목차 타이틀 텍스트 보관용
-          let lastPureTitle = ''; // 이전 슬라이드의 괄호 제외 순수 제목
-          let lastHasAltPages = false;
-          let lastCurrentAltPage = null;
-          let lastTotalAltPage = null;
+          // 대주제 추적 및 검증용 상태 변수
+          let current_major_roman = '';
+          let current_major_val = null;
+          let last_major_val = null;
+          let last_major_roman = '';
+
+          // 넘버링별 타이틀 불일치 검증을 위한 해시 맵
+          const numbering_title_map = {};
+
+          // 넘버링 순차성 검증을 위한 부모 경로별 마지막 자식 값 추적 맵
+          const sibling_tracker = {};
+
+          // 연속 페이지((순번/전체수)) 트래커 맵 (슬라이드 내 다른 헤더로 인한 상태 덮어쓰기 간섭 방지용)
+          const alt_page_tracker = {};
+
+          const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
+          const num_regex = /^\s*([0-9]+(\.[0-9]+)*)[\s\.]/;
 
           for (let i = 0; i < slideList.length; i++) {
             const slide = slideList[i];
-            const text = slide.leftTitle;
             
-            if (!text) continue;
+            // 1) 대주제(로마자) 정보 업데이트 및 대주제 자체의 순차성 검증
+            if (slide.majorTitle) {
+              const major_match = slide.majorTitle.match(roman_regex);
+              if (major_match) {
+                current_major_roman = major_match[1];
+                current_major_val = roman_to_int(current_major_roman);
 
-            // "목차 명칭 (1/4)" 정규식 파싱
-            const altPageMatch = text.match(/\((\d+)\/(\d+)\)\s*$/);
-            let hasAltPages = false;
-            let currentAltPage = null;
-            let totalAltPage = null;
-            let pureTitle = text.trim();
-
-            if (altPageMatch) {
-              hasAltPages = true;
-              currentAltPage = parseInt(altPageMatch[1], 10);
-              totalAltPage = parseInt(altPageMatch[2], 10);
-              pureTitle = text.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
-            }
-
-            // 동일 목차 타이틀 반복 감지 및 연속 페이지 검증
-            if (lastTitleText) {
-              if (hasAltPages && lastHasAltPages && pureTitle === lastPureTitle) {
-                // 연속 페이지 흐름 검증
-                if (totalAltPage !== lastTotalAltPage) {
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: '목차 전체 페이지 수 불일치',
-                    guide: `연속 목차의 전체 페이지 수(분모)가 이전 슬라이드(${lastTotalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
-                  });
-                  fileNumErrorsCount++;
-                }
-                
-                if (currentAltPage !== lastCurrentAltPage + 1) {
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: '목차 연속 페이지 번호 단절',
-                    guide: `연속된 목차 페이지 번호가 순차적으로 증가하지 않았습니다. (이전: ${lastCurrentAltPage}/${lastTotalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
-                  });
-                  fileNumErrorsCount++;
-                }
-
-                if (currentAltPage > totalAltPage) {
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: '목차 페이지 범위 초과',
-                    guide: `목차 페이지 번호(${currentAltPage})가 전체 페이지 수(${totalAltPage})를 초과하였습니다.`
-                  });
-                  fileNumErrorsCount++;
-                }
-              } else if (text.trim() === lastTitleText.trim()) {
-                allNumberings.push({
-                  fileName: file.name,
-                  slideNum: slide.slideNum,
-                  area: '좌측 타이틀',
-                  text,
-                  error: '동일 목차(타이틀) 반복 검출',
-                  guide: `이전 슬라이드와 좌측 타이틀 명칭("${text}")이 완전히 동일합니다. 중복 기재가 아니며 여러 슬라이드로 나뉘어 이어지는 내용이라면 "(1/4)" 형태로 연속 페이지 번호를 지정해 주세요.`
-                });
-                fileNumErrorsCount++;
-              }
-            }
-
-            // 첫 연속 페이지 진입 검증
-            if (hasAltPages && (!lastHasAltPages || pureTitle !== lastPureTitle)) {
-              if (currentAltPage !== 1) {
-                allNumberings.push({
-                  fileName: file.name,
-                  slideNum: slide.slideNum,
-                  area: '좌측 타이틀',
-                  text,
-                  error: '목차 페이지 시작 번호 오류',
-                  guide: `연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${currentAltPage}/${totalAltPage})`
-                });
-                fileNumErrorsCount++;
-              }
-            }
-
-            lastTitleText = text;
-            lastPureTitle = pureTitle;
-            lastHasAltPages = hasAltPages;
-            lastCurrentAltPage = currentAltPage;
-            lastTotalAltPage = totalAltPage;
-
-            // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
-            // 또는 로마자 "I. ", 괄호 "(1) " 등 검출
-            const numMatch = text.match(/^([0-9]+(\.[0-9]+)*)[\s\.]/);
-            
-            if (numMatch) {
-              const rawNumStr = numMatch[1];
-              const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
-              
-              if (lastParts.length > 0) {
-                // 1. 중복 감지
-                if (rawNumStr === lastParts.join('.')) {
-                  allNumberings.push({
-                    fileName: file.name,
-                    slideNum: slide.slideNum,
-                    area: '좌측 타이틀',
-                    text,
-                    error: `넘버링 중복 검출 (${rawNumStr})`,
-                    guide: `이전 슬라이드와 동일한 넘버링입니다. 숫자를 확인해 순차 증가하도록 변경해 주세요.`
-                  });
-                  fileNumErrorsCount++;
-                } else {
-                  // 2. 레벨 및 순차 증가 유효성 체크
-                  const lenDiff = parts.length - lastParts.length;
-                  
-                  if (lenDiff === 0) {
-                    // 동일 레벨: 마지막 자리가 1 증가해야 함
-                    const lastIdx = parts.length - 1;
-                    if (parts[lastIdx] !== lastParts[lastIdx] + 1) {
-                      allNumberings.push({
-                        fileName: file.name,
-                        slideNum: slide.slideNum,
-                        area: '좌측 타이틀',
-                        text,
-                        error: `넘버링 시퀀스 불일치 (${lastParts.join('.')} ➜ ${rawNumStr})`,
-                        guide: `동일 레벨에서는 마지막 번호가 순차적으로 1씩 증가해야 합니다. (${lastParts.slice(0, -1).concat(lastParts[lastIdx] + 1).join('.')} 권장)`
-                      });
-                      fileNumErrorsCount++;
-                    }
-                  } else if (lenDiff > 0) {
-                    // 하위 레벨로 진입: 진입 시 첫 자리는 무조건 1이어야 함 (예: 1.1 ➜ 1.1.1)
-                    // 또한 상위 부모 레벨 번호는 이전과 같아야 함
-                    let parentMatch = true;
-                    for (let k = 0; k < lastParts.length; k++) {
-                      if (parts[k] !== lastParts[k]) parentMatch = false;
-                    }
-                    
-                    const newPart = parts[parts.length - 1];
-                    
-                    if (!parentMatch || newPart !== 1) {
-                      allNumberings.push({
-                        fileName: file.name,
-                        slideNum: slide.slideNum,
-                        area: '좌측 타이틀',
-                        text,
-                        error: `하위 넘버링 시작값 오류 (${lastParts.join('.')} ➜ ${rawNumStr})`,
-                        guide: `하위 계층으로 진입할 때 하위 번호는 항상 1부터 순차 시작해야 합니다. (${lastParts.join('.')}.1 권장)`
-                      });
-                      fileNumErrorsCount++;
-                    }
-                  } else if (lenDiff < 0) {
-                    // 상위 레벨로 복귀: 복귀한 레벨의 번호가 이전 기록된 값보다 증가했는지 확인
-                    // 예: 1.1.2 ➜ 1.2 또는 2
-                    const targetLen = parts.length;
-                    const lastIdx = targetLen - 1;
-                    
-                    // 복귀 대상 레벨의 마지막 자리가 이전 같은 자리에 있던 값보다 증가하지 않거나 어긋났을 때
-                    // 하지만 간단하게 시퀀스가 1만큼 증가하는지 검증
+                if (last_major_val !== null && current_major_val !== last_major_val) {
+                  if (current_major_val !== last_major_val + 1) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text: slide.majorTitle,
+                      error: '대주제 로마자 순차성 단절',
+                      guide: `대주제 장 번호가 순차적으로 증가하지 않고 단절되었습니다. (이전: ${last_major_roman} ➜ 현재: ${current_major_roman})`
+                    });
+                    fileNumErrorsCount++;
                   }
                 }
-              } else {
-                // 첫 번째 검출된 넘버링: Major가 1 또는 다른 적절한 초기값인지 확인
-                if (parts[0] !== 1 && parts.length === 1) {
+                last_major_val = current_major_val;
+                last_major_roman = current_major_roman;
+              }
+            }
+
+            // 1-2) 2단/3단 타이틀 간의 구조적 계층 관계 정합성 검증 (원칙 2, 3, 4)
+            const subTitles = (slide.titles || []).filter(text => !roman_regex.test(text));
+            if (subTitles.length === 2) {
+              const level2Title = subTitles[0];
+              const level3Title = subTitles[1];
+              
+              const level2Parts = level2Title.split('>').map(s => s.trim());
+              const level3Parts = level3Title.split('>').map(s => s.trim());
+              
+              const getNumDepth = (txt) => {
+                const match = txt.match(num_regex);
+                if (!match) return 0;
+                return match[1].split('.').length;
+              };
+              
+              const l2Depths = level2Parts.map(getNumDepth);
+              const l3Depths = level3Parts.map(getNumDepth);
+              const l3MainDepth = l3Depths[0];
+              
+              if (l3MainDepth === 2) {
+                // 원칙 2: 중분류(1.1)가 3단 타이틀로 오는 케이스 -> 2단은 대분류(1.) 단독 구조
+                const isL2Valid = level2Parts.length === 1 && l2Depths[0] === 1;
+                if (!isL2Valid) {
                   allNumberings.push({
                     fileName: file.name,
                     slideNum: slide.slideNum,
                     area: '좌측 타이틀',
-                    text,
-                    error: `넘버링 시작 번호 부적합 (${rawNumStr})`,
-                    guide: `최초 대주제 넘버링은 1부터 시작하는 것을 권장합니다.`
+                    text: `${level2Title} / ${level3Title}`,
+                    error: '타이틀 계층 규칙 위반 (원칙 2)',
+                    guide: `중분류(${level3Parts[0]})가 3단 타이틀로 올 경우, 2단 타이틀은 '대분류' 단독 구조(예: "1. 제목")여야 합니다. (현재 2단: "${level2Title}")`
                   });
                   fileNumErrorsCount++;
                 }
+              } else if (l3MainDepth === 3) {
+                if (level3Parts.length === 1) {
+                  // 원칙 3: 소분류(1.1.1) 단독이 3단 타이틀로 오는 케이스 -> 2단은 대분류 > 중분류 구조
+                  const isL2Valid = level2Parts.length === 2 && l2Depths[0] === 1 && l2Depths[1] === 2;
+                  if (!isL2Valid) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text: `${level2Title} / ${level3Title}`,
+                      error: '타이틀 계층 규칙 위반 (원칙 3)',
+                      guide: `소분류(${level3Parts[0]})가 3단 타이틀로 올 경우, 2단 타이틀은 '대분류 > 중분류' 구조(예: "1. 대분류 > 1.1 중분류")여야 합니다. (현재 2단: "${level2Title}")`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                } else if (level3Parts.length > 1) {
+                  // 원칙 4: 소분류 하위가 3단 타이틀로 오는 케이스 -> 2단은 대분류 > 중분류 구조
+                  const isL2Valid = level2Parts.length === 2 && l2Depths[0] === 1 && l2Depths[1] === 2;
+                  if (!isL2Valid) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text: `${level2Title} / ${level3Title}`,
+                      error: '타이틀 계층 규칙 위반 (원칙 4)',
+                      guide: `소분류 하위가 3단 타이틀로 올 경우, 2단 타이틀은 '대분류 > 중분류' 구조(예: "1. 대분류 > 1.1 중분류")여야 합니다. (현재 2단: "${level2Title}")`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                }
               }
-              lastParts = parts; // 업데이트
+            }
+
+            // 슬라이드 내 모든 수집된 타이틀 순차 검증 (1단, 2단, 3단 통합 순회)
+            const slide_titles = slide.titles || [];
+
+            for (let tIdx = 0; tIdx < slide_titles.length; tIdx++) {
+              const text = slide_titles[tIdx];
+              
+              // 대주제 텍스트 자체는 아래의 세부 넘버링(숫자) 검증에서는 제외
+              if (roman_regex.test(text)) continue;
+
+              // "목차 명칭 (1/4)" 정규식 파싱
+              const altPageMatch = text.match(/\((\d+)\/(\d+)\)\s*$/);
+              let hasAltPages = false;
+              let currentAltPage = null;
+              let totalAltPage = null;
+              let pureTitle = text.trim();
+
+              if (altPageMatch) {
+                hasAltPages = true;
+                currentAltPage = parseInt(altPageMatch[1], 10);
+                totalAltPage = parseInt(altPageMatch[2], 10);
+                pureTitle = text.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
+              }
+
+              // 순수 제목 추출: 넘버링 숫자 접두사(1., 1.1 등) 제거 후 실제 제목 텍스트만 추출
+              // 예: "1.1 재무구조 및 대외신용평가 현황" → "재무구조 및 대외신용평가 현황"
+              const pureTitleWithoutNum = pureTitle.replace(/^\s*[0-9]+(\.[0-9]+)*[\s\.]+/, '').trim();
+
+              // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
+              const numMatch = text.match(num_regex);
+              
+              if (numMatch) {
+                const rawNumStr = numMatch[1];
+                const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
+                
+                if (parts.length > 0) {
+                  const current_val = parts[parts.length - 1];
+
+                  // 1. 동일 넘버링이 다른 슬라이드에서 쓰였는데, 제목 텍스트가 다르면 오류 검출
+                  // pureTitleWithoutNum: 넘버링 숫자를 제거한 순수 제목만으로 비교
+                  const existingTitle = numbering_title_map[rawNumStr];
+                  if (existingTitle !== undefined) {
+                    if (existingTitle !== pureTitleWithoutNum) {
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '좌측 타이틀',
+                        text,
+                        error: `동일 넘버링 내 타이틀 텍스트 불일치 (${rawNumStr})`,
+                        guide: `넘버링 "${rawNumStr}"에 대해 이전 슬라이드("${rawNumStr} ${existingTitle}")와 현재 슬라이드("${pureTitle}")의 타이틀 텍스트가 서로 일치하지 않습니다.`
+                      });
+                      fileNumErrorsCount++;
+                    }
+                  } else {
+                    numbering_title_map[rawNumStr] = pureTitleWithoutNum;
+                  }
+
+                  // 2. 형제 노드 간의 순차적(sequential) 검증 진행
+                  const parent_path = parts.slice(0, -1).join('.');
+                  const last_sibling_val = sibling_tracker[parent_path];
+
+                  if (last_sibling_val !== undefined) {
+                    if (current_val === last_sibling_val) {
+                      // 동일 번호 반복: 1단 넘버링(중분류 등, 예: "1", "2")이 아니고, 연속 페이지(1/2 등) 표기가 없으면 중복 오류
+                      if (!hasAltPages && parts.length > 1) {
+                        allNumberings.push({
+                          fileName: file.name,
+                          slideNum: slide.slideNum,
+                          area: '좌측 타이틀',
+                          text,
+                          error: `넘버링 중복 사용 오류 (${rawNumStr})`,
+                          guide: `이전 슬라이드에서 이미 "${rawNumStr}" 번호가 사용되었습니다. 넘버링이 동일한데 제목이 다르다면 오류입니다. 순차적으로 다음 번호로 증가시켜야 합니다.`
+                        });
+                        fileNumErrorsCount++;
+                      }
+                    } else if (current_val !== last_sibling_val + 1) {
+                      // 순서 건너뜀 (시퀀스 단절)
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '좌측 타이틀',
+                        text,
+                        error: `넘버링 시퀀스 단절 (${rawNumStr})`,
+                        guide: `동일 계층 수준 내에서 일련번호는 순차적으로 1씩 증가해야 합니다. (이전 형제 값: ${last_sibling_val} ➜ 현재 표기: ${current_val})`
+                      });
+                      fileNumErrorsCount++;
+                    }
+                  } else {
+                    // 부모 계층 아래 최초의 자식 노드 진입 시에는 반드시 1이어야 함 (로마자 대주제 제외)
+                    const isRoman = roman_regex.test(text);
+                    if (!isRoman && current_val !== 1) {
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '좌측 타이틀',
+                        text,
+                        error: `하위 넘버링 시작값 오류 (${rawNumStr})`,
+                        guide: `새로운 하위 계층으로 진입할 때 일련번호는 항상 1부터 순차 시작해야 합니다. (${parent_path ? parent_path + '.1' : '1.'} 권장)`
+                      });
+                      fileNumErrorsCount++;
+                    }
+                  }
+                  // 트래커 기록 갱신 (연속 페이지인 경우에도 번호를 유지하여 다음 연속 장에서 비교 가능하도록)
+                  if (!hasAltPages || current_val !== last_sibling_val) {
+                    sibling_tracker[parent_path] = current_val;
+                  }
+                }
+              }
+
+              // 3. 연속 페이지 (1/4) 형식의 연속성 세부 검사 (alt_page_tracker 기반 독립 검사)
+              if (hasAltPages) {
+                const prevPageInfo = alt_page_tracker[pureTitle];
+                if (prevPageInfo && prevPageInfo.slideNum === slide.slideNum - 1) {
+                  if (totalAltPage !== prevPageInfo.totalAltPage) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: '목차 전체 페이지 수 불일치',
+                      guide: `연속 목차의 전체 페이지 수(분모)가 이전 슬라이드(${prevPageInfo.totalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                  
+                  if (currentAltPage !== prevPageInfo.currentAltPage + 1) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: '목차 연속 페이지 번호 단절',
+                      guide: `연속된 목차 페이지 번호가 순차적으로 증가하지 않았습니다. (이전: ${prevPageInfo.currentAltPage}/${prevPageInfo.totalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
+                    });
+                    fileNumErrorsCount++;
+                  }
+
+                  if (currentAltPage > totalAltPage) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: '목차 페이지 범위 초과',
+                      guide: `목차 페이지 번호(${currentAltPage})가 전체 페이지 수(${totalAltPage})를 초과하였습니다.`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                } else {
+                  // 직전 슬라이드에 연속되는 목차가 없었던 경우 시작 번호는 무조건 1이어야 함
+                  if (currentAltPage !== 1) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: '목차 페이지 시작 번호 오류',
+                      guide: `연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${currentAltPage}/${totalAltPage})`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                }
+
+                // 현재 슬라이드의 연속 목차 상태 등록
+                alt_page_tracker[pureTitle] = {
+                  slideNum: slide.slideNum,
+                  currentAltPage,
+                  totalAltPage
+                };
+              }
             }
           }
 
@@ -1103,6 +1683,30 @@ export default function PptValidator({ apiKey }) {
         }
         }
 
+        if (check_ai_typos && apiKey) {
+          try {
+            const aiTypos = await call_gemini_ai_typos(file.name, slides_text_map, apiKey);
+            aiTypos.forEach(t => {
+              allTypos.push(t);
+              fileTyposCount++;
+            });
+          } catch (err) {
+            console.error("AI 오탈자 검증 중 오류 발생:", err);
+          }
+        }
+
+        if (check_external_api && external_api_url) {
+          try {
+            const ext_typos = await call_external_spell_check(file.name, slides_text_map, external_api_url);
+            ext_typos.forEach(t => {
+              allTypos.push(t);
+              fileTyposCount++;
+            });
+          } catch (err) {
+            console.error("외부 맞춤법 API 검증 중 오류 발생:", err);
+          }
+        }
+
         stats.push({
           name: file.name,
           typos: fileTyposCount,
@@ -1114,7 +1718,9 @@ export default function PptValidator({ apiKey }) {
           macImageErrors: fileMacImageCount,
           startPage: allPageRanges[allPageRanges.length - 1]?.startPage ?? 1,
           endPage: allPageRanges[allPageRanges.length - 1]?.endPage ?? 1,
-          totalSlides: allPageRanges[allPageRanges.length - 1]?.totalSlides ?? 1
+          totalSlides: allPageRanges[allPageRanges.length - 1]?.totalSlides ?? 1,
+          isFilePatched: isFilePatched,
+          patchCount: patchCount
         });
       }
 
@@ -1192,7 +1798,7 @@ export default function PptValidator({ apiKey }) {
     };
 
     // 1. 오탈자 시트 데이터 구성
-    if (checkTypos) {
+    if (checkTypos || check_ai_typos) {
       const typoRows = typoResults.map((t, idx) => ({
         '순번': idx + 1,
         '대상 파일명': t.fileName,
@@ -1472,6 +2078,192 @@ export default function PptValidator({ apiKey }) {
                 </div>
               </div>
 
+              {/* 1-2. AI 오탈자 정밀 검증 */}
+              <div 
+                onClick={() => set_check_ai_typos(prev => !prev)}
+                style={{ 
+                  background: check_ai_typos ? 'rgba(99, 102, 241, 0.05)' : 'rgba(255, 255, 255, 0.01)', 
+                  border: check_ai_typos ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px', 
+                  padding: '12px 16px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={check_ai_typos} 
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    set_check_ai_typos(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#6366f1' }}
+                />
+                <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '2px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>AI 오탈자 정밀 검증</span>
+                    <Sparkles size={14} style={{ color: '#6366f1' }} />
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Gemini AI를 이용한 실시간 문맥 맞춤법 및 문맥 오류 진단</span>
+                </div>
+              </div>
+
+              {/* 외부 전문 맞춤법 검사 API 연동 옵션 */}
+              <div
+                onClick={() => {
+                  const next = !check_external_api;
+                  set_check_external_api(next);
+                  // 체크박스 ON 시 로컬 서버 URL 자동 입력
+                  if (next && !external_api_url) {
+                    set_external_api_url('http://localhost:8000/check');
+                    set_external_server_status('unknown');
+                  }
+                }}
+                style={{
+                  background: check_external_api ? 'rgba(234, 179, 8, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                  border: check_external_api ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={check_external_api}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    const next = e.target.checked;
+                    set_check_external_api(next);
+                    if (next && !external_api_url) {
+                      set_external_api_url('http://localhost:8000/check');
+                      set_external_server_status('unknown');
+                    }
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#eab308', marginTop: '2px' }}
+                />
+                <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>외부 전문 맞춤법 API 연동</span>
+                    <span style={{ fontSize: '10px', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>옵션</span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>로컬 맞춤법 서버 또는 사내 API와 실시간 연동 (체크 시 자동 입력)</span>
+
+                  {check_external_api && (
+                    <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+
+                      {/* URL 입력창 */}
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          placeholder="http://localhost:8000/check"
+                          value={external_api_url}
+                          onChange={(e) => { set_external_api_url(e.target.value); set_external_server_status('unknown'); }}
+                          style={{
+                            flex: 1,
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(234, 179, 8, 0.5)',
+                            background: 'rgba(234, 179, 8, 0.05)',
+                            color: 'var(--text-primary)',
+                            fontSize: '12px',
+                            fontFamily: 'monospace',
+                            outline: 'none',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                        {/* 서버 상태 확인 버튼 */}
+                        <button
+                          onClick={async () => {
+                            set_external_server_status('checking');
+                            try {
+                              const health_url = external_api_url.replace('/check', '/health').replace('/check/', '/health');
+                              const res = await fetch(health_url, { signal: AbortSignal.timeout(3000) });
+                              set_external_server_status(res.ok ? 'running' : 'stopped');
+                            } catch {
+                              set_external_server_status('stopped');
+                            }
+                          }}
+                          style={{
+                            padding: '7px 12px',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(234, 179, 8, 0.5)',
+                            background: 'rgba(234, 179, 8, 0.1)',
+                            color: '#eab308',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {external_server_status === 'checking' ? '확인 중...' : '상태 확인'}
+                        </button>
+                      </div>
+
+                      {/* 서버 상태 표시 */}
+                      {external_server_status !== 'unknown' && (
+                        <div style={{
+                          display: 'flex', alignItems: 'flex-start', gap: '8px',
+                          padding: '10px 12px', borderRadius: '8px',
+                          background: external_server_status === 'running'
+                            ? 'rgba(34, 197, 94, 0.08)'
+                            : external_server_status === 'checking'
+                            ? 'rgba(234, 179, 8, 0.08)'
+                            : 'rgba(239, 68, 68, 0.08)',
+                          border: `1px solid ${
+                            external_server_status === 'running' ? 'rgba(34,197,94,0.3)'
+                            : external_server_status === 'checking' ? 'rgba(234,179,8,0.3)'
+                            : 'rgba(239,68,68,0.3)'
+                          }`
+                        }}>
+                          <span style={{ fontSize: '16px', lineHeight: 1 }}>
+                            {external_server_status === 'running' ? '🟢' : external_server_status === 'checking' ? '🟡' : '🔴'}
+                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                            <span style={{ fontSize: '12px', fontWeight: 700,
+                              color: external_server_status === 'running' ? '#22c55e'
+                                : external_server_status === 'checking' ? '#eab308' : '#ef4444'
+                            }}>
+                              {external_server_status === 'running' ? '서버 정상 실행 중' : external_server_status === 'checking' ? '서버 상태 확인 중...' : '서버가 실행되지 않음'}
+                            </span>
+                            {external_server_status === 'stopped' && (
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                                <div>📁 서버 실행 방법:</div>
+                                <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                  <div>① 파일 탐색기에서 아래 경로를 열어주세요</div>
+                                  <code style={{
+                                    display: 'block', padding: '4px 8px',
+                                    background: 'rgba(0,0,0,0.2)', borderRadius: '4px',
+                                    fontSize: '10px', userSelect: 'all',
+                                    color: '#fbbf24', wordBreak: 'break-all'
+                                  }}>
+                                    C:\Users\JEJU_MEC_3\Desktop\AI Coding\spell-check-server
+                                  </code>
+                                  <div>② <strong>서버실행.bat</strong> 파일을 더블클릭하세요</div>
+                                  <div>③ 서버 시작 후 [상태 확인] 버튼을 다시 눌러주세요</div>
+                                </div>
+                              </div>
+                            )}
+                            {external_server_status === 'running' && (
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                ✅ 검증 시 맞춤법 서버가 자동으로 연동됩니다
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* 2. 넘버링 및 목차 검증 */}
               <div 
                 onClick={() => setCheckNumbering(prev => !prev)}
@@ -1718,37 +2510,294 @@ export default function PptValidator({ apiKey }) {
           
           {/* 사용자 정의 검증 사전 등록 */}
           <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <HelpCircle size={17} color="var(--accent-purple)" /> 사용자 정의 검사 규칙 (선택)
-            </h3>
-            <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-              프로젝트 고유 명사나 내장 사전에 존재하지 않는 특정 오탈자를 추가할 수 있습니다. <strong>[오타단어 ➜ 바른단어]</strong> 형태로 한 줄씩 기재해 주세요.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <HelpCircle size={17} color="var(--accent-purple)" /> 사용자 정의 검사 규칙
+              </h3>
+              {/* 탭 컨트롤러 */}
+              <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px' }}>
+                <button
+                  onClick={() => setUserDictTab('table')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    border: 'none',
+                    borderRadius: '6px',
+                    background: userDictTab === 'table' ? 'var(--panel-border)' : 'transparent',
+                    color: userDictTab === 'table' ? 'var(--text-primary)' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  표 편집
+                </button>
+                <button
+                  onClick={() => setUserDictTab('text')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    border: 'none',
+                    borderRadius: '6px',
+                    background: userDictTab === 'text' ? 'var(--panel-border)' : 'transparent',
+                    color: userDictTab === 'text' ? 'var(--text-primary)' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  텍스트 편집
+                </button>
+              </div>
+            </div>
+
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+              프로젝트 고유 명사나 내장 사전에 없는 오탈자 규칙을 설정해 검출 정확도를 향상시킬 수 있습니다.
             </p>
-            <textarea
-              value={userDictText}
-              onChange={(e) => setUserDictText(e.target.value)}
-              placeholder={`예시 입력:
+
+            {userDictTab === 'text' ? (
+              <textarea
+                value={userDictText}
+                onChange={(e) => setUserDictText(e.target.value)}
+                placeholder={`예시 입력:
 프로젝트명 ➜ 건강한 프로젝트
 아키택처 ➜ 아키텍처
 스프링부터 ➜ 스프링부트`}
-              style={{
-                width: '100%',
-                height: '140px',
-                padding: '12px',
-                background: 'rgba(0,0,0,0.2)',
-                border: '1px solid var(--panel-border)',
-                borderRadius: '10px',
-                color: 'var(--text-primary)',
-                fontSize: '13px',
-                fontFamily: 'monospace',
-                lineHeight: '1.6',
-                resize: 'none',
-                outline: 'none'
-              }}
-            />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-              <Info size={12} />
-              <span>내장 사전에 있는 규칙은 기본적으로 적용됩니다.</span>
+                style={{
+                  width: '100%',
+                  height: '180px',
+                  padding: '12px',
+                  background: 'rgba(0,0,0,0.2)',
+                  border: '1px solid var(--panel-border)',
+                  borderRadius: '10px',
+                  color: 'var(--text-primary)',
+                  fontSize: '13px',
+                  fontFamily: 'monospace',
+                  lineHeight: '1.6',
+                  resize: 'none',
+                  outline: 'none'
+                }}
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* 엑셀 관리 버튼바 */}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => dictFileInputRef.current?.click()}
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      background: 'rgba(99, 102, 241, 0.1)',
+                      border: '1px solid rgba(99, 102, 241, 0.2)',
+                      borderRadius: '8px',
+                      color: '#818cf8',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <FileSpreadsheet size={13} />
+                    가져오기
+                  </button>
+                  <button
+                    onClick={handle_export_dict_excel}
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid var(--panel-border)',
+                      borderRadius: '8px',
+                      color: 'var(--text-primary)',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <Download size={13} />
+                    내보내기
+                  </button>
+                  <button
+                    onClick={handle_download_dict_template}
+                    style={{
+                      padding: '8px 10px',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px dashed var(--panel-border)',
+                      borderRadius: '8px',
+                      color: 'var(--text-secondary)',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    템플릿 받기
+                  </button>
+                  <input
+                    type="file"
+                    ref={dictFileInputRef}
+                    onChange={handle_import_dict_excel}
+                    accept=".xlsx, .xls"
+                    style={{ display: 'none' }}
+                  />
+                </div>
+
+                {/* 행 추가 영역 */}
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    id="new-typo-input"
+                    type="text"
+                    placeholder="오타 단어"
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      background: 'rgba(0,0,0,0.2)',
+                      border: '1px solid var(--panel-border)',
+                      borderRadius: '8px',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                      outline: 'none'
+                    }}
+                  />
+                  <input
+                    id="new-corr-input"
+                    type="text"
+                    placeholder="올바른 단어"
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      background: 'rgba(0,0,0,0.2)',
+                      border: '1px solid var(--panel-border)',
+                      borderRadius: '8px',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const typoInput = document.getElementById('new-typo-input');
+                      const corrInput = document.getElementById('new-corr-input');
+                      if (typoInput && corrInput) {
+                        const tVal = typoInput.value.trim();
+                        const cVal = corrInput.value.trim();
+                        if (tVal && cVal) {
+                          handle_add_dict_row(tVal, cVal);
+                          typoInput.value = '';
+                          corrInput.value = '';
+                        } else {
+                          alert('단어를 입력해 주세요.');
+                        }
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <Plus size={14} />
+                    추가
+                  </button>
+                </div>
+
+                {/* 그리드형 표 */}
+                <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--panel-border)', borderRadius: '8px', background: 'rgba(0,0,0,0.1)' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                        <th style={{ padding: '8px', textAlign: 'left', fontWeight: 600 }}>오탈자 단어</th>
+                        <th style={{ padding: '8px', textAlign: 'left', fontWeight: 600 }}>교정 단어</th>
+                        <th style={{ padding: '8px', textAlign: 'center', width: '50px', fontWeight: 600 }}>삭제</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {get_user_dict_list().length === 0 ? (
+                        <tr>
+                          <td colSpan={3} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                            등록된 사용자 정의 규칙이 없습니다.
+                          </td>
+                        </tr>
+                      ) : (
+                        get_user_dict_list().map((item, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                            <td style={{ padding: '8px', color: '#f43f5e', fontWeight: 600 }}>{item.typo}</td>
+                            <td style={{ padding: '8px', color: 'var(--success-color)', fontWeight: 600 }}>{item.correction}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>
+                              <button
+                                onClick={() => handle_delete_dict_row(item.typo)}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: 'var(--text-muted)',
+                                  cursor: 'pointer',
+                                  padding: '4px',
+                                  borderRadius: '4px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                <Info size={12} />
+                <span>내장 사전에 있는 규칙은 기본적으로 적용됩니다.</span>
+              </div>
+              <button
+                onClick={() => setShowDictModal(true)}
+                style={{
+                  background: 'rgba(99, 102, 241, 0.1)',
+                  color: '#818cf8',
+                  border: '1px solid rgba(99, 102, 241, 0.2)',
+                  borderRadius: '6px',
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)';
+                  e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
+                  e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.2)';
+                }}
+              >
+                표준 사전 보기
+              </button>
             </div>
           </div>
 
@@ -2076,7 +3125,27 @@ TBD
                         (checkMacImages ? stat.macImageErrors : 0);
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }}>
-                          <td style={{ padding: '14px 8px', fontWeight: 600 }}>{stat.name}</td>
+                          <td style={{ padding: '14px 8px', fontWeight: 600 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span>{stat.name}</span>
+                              {stat.isFilePatched && (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  width: 'fit-content',
+                                  fontSize: '10px',
+                                  background: 'rgba(239, 68, 68, 0.1)',
+                                  color: '#ef4444',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontWeight: 700
+                                }}>
+                                  🔧 CRC-32 복구됨 (손상 이미지 {stat.patchCount}개 대체)
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td style={{ padding: '14px 8px', color: !checkTypos ? 'var(--text-muted)' : stat.typos > 0 ? '#ef4444' : 'var(--text-muted)', fontWeight: 700 }}>
                             {checkTypos ? (stat.typos > 0 ? `${stat.typos}건` : '없음') : '비활성'}
                           </td>
@@ -2160,7 +3229,24 @@ TBD
                               {t.correction}
                             </td>
                             <td style={{ padding: '12px 8px' }}>
-                              <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px', fontSize: '11px' }}>{t.type}</span>
+                              {t.isAi ? (
+                                <span style={{ 
+                                  background: 'rgba(99, 102, 241, 0.15)', 
+                                  color: '#818cf8',
+                                  padding: '3px 8px', 
+                                  borderRadius: '6px', 
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  <Sparkles size={11} />
+                                  AI 맞춤법
+                                </span>
+                              ) : (
+                                <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px', fontSize: '11px' }}>{t.type}</span>
+                              )}
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineBreak: 'anywhere' }}>
                               {/* 매칭 단어 하이라이트 효과 */}
@@ -2572,6 +3658,137 @@ TBD
 
           </div>
 
+        </div>
+      )}
+
+      {/* 내장 오탈자 표준 사전 보기 모달 */}
+      {showDictModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'rgba(0, 0, 0, 0.65)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '650px',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            {/* 헤더 */}
+            <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--panel-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={16} color="#818cf8" />
+                내장 표준 오탈자 사전
+              </h3>
+              <button
+                onClick={() => setShowDictModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* 필터 탭 */}
+            <div style={{ padding: '10px 20px', display: 'flex', gap: '6px', borderBottom: '1px solid rgba(255,255,255,0.03)', overflowX: 'auto' }}>
+              {['전체', '맞춤법', '외래어 표기', '순화어/비즈니스', '띄어쓰기'].map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setDictFilterCategory(cat)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    background: dictFilterCategory === cat ? 'linear-gradient(135deg, #a855f7, #6366f1)' : 'rgba(255,255,255,0.05)',
+                    color: 'white',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {/* 본문 테이블 */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '10px 8px', fontWeight: 600, width: '120px' }}>오타 단어</th>
+                    <th style={{ padding: '10px 8px', fontWeight: 600, width: '120px' }}>교정 단어</th>
+                    <th style={{ padding: '10px 8px', fontWeight: 600 }}>설명</th>
+                    <th style={{ padding: '10px 8px', fontWeight: 600, width: '110px' }}>유형</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.keys(TYPO_DICTIONARY)
+                    .filter(key => dictFilterCategory === '전체' || TYPO_DICTIONARY[key].type === dictFilterCategory)
+                    .map((typo, idx) => {
+                      const item = TYPO_DICTIONARY[typo];
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                          <td style={{ padding: '10px 8px', color: '#f43f5e', fontWeight: 600 }}>{typo}</td>
+                          <td style={{ padding: '10px 8px', color: 'var(--success-color)', fontWeight: 600 }}>{item.correction}</td>
+                          <td style={{ padding: '10px 8px', color: 'var(--text-secondary)', fontSize: '12px' }}>{item.desc}</td>
+                          <td style={{ padding: '10px 8px' }}>
+                            <span style={{
+                              background: item.type === '맞춤법' ? 'rgba(239, 68, 68, 0.1)' : 
+                                          item.type === '외래어 표기' ? 'rgba(59, 130, 246, 0.1)' : 
+                                          item.type === '띄어쓰기' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                              color: item.type === '맞춤법' ? '#f87171' : 
+                                     item.type === '외래어 표기' ? '#60a5fa' : 
+                                     item.type === '띄어쓰기' ? '#fbbf24' : '#34d399',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 700
+                            }}>
+                              {item.type}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 푸터 */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--panel-border)', textAlign: 'right' }}>
+              <button
+                onClick={() => setShowDictModal(false)}
+                style={{
+                  padding: '8px 16px',
+                  background: 'rgba(255,255,255,0.08)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
