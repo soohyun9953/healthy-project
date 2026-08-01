@@ -206,10 +206,12 @@ function App() {
     return parsed.length > 0 ? parsed : [''];
   });
   const [newKeyInput, setNewKeyInput] = useState('');
-  // 하위 컴포넌트에 전달할 콤마 구분 문자열
-  const apiKey = apiKeys.filter(k => k.trim().startsWith('AIza') || k.trim().startsWith('AQ.')).join(',');
-  // 로컬 스토리지 보존용 원본 문자열 (타이핑 시 유실 방지)
-  const raw_api_key_str = apiKeys.filter(k => k.trim() !== '').join(',');
+  // 입력된 키 목록에 대해 특수문자 및 제어문자 최종 클렌징 처리 적용
+  const clean_keys = apiKeys.map(k => k.replace(/[^a-zA-Z0-9\-_]/g, '').trim()).filter(Boolean);
+  // 하위 컴포넌트에 전달할 콤마 구분 문자열 ( startsWith AIza or AQ. )
+  const apiKey = clean_keys.filter(k => k.startsWith('AIza') || k.startsWith('AQ.')).join(',');
+  // 로컬 스토리지 보존용 클린한 키 문자열
+  const raw_api_key_str = clean_keys.join(',');
   const [modelUsage, setModelUsage] = useState(() => JSON.parse(localStorage.getItem('gemini_model_usage') || '{}'));
   const [showSettings, setShowSettings] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -252,14 +254,14 @@ function App() {
     localStorage.setItem('gemini_api_key', raw_api_key_str);
   }, [raw_api_key_str]);
 
-  // API 키 추가
+  // API 키 추가 (실시간 replace 제거하여 입력 원활화)
   const handleAddKey = () => {
-    const cleaned = newKeyInput.replace(/[^a-zA-Z0-9\-_]/g, '');
-    if (!cleaned) return;
-    if (!apiKeys.includes(cleaned)) {
+    const trimmed = newKeyInput.trim();
+    if (!trimmed) return;
+    if (!apiKeys.includes(trimmed)) {
       setApiKeys(prev => {
-        if (prev.length === 1 && prev[0].trim() === '') return [cleaned];
-        return [...prev, cleaned];
+        if (prev.length === 1 && prev[0].trim() === '') return [trimmed];
+        return [...prev, trimmed];
       });
     }
     setNewKeyInput('');
@@ -273,10 +275,9 @@ function App() {
     });
   };
 
-  // API 키 개별 수정
+  // API 키 개별 수정 (실시간 replace 제거하여 한글/커서 튐/붙여넣기 꼬임 전면 해소)
   const handleEditKey = (idx, value) => {
-    const cleaned = value.replace(/[^a-zA-Z0-9\-_]/g, '');
-    setApiKeys(prev => prev.map((k, i) => i === idx ? cleaned : k));
+    setApiKeys(prev => prev.map((k, i) => i === idx ? value : k));
   };
 
 
