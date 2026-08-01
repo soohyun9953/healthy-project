@@ -111,6 +111,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
     const [totalAnswerStatus, setTotalAnswerStatus] = useState('');
     
     const [copiedId, setCopiedId] = useState(null);
+    const [isDocContentExpanded, setIsDocContentExpanded] = useState(false);
     const chatContainerRef = useRef(null);
     const totalChatContainerRef = useRef(null);
 
@@ -288,6 +289,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
     useEffect(() => {
         setChatMessages([]);
         setUserQuestion('');
+        setIsDocContentExpanded(false);
     }, [selectedDoc]);
 
     const handleSearch = async (e) => {
@@ -375,7 +377,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '24px', flex: 1, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: '24px', flex: 1, overflow: 'hidden' }}>
                 {/* Search and List Column */}
                 <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', gap: '16px' }}>
                     <div style={{ position: 'relative' }}>
@@ -491,51 +493,75 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                 </button>
                             </div>
 
-                            <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-                                <div style={{ marginBottom: '20px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: 'var(--text-primary)', fontWeight: 600, fontSize: '14px' }}>
-                                        <Info size={16} /> 요약 정보
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '24px' }}>
+                                <button 
+                                    onClick={() => setIsDocContentExpanded(!isDocContentExpanded)}
+                                    className="interactive"
+                                    style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                        width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.03)',
+                                        border: '1px solid var(--glass-border)', borderRadius: '12px',
+                                        color: 'var(--text-primary)', cursor: 'pointer', fontSize: '14px', fontWeight: 600,
+                                        marginBottom: '16px', transition: 'all 0.2s', outline: 'none'
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <BookOpen size={16} color="var(--accent-blue)" />
+                                        <span>원본 문서 정보 및 요약 {isDocContentExpanded ? '접기' : '펼쳐보기'}</span>
                                     </div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                        <div style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
-                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>파일 형식</div>
-                                            <div style={{ fontSize: '13px', fontWeight: 600 }}>{(selectedDoc.type || selectedDoc.metadata?.type || 'DOC').toUpperCase()} Document</div>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                        {isDocContentExpanded ? '▲ 요약/텍스트 접기' : '▼ 펼쳐서 내용 보기'}
+                                    </span>
+                                </button>
+
+                                {isDocContentExpanded && (
+                                    <div className="animate-slide-down" style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '280px', overflowY: 'auto', marginBottom: '20px', paddingRight: '4px' }}>
+                                        <div style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: 'var(--text-primary)', fontWeight: 600, fontSize: '14px' }}>
+                                                <Info size={16} /> 요약 정보
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                                <div style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>파일 형식</div>
+                                                    <div style={{ fontSize: '13px', fontWeight: 600 }}>{(selectedDoc.type || selectedDoc.metadata?.type || 'DOC').toUpperCase()} Document</div>
+                                                </div>
+                                                <div style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>페이지/슬라이드</div>
+                                                    <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                                                        {(() => {
+                                                            const p = selectedDoc.pages || selectedDoc.metadata?.pages;
+                                                            return Array.isArray(p) ? p.length : (p || 0);
+                                                        })()} Pages
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
-                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>페이지/슬라이드</div>
-                                            <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                                                {(() => {
-                                                    const p = selectedDoc.pages || selectedDoc.metadata?.pages;
-                                                    return Array.isArray(p) ? p.length : (p || 0);
-                                                })()} Pages
+
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', borderLeft: '3px solid var(--accent-blue)', paddingLeft: '10px' }}>
+                                                추출된 텍스트 내용
+                                            </div>
+                                            <div style={{ 
+                                                fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.7', 
+                                                whiteSpace: 'pre-wrap', background: 'rgba(0,0,0,0.15)', padding: '16px', 
+                                                borderRadius: '12px', border: '1px solid var(--glass-border)',
+                                                maxHeight: '150px', overflowY: 'auto'
+                                            }}>
+                                                {selectedDoc.content}
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', borderLeft: '3px solid var(--accent-blue)', paddingLeft: '10px' }}>
-                                        추출된 텍스트 내용
-                                    </div>
-                                    <div style={{ 
-                                        fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.7', 
-                                        whiteSpace: 'pre-wrap', background: 'rgba(0,0,0,0.1)', padding: '20px', 
-                                        borderRadius: '12px', border: '1px solid var(--glass-border)',
-                                        maxHeight: '300px', overflowY: 'auto'
-                                    }}>
-                                        {selectedDoc.content}
-                                    </div>
-                                </div>
+                                )}
 
                                 {/* Q&A Chat Section */}
-                                <div style={{ marginTop: '32px', borderTop: '1px solid var(--glass-border)', paddingTop: '24px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: 'var(--text-primary)', fontWeight: 700, fontSize: '15px' }}>
+                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderTop: '1px solid var(--glass-border)', paddingTop: '20px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', color: 'var(--text-primary)', fontWeight: 700, fontSize: '15px' }}>
                                         <MessageSquare size={18} color="var(--accent-blue)" /> AI 문서 Q&A 대화
                                     </div>
 
                                     <div style={{ 
-                                        background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', 
-                                        borderRadius: '16px', display: 'flex', flexDirection: 'column', height: '400px', overflow: 'hidden' 
+                                        flex: 1, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', 
+                                        borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' 
                                     }}>
                                         <div 
                                             ref={chatContainerRef}
@@ -559,7 +585,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                                         )}
                                                             <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                                                                 <div style={{ 
-                                                                    padding: '12px 16px', borderRadius: '14px', fontSize: '14px', lineHeight: '1.6',
+                                                                    padding: '14px 18px', borderRadius: '14px', fontSize: '15px', lineHeight: '1.6',
                                                                     background: msg.role === 'user' ? 'var(--accent-blue)' : 'rgba(255,255,255,0.08)',
                                                                     color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
                                                                     border: msg.role === 'user' ? 'none' : '1px solid var(--glass-border)',
@@ -680,7 +706,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                             )}
                                             <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                                                 <div style={{ 
-                                                    padding: '12px 16px', borderRadius: '14px', fontSize: '14px', lineHeight: '1.6',
+                                                    padding: '14px 18px', borderRadius: '14px', fontSize: '15px', lineHeight: '1.6',
                                                     background: msg.role === 'user' ? 'var(--accent-blue)' : 'rgba(255,255,255,0.08)',
                                                     color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
                                                     border: msg.role === 'user' ? 'none' : '1px solid var(--glass-border)',
