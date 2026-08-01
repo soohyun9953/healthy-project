@@ -533,8 +533,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                             style={{
                                                 display: 'flex',
                                                 alignItems: 'center',
-                                                gap: '12px',
-                                                padding: '12px 16px',
+                                                padding: '12px 8px',
                                                 borderRadius: '12px',
                                                 background: selectedDoc?.id === doc.id ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
                                                 border: `1px solid ${selectedDoc?.id === doc.id ? 'rgba(59, 130, 246, 0.3)' : 'transparent'}`,
@@ -544,14 +543,6 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                                 transition: 'all 0.2s'
                                             }}
                                         >
-                                            <div style={{ 
-                                                width: '36px', height: '36px', borderRadius: '10px', 
-                                                background: (doc.type === 'pptx' || doc.metadata?.type === 'PPTX') ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                flexShrink: 0
-                                            }}>
-                                                {(doc.type === 'pptx' || doc.metadata?.type === 'PPTX') ? <FileType size={18} color="#f59e0b" /> : <FileText size={18} color="#ef4444" />}
-                                            </div>
                                             <div style={{ flex: 1, overflow: 'hidden' }}>
                                                 <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                     {doc.title}
