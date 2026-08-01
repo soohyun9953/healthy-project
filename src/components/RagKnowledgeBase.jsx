@@ -110,10 +110,18 @@ const RagKnowledgeBase = ({ apiKey }) => {
     const [isTotalAnswering, setIsTotalAnswering] = useState(false);
     const [totalAnswerStatus, setTotalAnswerStatus] = useState('');
     
+    // 다중 선택 RAG Q&A 상태
+    const [selected_doc_ids, set_selected_doc_ids] = useState([]);
+    const [selection_chat_messages, set_selection_chat_messages] = useState([]);
+    const [selection_user_question, set_selection_user_question] = useState('');
+    const [is_selection_answering, set_is_selection_answering] = useState(false);
+    const [selection_answer_status, set_selection_answer_status] = useState('');
+    
     const [copiedId, setCopiedId] = useState(null);
     const [isDocContentExpanded, setIsDocContentExpanded] = useState(false);
     const chatContainerRef = useRef(null);
     const totalChatContainerRef = useRef(null);
+    const selectionChatContainerRef = useRef(null);
 
     const handleCopy = (text, id) => {
         navigator.clipboard.writeText(text).then(() => {
@@ -169,6 +177,86 @@ const RagKnowledgeBase = ({ apiKey }) => {
             setTotalAnswerStatus('');
         }
     };
+
+    // 다중 선택 문서 질의 응답 관련 핸들러 및 훅
+    const handle_toggle_doc_selection = (doc_id) => {
+        set_selected_doc_ids(prev => {
+            if (prev.includes(doc_id)) {
+                return prev.filter(id => id !== doc_id);
+            } else {
+                return [...prev, doc_id];
+            }
+        });
+    };
+
+    const handle_clear_doc_selection = () => {
+        set_selected_doc_ids([]);
+        set_selection_chat_messages([]);
+    };
+
+    const handle_ask_selection_question = async () => {
+        if (!selection_user_question.trim() || is_selection_answering) return;
+        if (!apiKey) {
+            alert('Gemini API Key가 설정되지 않았습니다. 상단 설정 메뉴에서 키를 입력해 주세요.');
+            return;
+        }
+        if (selected_doc_ids.length === 0) {
+            alert('질의할 문서를 하나 이상 선택해 주세요.');
+            return;
+        }
+
+        const question = selection_user_question.trim();
+        set_selection_user_question('');
+
+        const new_msg = { role: 'user', text: question, timestamp: new Date().toLocaleTimeString() };
+        set_selection_chat_messages(prev => [...prev, new_msg]);
+
+        set_is_selection_answering(true);
+        set_selection_answer_status('선택된 문서 분석 중...');
+
+        try {
+            const selected_docs = allDocs.filter(d => selected_doc_ids.includes(d.id));
+            set_selection_answer_status('Gemini AI 답변 도출 중...');
+
+            const answer = await askTotalRagQuestion(
+                question,
+                selected_docs,
+                apiKey,
+                (status) => set_selection_answer_status(status)
+            );
+
+            set_selection_chat_messages(prev => [...prev, {
+                role: 'ai',
+                text: answer,
+                timestamp: new Date().toLocaleTimeString(),
+                sources: selected_docs.map(d => d.title)
+            }]);
+        } catch (error) {
+            console.error('Selection Q&A Error:', error);
+            set_selection_chat_messages(prev => [...prev, {
+                role: 'ai',
+                text: `오류가 발생했습니다: ${error.message}`,
+                timestamp: new Date().toLocaleTimeString()
+            }]);
+        } finally {
+            set_is_selection_answering(false);
+            set_selection_answer_status('');
+        }
+    };
+
+    useEffect(() => {
+        if (selection_chat_messages.length > 0) {
+            const lastMsg = selection_chat_messages[selection_chat_messages.length - 1];
+            if (lastMsg.role === 'ai') {
+                setTimeout(() => {
+                    selectionChatContainerRef.current?.scrollTo({
+                        top: selectionChatContainerRef.current.scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }, 100);
+            }
+        }
+    }, [selection_chat_messages]);
 
     useEffect(() => {
         if (chatMessages.length > 0) {
@@ -402,72 +490,105 @@ const RagKnowledgeBase = ({ apiKey }) => {
                     </div>
 
                     <div className="glass-panel" style={{ flex: 1, overflowY: 'auto', padding: '12px', borderRadius: '16px' }}>
+                        {selected_doc_ids.length > 0 && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: '10px', border: '1px solid rgba(59, 130, 246, 0.15)', marginBottom: '12px' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                                    선택한 지식: <strong style={{ color: 'var(--accent-blue)', fontSize: '14px' }}>{selected_doc_ids.length}</strong>개
+                                </span>
+                                <button 
+                                    onClick={handle_clear_doc_selection}
+                                    className="interactive"
+                                    style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '12px', cursor: 'pointer', fontWeight: 600, padding: '4px 8px', borderRadius: '6px' }}
+                                >
+                                    선택 초기화
+                                </button>
+                            </div>
+                        )}
                         {isLoading ? (
                             <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>로딩 중...</div>
                         ) : filteredDocs.length > 0 ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                 {filteredDocs.map(doc => (
-                                    <button
+                                    <div 
                                         key={doc.id}
-                                        onClick={() => setSelectedDoc(doc)}
-                                        className="interactive"
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '12px',
-                                            padding: '12px 16px',
-                                            borderRadius: '12px',
-                                            background: selectedDoc?.id === doc.id ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                                            border: `1px solid ${selectedDoc?.id === doc.id ? 'rgba(59, 130, 246, 0.3)' : 'transparent'}`,
-                                            textAlign: 'left',
-                                            width: '100%',
-                                            transition: 'all 0.2s'
-                                        }}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}
                                     >
-                                        <div style={{ 
-                                            width: '36px', height: '36px', borderRadius: '10px', 
-                                            background: (doc.type === 'pptx' || doc.metadata?.type === 'PPTX') ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            flexShrink: 0
-                                        }}>
-                                            {(doc.type === 'pptx' || doc.metadata?.type === 'PPTX') ? <FileType size={18} color="#f59e0b" /> : <FileText size={18} color="#ef4444" />}
-                                        </div>
-                                        <div style={{ flex: 1, overflow: 'hidden' }}>
-                                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {doc.title}
+                                        <input 
+                                            type="checkbox"
+                                            checked={selected_doc_ids.includes(doc.id)}
+                                            onChange={() => handle_toggle_doc_selection(doc.id)}
+                                            style={{ 
+                                                width: '18px', 
+                                                height: '18px', 
+                                                cursor: 'pointer',
+                                                accentColor: 'var(--accent-blue)',
+                                                marginLeft: '6px',
+                                                flexShrink: 0
+                                            }}
+                                            title="질의 대상 지식으로 선택"
+                                        />
+                                        <button
+                                            onClick={() => setSelectedDoc(doc)}
+                                            className="interactive"
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '12px',
+                                                padding: '12px 16px',
+                                                borderRadius: '12px',
+                                                background: selectedDoc?.id === doc.id ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                                                border: `1px solid ${selectedDoc?.id === doc.id ? 'rgba(59, 130, 246, 0.3)' : 'transparent'}`,
+                                                textAlign: 'left',
+                                                flex: 1,
+                                                minWidth: 0,
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <div style={{ 
+                                                width: '36px', height: '36px', borderRadius: '10px', 
+                                                background: (doc.type === 'pptx' || doc.metadata?.type === 'PPTX') ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                flexShrink: 0
+                                            }}>
+                                                {(doc.type === 'pptx' || doc.metadata?.type === 'PPTX') ? <FileType size={18} color="#f59e0b" /> : <FileText size={18} color="#ef4444" />}
                                             </div>
-                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', gap: '8px', marginTop: '2px' }}>
-                                                <span>{(doc.type || doc.metadata?.type || 'DOC').toUpperCase()}</span>
-                                                <span>•</span>
-                                                <span>{typeof (doc.size || doc.metadata?.size) === 'string' ? (doc.size || doc.metadata?.size) : formatSize(doc.size || doc.metadata?.size)}</span>
-                                                {doc.score > 0 && (
-                                                    <>
-                                                        <span>•</span>
-                                                        <span style={{ color: 'var(--accent-blue)' }}>정확도 {doc.score}</span>
-                                                    </>
-                                                )}
+                                            <div style={{ flex: 1, overflow: 'hidden' }}>
+                                                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {doc.title}
+                                                </div>
+                                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', gap: '8px', marginTop: '2px' }}>
+                                                    <span>{(doc.type || doc.metadata?.type || 'DOC').toUpperCase()}</span>
+                                                    <span>•</span>
+                                                    <span>{typeof (doc.size || doc.metadata?.size) === 'string' ? (doc.size || doc.metadata?.size) : formatSize(doc.size || doc.metadata?.size)}</span>
+                                                    {doc.score > 0 && (
+                                                        <>
+                                                            <span>•</span>
+                                                            <span style={{ color: 'var(--accent-blue)' }}>정확도 {doc.score}</span>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleDeleteDoc(doc.id, doc.title);
-                                                }}
-                                                className="interactive-red"
-                                                style={{
-                                                    padding: '8px', borderRadius: '8px',
-                                                    background: 'transparent', border: 'none',
-                                                    color: 'var(--text-muted)', cursor: 'pointer',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                                title="문서 삭제"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                            <ChevronRight size={16} color="var(--text-muted)" />
-                                        </div>
-                                    </button>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeleteDoc(doc.id, doc.title);
+                                                    }}
+                                                    className="interactive-red"
+                                                    style={{
+                                                        padding: '8px', borderRadius: '8px',
+                                                        background: 'transparent', border: 'none',
+                                                        color: 'var(--text-muted)', cursor: 'pointer',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                    title="문서 삭제"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                                <ChevronRight size={16} color="var(--text-muted)" />
+                                            </div>
+                                        </button>
+                                    </div>
                                 ))}
                             </div>
                         ) : (
@@ -664,6 +785,147 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    ) : selected_doc_ids.length > 0 ? (
+                        <div className="glass-panel animate-scale-in" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', borderRadius: '16px', border: '1px solid var(--panel-border)' }}>
+                            <div style={{ padding: '24px', borderBottom: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', gap: '14px', background: 'rgba(59, 130, 246, 0.03)' }}>
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Database size={20} color="var(--accent-blue)" />
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>선택한 지식 기반 Q&A</h3>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px', maxHeight: '40px', overflowY: 'auto' }}>
+                                        {allDocs.filter(d => selected_doc_ids.includes(d.id)).map(d => (
+                                            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.15)', borderRadius: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                                <FileText size={10} color="var(--accent-blue)" />
+                                                <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={handle_clear_doc_selection}
+                                    className="interactive"
+                                    style={{ padding: '6px 14px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid var(--glass-border)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '12px' }}
+                                >
+                                    선택 해제
+                                </button>
+                            </div>
+
+                            <div 
+                                ref={selectionChatContainerRef}
+                                style={{ 
+                                    flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px',
+                                    scrollBehavior: 'smooth'
+                                }}
+                            >
+                                {selection_chat_messages.length === 0 ? (
+                                    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', gap: '16px' }}>
+                                        <Bot size={48} style={{ color: 'var(--accent-blue)', opacity: 0.3 }} />
+                                        <div>
+                                            <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-secondary)' }}>선택한 지식 문서({selected_doc_ids.length}개) 대상 질문하기</p>
+                                            <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                                                선택된 지식 문서들 내부 내용으로 검색 대상을 제한하여 질문에 답합니다.
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    selection_chat_messages.map((msg, i) => (
+                                        <div key={i} style={{ display: 'flex', gap: '12px', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                                            {msg.role === 'ai' && (
+                                                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                    <Bot size={18} color="white" />
+                                                </div>
+                                            )}
+                                            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                                                <div style={{ 
+                                                    padding: '14px 18px', borderRadius: '14px', fontSize: '15px', lineHeight: '1.6',
+                                                    background: msg.role === 'user' ? 'var(--accent-blue)' : 'rgba(255,255,255,0.08)',
+                                                    color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
+                                                    border: msg.role === 'user' ? 'none' : '1px solid var(--glass-border)',
+                                                    whiteSpace: 'pre-wrap',
+                                                    minHeight: '44px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    position: 'relative'
+                                                }}>
+                                                    {msg.text}
+                                                    {msg.role === 'ai' && (
+                                                        <button 
+                                                            onClick={() => handleCopy(msg.text, `select_${i}`)}
+                                                            style={{
+                                                                position: 'absolute', right: '-32px', bottom: '0',
+                                                                background: 'none', border: 'none', color: 'var(--text-muted)',
+                                                                cursor: 'pointer', padding: '4px', display: 'flex',
+                                                                alignItems: 'center', justifyContent: 'center',
+                                                                transition: 'all 0.2s'
+                                                            }}
+                                                            title="복사하기"
+                                                        >
+                                                            {copiedId === `select_${i}` ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                {msg.role === 'ai' && msg.sources && (
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                                                        {msg.sources.map((src, idx) => (
+                                                            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', fontSize: '11px', color: '#93c5fd' }}>
+                                                                <BookOpen size={10} />
+                                                                {src}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{msg.timestamp}</span>
+                                            </div>
+                                            {msg.role === 'user' && (
+                                                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                    <User size={18} color="var(--text-secondary)" />
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                                {is_selection_answering && (
+                                    <div style={{ display: 'flex', gap: '12px', alignSelf: 'flex-start' }}>
+                                        <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Loader2 size={18} color="white" className="animate-spin" />
+                                        </div>
+                                        <div style={{ padding: '12px 16px', borderRadius: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                            {selection_answer_status}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{ padding: '16px', background: 'rgba(0,0,0,0.2)', borderTop: '1px solid var(--glass-border)', display: 'flex', gap: '10px' }}>
+                                <input 
+                                    type="text"
+                                    value={selection_user_question}
+                                    onChange={(e) => set_selection_user_question(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handle_ask_selection_question()}
+                                    placeholder="선택한 지식 문서 대상 질문을 입력하세요..."
+                                    disabled={is_selection_answering}
+                                    style={{ 
+                                        flex: 1, padding: '12px 16px', background: 'rgba(255,255,255,0.03)', 
+                                        border: '1px solid var(--glass-border)', borderRadius: '10px', 
+                                        color: 'var(--text-primary)', outline: 'none', fontSize: '14px' 
+                                    }}
+                                />
+                                <button 
+                                    onClick={handle_ask_selection_question}
+                                    disabled={is_selection_answering || !selection_user_question.trim()}
+                                    style={{ 
+                                        width: '44px', height: '44px', borderRadius: '10px', 
+                                        background: (is_selection_answering || !selection_user_question.trim()) ? 'rgba(255,255,255,0.05)' : 'var(--accent-blue)',
+                                        border: 'none', color: 'white', cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    <Send size={20} />
+                                </button>
                             </div>
                         </div>
                     ) : (
