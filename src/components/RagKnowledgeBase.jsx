@@ -280,7 +280,11 @@ const RagKnowledgeBase = ({ apiKey }) => {
                         }}
                     >
                         {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-                        {isUploading ? '등록 중...' : '문서 직접 등록'}
+                        {isUploading ? '등록 중...' : (
+                            <>
+                                문서직접등록(<span style={{ color: '#ef4444', fontWeight: 'bold' }}>로컬만</span>)
+                            </>
+                        )}
                     </button>
                     <button 
                         onClick={handleReindex}
