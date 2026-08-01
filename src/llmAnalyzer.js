@@ -471,3 +471,70 @@ export async function askRagQuestion(docTitle, docContent, question, apiKey, onP
 
     return await fetchWithRetry();
 }
+
+export async function askTotalRagQuestion(question, contextDocs, apiKey, onProgress) {
+    const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+    if (keys.length === 0) throw new Error("유효한 Gemini API Key가 없습니다.");
+
+    const recordUsage = (modelName) => {
+        try {
+            const usage = JSON.parse(localStorage.getItem('gemini_model_usage') || '{}');
+            usage[modelName] = (usage[modelName] || 0) + 1;
+            localStorage.setItem('gemini_model_usage', JSON.stringify(usage));
+            window.dispatchEvent(new CustomEvent('gemini_usage_updated'));
+        } catch (e) {
+            console.error("Usage recording failed:", e);
+        }
+    };
+
+    let contextText = "";
+    if (contextDocs && contextDocs.length > 0) {
+        contextDocs.forEach((doc, idx) => {
+            contextText += `\n[참고자료 ${idx + 1}: ${doc.title}]\n`;
+            contextText += doc.content.substring(0, 1500) + (doc.content.length > 1500 ? "..." : "") + "\n";
+        });
+    } else {
+        contextText = "관련된 참고 자료를 찾지 못했습니다.";
+    }
+
+    const systemPrompt = `당신은 공공 IT 사업 제안서·수행계획서·설계서 분야에 특화된 한국어 맞춤법 및 문서 교정 전문가이자 최고의 IT 전략 컨설턴트입니다.
+제공되는 [참고 지식베이스 내용]을 기반으로 사용자의 질문에 정확하고 풍부한 내용으로 친절하게 답변해 주십시오. 
+만약 참고 자료에 핵심 답변이 부재한 경우, 본인이 가지고 있는 IT 상식을 동원하여 구체적인 로드맵이나 대응 방안을 제시하고 출처를 밝혀주십시오.`;
+
+    const userInput = `
+--- [참고 지식베이스 내용] ---
+${contextText}
+
+--- [사용자 질문] ---
+${question}
+`;
+
+    let currentKeyIndex = 0;
+    let currentModelIndex = 0;
+
+    const fetchWithRetry = async () => {
+        const activeKey = keys[currentKeyIndex];
+        const modelId = FALLBACK_MODELS[currentModelIndex];
+        const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent?key=${activeKey}`;
+        
+        const response = await fetch(fetchUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [
+                    { role: "user", parts: [{ text: systemPrompt + "\n" + userInput }] }
+                ]
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const answer = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            recordUsage(modelId);
+            return answer;
+        }
+        throw new Error("Failed to fetch");
+    };
+
+    return await fetchWithRetry();
+}

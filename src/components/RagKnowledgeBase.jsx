@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, FileText, Database, Info, ExternalLink, ChevronRight, FileType, Clock, HardDrive, Filter, RefreshCw, Loader2, Send, Bot, User, MessageSquare, Upload, Plus, Trash2, Copy, Check, Sparkles } from 'lucide-react';
+import { Search, FileText, Database, Info, ExternalLink, ChevronRight, FileType, Clock, HardDrive, Filter, RefreshCw, Loader2, Send, Bot, User, MessageSquare, Upload, Plus, Trash2, Copy, Check, Sparkles, BookOpen } from 'lucide-react';
 import { loadRagData, searchRag } from '../utils/ragService';
-import { askRagQuestion } from '../llmAnalyzer';
+import { askRagQuestion, askTotalRagQuestion } from '../llmAnalyzer';
 import { processFile } from '../utils/fileExtractor';
 
 const RagKnowledgeBase = ({ apiKey }) => {
@@ -98,18 +98,75 @@ const RagKnowledgeBase = ({ apiKey }) => {
         }
     };
     
+    // 개별 문서 Q&A 상태
     const [chatMessages, setChatMessages] = useState([]);
     const [userQuestion, setUserQuestion] = useState('');
     const [isAnswering, setIsAnswering] = useState(false);
     const [answerStatus, setAnswerStatus] = useState('');
+    
+    // 전체 지식베이스 Q&A 상태
+    const [totalChatMessages, setTotalChatMessages] = useState([]);
+    const [totalUserQuestion, setTotalUserQuestion] = useState('');
+    const [isTotalAnswering, setIsTotalAnswering] = useState(false);
+    const [totalAnswerStatus, setTotalAnswerStatus] = useState('');
+    
     const [copiedId, setCopiedId] = useState(null);
     const chatContainerRef = useRef(null);
+    const totalChatContainerRef = useRef(null);
 
     const handleCopy = (text, id) => {
         navigator.clipboard.writeText(text).then(() => {
             setCopiedId(id);
             setTimeout(() => setCopiedId(null), 2000);
         });
+    };
+
+    // 전체 지식베이스 질의 응답 핸들러
+    const handleAskTotalQuestion = async () => {
+        if (!totalUserQuestion.trim() || isTotalAnswering) return;
+        if (!apiKey) {
+            alert('Gemini API Key가 설정되지 않았습니다. 상단 설정 메뉴에서 키를 입력해 주세요.');
+            return;
+        }
+
+        const question = totalUserQuestion.trim();
+        setTotalUserQuestion('');
+        
+        const newMsg = { role: 'user', text: question, timestamp: new Date().toLocaleTimeString() };
+        setTotalChatMessages(prev => [...prev, newMsg]);
+        
+        setIsTotalAnswering(true);
+        setTotalAnswerStatus('관련 문서 검색 중...');
+        
+        try {
+            // 전체 지식베이스에서 연관된 조각 3개 검색
+            const searchResults = await searchRag(question, 3);
+            setTotalAnswerStatus('Gemini AI 답변 분석 중...');
+            
+            const answer = await askTotalRagQuestion(
+                question,
+                searchResults,
+                apiKey,
+                (status) => setTotalAnswerStatus(status)
+            );
+            
+            setTotalChatMessages(prev => [...prev, { 
+                role: 'ai', 
+                text: answer, 
+                timestamp: new Date().toLocaleTimeString(),
+                sources: searchResults.length > 0 ? searchResults.map(r => r.title) : null
+            }]);
+        } catch (error) {
+            console.error('Total Q&A Error:', error);
+            setTotalChatMessages(prev => [...prev, { 
+                role: 'ai', 
+                text: `오류가 발생했습니다: ${error.message}`, 
+                timestamp: new Date().toLocaleTimeString() 
+            }]);
+        } finally {
+            setIsTotalAnswering(false);
+            setTotalAnswerStatus('');
+        }
     };
 
     useEffect(() => {
@@ -125,6 +182,20 @@ const RagKnowledgeBase = ({ apiKey }) => {
             }
         }
     }, [chatMessages]);
+
+    useEffect(() => {
+        if (totalChatMessages.length > 0) {
+            const lastMsg = totalChatMessages[totalChatMessages.length - 1];
+            if (lastMsg.role === 'ai') {
+                setTimeout(() => {
+                    totalChatContainerRef.current?.scrollTo({
+                        top: totalChatContainerRef.current.scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }, 100);
+            }
+        }
+    }, [totalChatMessages]);
 
     const init = async (refresh = false) => {
         setIsLoading(true);
@@ -570,13 +641,131 @@ const RagKnowledgeBase = ({ apiKey }) => {
                             </div>
                         </div>
                     ) : (
-                        <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', borderRadius: '16px', border: '1px solid var(--panel-border)', background: 'rgba(255,255,255,0.01)', color: 'var(--text-muted)', gap: '16px' }}>
-                            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <FileText size={32} opacity={0.3} />
+                        <div className="glass-panel animate-scale-in" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', borderRadius: '16px', border: '1px solid var(--panel-border)' }}>
+                            <div style={{ padding: '24px', borderBottom: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', gap: '14px', background: 'rgba(59, 130, 246, 0.03)' }}>
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Sparkles size={20} color="var(--accent-blue)" />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>전체 지식베이스 통합 Q&A</h3>
+                                    <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>등록된 모든 문서를 검색하여 AI가 종합 답변을 도출합니다.</p>
+                                </div>
                             </div>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>선택된 문서가 없습니다</div>
-                                <div style={{ fontSize: '13px' }}>왼쪽 목록에서 분석할 문서를 선택해 주세요.</div>
+
+                            <div 
+                                ref={totalChatContainerRef}
+                                style={{ 
+                                    flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px',
+                                    scrollBehavior: 'smooth'
+                                }}
+                            >
+                                {totalChatMessages.length === 0 ? (
+                                    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', gap: '16px' }}>
+                                        <Bot size={48} style={{ color: 'var(--accent-blue)', opacity: 0.3 }} />
+                                        <div>
+                                            <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-secondary)' }}>전체 지식 기반 질문하기</p>
+                                            <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                                                개별 문서를 지정하지 않고 전체 산출물 데이터에서 지식을 찾아 답변합니다.<br/>
+                                                예: "클라우드 마이그레이션 이행을 위한 핵심 고려사항이 정리된 문서는 뭐야?"
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    totalChatMessages.map((msg, i) => (
+                                        <div key={i} style={{ display: 'flex', gap: '12px', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                                            {msg.role === 'ai' && (
+                                                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                    <Bot size={18} color="white" />
+                                                </div>
+                                            )}
+                                            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                                                <div style={{ 
+                                                    padding: '12px 16px', borderRadius: '14px', fontSize: '14px', lineHeight: '1.6',
+                                                    background: msg.role === 'user' ? 'var(--accent-blue)' : 'rgba(255,255,255,0.08)',
+                                                    color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
+                                                    border: msg.role === 'user' ? 'none' : '1px solid var(--glass-border)',
+                                                    whiteSpace: 'pre-wrap',
+                                                    minHeight: '44px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    position: 'relative'
+                                                }}>
+                                                    {msg.text}
+                                                    {msg.role === 'ai' && (
+                                                        <button 
+                                                            onClick={() => handleCopy(msg.text, `total_${i}`)}
+                                                            style={{
+                                                                position: 'absolute', right: '-32px', bottom: '0',
+                                                                background: 'none', border: 'none', color: 'var(--text-muted)',
+                                                                cursor: 'pointer', padding: '4px', display: 'flex',
+                                                                alignItems: 'center', justifyContent: 'center',
+                                                                transition: 'all 0.2s'
+                                                            }}
+                                                            title="복사하기"
+                                                        >
+                                                            {copiedId === `total_${i}` ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                {msg.role === 'ai' && msg.sources && (
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                                                        {msg.sources.map((src, idx) => (
+                                                            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', fontSize: '11px', color: '#93c5fd' }}>
+                                                                <BookOpen size={10} />
+                                                                {src}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{msg.timestamp}</span>
+                                            </div>
+                                            {msg.role === 'user' && (
+                                                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                    <User size={18} color="var(--text-secondary)" />
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                                {isTotalAnswering && (
+                                    <div style={{ display: 'flex', gap: '12px', alignSelf: 'flex-start' }}>
+                                        <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Loader2 size={18} color="white" className="animate-spin" />
+                                        </div>
+                                        <div style={{ padding: '12px 16px', borderRadius: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                            {totalAnswerStatus}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{ padding: '16px', background: 'rgba(0,0,0,0.2)', borderTop: '1px solid var(--glass-border)', display: 'flex', gap: '10px' }}>
+                                <input 
+                                    type="text"
+                                    value={totalUserQuestion}
+                                    onChange={(e) => setTotalUserQuestion(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAskTotalQuestion()}
+                                    placeholder="전체 지식베이스 대상 질문을 입력하세요..."
+                                    disabled={isTotalAnswering}
+                                    style={{ 
+                                        flex: 1, padding: '12px 16px', background: 'rgba(255,255,255,0.03)', 
+                                        border: '1px solid var(--glass-border)', borderRadius: '10px', 
+                                        color: 'var(--text-primary)', outline: 'none', fontSize: '14px' 
+                                    }}
+                                />
+                                <button 
+                                    onClick={handleAskTotalQuestion}
+                                    disabled={isTotalAnswering || !totalUserQuestion.trim()}
+                                    style={{ 
+                                        width: '44px', height: '44px', borderRadius: '10px', 
+                                        background: (isTotalAnswering || !totalUserQuestion.trim()) ? 'rgba(255,255,255,0.05)' : 'var(--accent-blue)',
+                                        border: 'none', color: 'white', cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    <Send size={20} />
+                                </button>
                             </div>
                         </div>
                     )}
