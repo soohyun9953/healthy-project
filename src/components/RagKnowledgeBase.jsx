@@ -465,7 +465,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: '24px', flex: 1, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 3.2fr', gap: '24px', flex: 1, overflow: 'hidden' }}>
                 {/* Search and List Column */}
                 <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', gap: '16px' }}>
                     <div style={{ position: 'relative' }}>
@@ -687,7 +687,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                         <div 
                                             ref={chatContainerRef}
                                             style={{ 
-                                                flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px',
+                                                flex: 1, overflowY: 'auto', padding: '16px 8px', display: 'flex', flexDirection: 'column', gap: '16px',
                                                 scrollBehavior: 'smooth'
                                             }}
                                         >
@@ -698,7 +698,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                                 </div>
                                             ) : (
                                                 chatMessages.map((msg, i) => (
-                                                    <div key={i} style={{ display: 'flex', gap: '12px', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                                                    <div key={i} style={{ display: 'flex', gap: '12px', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '97%' }}>
                                                         {msg.role === 'ai' && (
                                                             <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                                                 <Bot size={18} color="white" />
@@ -816,7 +816,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                             <div 
                                 ref={selectionChatContainerRef}
                                 style={{ 
-                                    flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px',
+                                    flex: 1, overflowY: 'auto', padding: '24px 10px', display: 'flex', flexDirection: 'column', gap: '16px',
                                     scrollBehavior: 'smooth'
                                 }}
                             >
@@ -832,7 +832,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                     </div>
                                 ) : (
                                     selection_chat_messages.map((msg, i) => (
-                                        <div key={i} style={{ display: 'flex', gap: '12px', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                                        <div key={i} style={{ display: 'flex', gap: '12px', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '97%' }}>
                                             {msg.role === 'ai' && (
                                                 <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                                     <Bot size={18} color="white" />
@@ -943,7 +943,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                             <div 
                                 ref={totalChatContainerRef}
                                 style={{ 
-                                    flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px',
+                                    flex: 1, overflowY: 'auto', padding: '24px 10px', display: 'flex', flexDirection: 'column', gap: '16px',
                                     scrollBehavior: 'smooth'
                                 }}
                             >
@@ -960,7 +960,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
                                     </div>
                                 ) : (
                                     totalChatMessages.map((msg, i) => (
-                                        <div key={i} style={{ display: 'flex', gap: '12px', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                                        <div key={i} style={{ display: 'flex', gap: '12px', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '97%' }}>
                                             {msg.role === 'ai' && (
                                                 <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                                     <Bot size={18} color="white" />

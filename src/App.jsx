@@ -617,7 +617,7 @@ function App() {
 
         <div className="content-body">
           {/* 가이드 배너 */}
-          {show_guide && tab_guides[activeTab] && (
+          {show_guide && activeTab !== 'rag' && tab_guides[activeTab] && (
             <div className="glass-panel animate-slide-up" style={{ 
               padding: '16px 20px', 
               marginBottom: '20px', 
