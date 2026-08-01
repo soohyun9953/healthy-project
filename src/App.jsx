@@ -254,7 +254,7 @@ function App() {
 
   // API 키 추가
   const handleAddKey = () => {
-    const cleaned = newKeyInput.replace(/['"\s]/g, '');
+    const cleaned = newKeyInput.replace(/[^a-zA-Z0-9-_]/g, '');
     if (!cleaned) return;
     if (!apiKeys.includes(cleaned)) {
       setApiKeys(prev => {
@@ -275,7 +275,7 @@ function App() {
 
   // API 키 개별 수정
   const handleEditKey = (idx, value) => {
-    const cleaned = value.replace(/['"\s]/g, '');
+    const cleaned = value.replace(/[^a-zA-Z0-9-_]/g, '');
     setApiKeys(prev => prev.map((k, i) => i === idx ? cleaned : k));
   };
 
