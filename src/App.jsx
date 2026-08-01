@@ -208,6 +208,8 @@ function App() {
   const [newKeyInput, setNewKeyInput] = useState('');
   // 하위 컴포넌트에 전달할 콤마 구분 문자열
   const apiKey = apiKeys.filter(k => k.trim().startsWith('AIza') || k.trim().startsWith('AQ.')).join(',');
+  // 로컬 스토리지 보존용 원본 문자열 (타이핑 시 유실 방지)
+  const raw_api_key_str = apiKeys.filter(k => k.trim() !== '').join(',');
   const [modelUsage, setModelUsage] = useState(() => JSON.parse(localStorage.getItem('gemini_model_usage') || '{}'));
   const [showSettings, setShowSettings] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -247,17 +249,17 @@ function App() {
 
   // 로컬 스토리지 동기화
   useEffect(() => {
-    localStorage.setItem('gemini_api_key', apiKey);
-  }, [apiKey]);
+    localStorage.setItem('gemini_api_key', raw_api_key_str);
+  }, [raw_api_key_str]);
 
   // API 키 추가
   const handleAddKey = () => {
-    const trimmed = newKeyInput.trim();
-    if (!trimmed) return;
-    if (!apiKeys.includes(trimmed)) {
+    const cleaned = newKeyInput.replace(/['"\s]/g, '');
+    if (!cleaned) return;
+    if (!apiKeys.includes(cleaned)) {
       setApiKeys(prev => {
-        if (prev.length === 1 && prev[0].trim() === '') return [trimmed];
-        return [...prev, trimmed];
+        if (prev.length === 1 && prev[0].trim() === '') return [cleaned];
+        return [...prev, cleaned];
       });
     }
     setNewKeyInput('');
@@ -273,7 +275,8 @@ function App() {
 
   // API 키 개별 수정
   const handleEditKey = (idx, value) => {
-    setApiKeys(prev => prev.map((k, i) => i === idx ? value : k));
+    const cleaned = value.replace(/['"\s]/g, '');
+    setApiKeys(prev => prev.map((k, i) => i === idx ? cleaned : k));
   };
 
 
