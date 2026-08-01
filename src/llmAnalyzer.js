@@ -1,5 +1,67 @@
 import { FALLBACK_MODELS } from './utils/geminiModels.js';
 
+async function fetch_with_timeout(resource, options = {}) {
+    const { timeout = 25000 } = options;
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    
+    try {
+        const response = await fetch(resource, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(id);
+        return response;
+    } catch (error) {
+        clearTimeout(id);
+        throw error;
+    }
+}
+
+const sleep_delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function split_text_into_chunks(text, max_chunk_size = 15000) {
+    if (!text) return [];
+    if (text.length <= max_chunk_size) return [text];
+    
+    const chunks = [];
+    let current_index = 0;
+    
+    while (current_index < text.length) {
+        let end_index = current_index + max_chunk_size;
+        if (end_index >= text.length) {
+            chunks.push(text.substring(current_index));
+            break;
+        }
+        
+        let last_newline = text.lastIndexOf('\n', end_index);
+        if (last_newline > current_index + (max_chunk_size * 0.7)) {
+            end_index = last_newline + 1;
+        } else {
+            let last_period = text.lastIndexOf('. ', end_index);
+            if (last_period > current_index + (max_chunk_size * 0.7)) {
+                end_index = last_period + 2;
+            }
+        }
+        
+        chunks.push(text.substring(current_index, end_index));
+        current_index = end_index;
+    }
+    
+    return chunks;
+}
+
+function merge_multiple_results(results_array, is_typo_mode) {
+    if (!results_array || results_array.length === 0) return null;
+    let merged = results_array[0];
+    
+    for (let i = 1; i < results_array.length; i++) {
+        merged = mergeResults(merged, results_array[i], is_typo_mode);
+    }
+    
+    return merged;
+}
+
 function splitTextAtNewline(text) {
     if (!text || text.length <= 1) return [text, ""];
     const mid = Math.floor(text.length / 2);
@@ -111,29 +173,43 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
 
     if (!isSubCall) {
         if (isOnlyTypoCheck && artifactText && artifactText.length > 20000) {
-            if (onProgress) onProgress("산출물 용량이 커서 2회로 나누어 분석을 진행합니다. (1/2부 시작)");
-            const [part1, part2] = splitTextAtNewline(artifactText);
-            
-            const res1 = await analyzeDocumentsWithLLM(guidelineText, part1, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
-            
-            if (onProgress) onProgress("1부 분석 완료. 2부 분석을 진행합니다. (2/2부 시작)");
-            const res2 = await analyzeDocumentsWithLLM(guidelineText, part2, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
-            
-            if (onProgress) onProgress("분석 결과 병합 중...");
-            return mergeResults(res1, res2, true);
+            const chunks = split_text_into_chunks(artifactText, 18000);
+            if (chunks.length > 1) {
+                const results = [];
+                for (let i = 0; i < chunks.length; i++) {
+                    if (onProgress) onProgress(`산출물 용량이 커서 ${chunks.length}회로 나누어 분석을 진행합니다. (${i + 1}/${chunks.length}부 시작)`);
+                    
+                    if (i > 0) {
+                        if (onProgress) onProgress(`Rate Limit 방지를 위해 3초 대기합니다...`);
+                        await sleep_delay(3000);
+                    }
+                    
+                    const res = await analyzeDocumentsWithLLM(guidelineText, chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
+                    results.push(res);
+                }
+                if (onProgress) onProgress("분석 결과 병합 중...");
+                return merge_multiple_results(results, true);
+            }
         }
         
         if (!isOnlyTypoCheck && guidelineText && guidelineText.length > 15000) {
-            if (onProgress) onProgress("기준 문서 용량이 커서 2회로 나누어 분석을 진행합니다. (1/2부 시작)");
-            const [part1, part2] = splitTextAtNewline(guidelineText);
-            
-            const res1 = await analyzeDocumentsWithLLM(part1, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
-            
-            if (onProgress) onProgress("1부 분석 완료. 2부 분석을 진행합니다. (2/2부 시작)");
-            const res2 = await analyzeDocumentsWithLLM(part2, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
-            
-            if (onProgress) onProgress("분석 결과 병합 중...");
-            return mergeResults(res1, res2, false);
+            const chunks = split_text_into_chunks(guidelineText, 12000);
+            if (chunks.length > 1) {
+                const results = [];
+                for (let i = 0; i < chunks.length; i++) {
+                    if (onProgress) onProgress(`기준 문서 용량이 커서 ${chunks.length}회로 나누어 분석을 진행합니다. (${i + 1}/${chunks.length}부 시작)`);
+                    
+                    if (i > 0) {
+                        if (onProgress) onProgress(`Rate Limit 방지를 위해 3초 대기합니다...`);
+                        await sleep_delay(3000);
+                    }
+                    
+                    const res = await analyzeDocumentsWithLLM(chunks[i], artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
+                    results.push(res);
+                }
+                if (onProgress) onProgress("분석 결과 병합 중...");
+                return merge_multiple_results(results, false);
+            }
         }
     }
     
@@ -319,7 +395,24 @@ ${ragContext ? `\n${ragContext}` : ''}
                     onProgress(`${modelId.split('/').pop()} 모델로 분석 요청 중...${keyInfo}`);
                 }
 
-                const response = await fetch(fetchUrl, fetchOptions);
+                let response;
+                try {
+                    response = await fetch_with_timeout(fetchUrl, { ...fetchOptions, timeout: 25000 });
+                } catch (fetchErr) {
+                    console.warn(`Fetch failed or timed out for ${modelId}:`, fetchErr);
+                    if (keys.length > 1 && (currentKeyIndex + 1) < keys.length) {
+                        currentKeyIndex++;
+                        continue;
+                    }
+                    modelRetries++;
+                    if (modelRetries < maxModelRetries) {
+                        currentKeyIndex = 0;
+                        currentModelIndex = (currentModelIndex + 1) % FALLBACK_MODELS.length;
+                        await sleep_delay(5000);
+                        continue;
+                    }
+                    throw new Error("네트워크 타임아웃 또는 연결 지연이 반복되어 분석을 완료하지 못했습니다.");
+                }
                 
                 if (response.ok) {
                     recordUsage(modelId); // 사용량 기록
@@ -344,7 +437,7 @@ ${ragContext ? `\n${ragContext}` : ''}
                     if (modelRetries < maxModelRetries) {
                         currentKeyIndex = 0;
                         currentModelIndex = (currentModelIndex + 1) % FALLBACK_MODELS.length;
-                        await new Promise(resolve => setTimeout(resolve, 5000));
+                        await sleep_delay(5000);
                         continue;
                     }
                     
