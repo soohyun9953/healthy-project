@@ -211,11 +211,9 @@ async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
 }
 
 export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b') {
-    if (llmProvider !== 'ollama') {
-        const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-        if (keys.length === 0) {
-            throw new Error("유효한 Gemini API 키가 제공되지 않았습니다. [설정] 메뉴에서 API 키를 등록하거나 '로컬 LLM (Ollama)'을 선택해 주세요.");
-        }
+    const keys = String(apiKey || '').split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+    if (llmProvider !== 'ollama' && keys.length === 0) {
+        throw new Error("유효한 Gemini API 키가 제공되지 않았습니다. [설정] 메뉴에서 API 키를 등록하거나 '로컬 LLM (Ollama)'을 선택해 주세요.");
     }
 
     let currentKeyIndex = 0;
