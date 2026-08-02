@@ -206,12 +206,16 @@ function App() {
     return parsed.length > 0 ? parsed : [''];
   });
   const [newKeyInput, setNewKeyInput] = useState('');
-  // 입력된 키 목록에 대해 특수문자 및 제어문자 최종 클렌징 처리 적용
-  const clean_keys = apiKeys.map(k => k.replace(/[^a-zA-Z0-9\-_]/g, '').trim()).filter(Boolean);
-  // 하위 컴포넌트에 전달할 콤마 구분 문자열 ( startsWith AIza or AQ. )
-  const apiKey = clean_keys.filter(k => k.startsWith('AIza') || k.startsWith('AQ.')).join(',');
-  // 로컬 스토리지 보존용 클린한 키 문자열
-  const raw_api_key_str = clean_keys.join(',');
+  const [key_error_msg, set_key_error_msg] = useState(''); // API 키 에러 메시지
+  // 키 유효성 검사 함수: AIza 또는 AQ로 시작하고 최소 30자 이상
+  const is_valid_key = (k) => {
+    const s = k.trim();
+    return (s.startsWith('AIza') || s.startsWith('AQ')) && s.length >= 30;
+  };
+  // 하위 컴포넌트에 전달할 콤마 구분 문자열 (유효한 키만)
+  const apiKey = apiKeys.filter(k => is_valid_key(k)).join(',');
+  // 로컬 스토리지 보존용 원본 문자열 (빈값 제외)
+  const raw_api_key_str = apiKeys.filter(k => k.trim() !== '').join(',');
   const [modelUsage, setModelUsage] = useState(() => JSON.parse(localStorage.getItem('gemini_model_usage') || '{}'));
   const [showSettings, setShowSettings] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -254,16 +258,26 @@ function App() {
     localStorage.setItem('gemini_api_key', raw_api_key_str);
   }, [raw_api_key_str]);
 
-  // API 키 추가 (실시간 replace 제거하여 입력 원활화)
+  // API 키 추가 (유효성 검사 및 에러 메시지 제공)
   const handleAddKey = () => {
     const trimmed = newKeyInput.trim();
-    if (!trimmed) return;
-    if (!apiKeys.includes(trimmed)) {
-      setApiKeys(prev => {
-        if (prev.length === 1 && prev[0].trim() === '') return [trimmed];
-        return [...prev, trimmed];
-      });
+    if (!trimmed) {
+      set_key_error_msg('키를 입력해 주세요.');
+      return;
     }
+    if (!is_valid_key(trimmed)) {
+      set_key_error_msg(`❌ 유효하지 않은 키 형식입니다. Gemini API 키는 'AIza'로 시작하고 39자 이상이어야 합니다. (현재: '${trimmed.substring(0, 10)}...', ${trimmed.length}자)`);
+      return;
+    }
+    if (apiKeys.includes(trimmed)) {
+      set_key_error_msg('이미 등록된 키입니다.');
+      return;
+    }
+    set_key_error_msg('');
+    setApiKeys(prev => {
+      if (prev.length === 1 && prev[0].trim() === '') return [trimmed];
+      return [...prev, trimmed];
+    });
     setNewKeyInput('');
   };
 
@@ -506,10 +520,10 @@ function App() {
                             placeholder={`API Key ${idx + 1} (AIza... 또는 AQ...)`}
                             style={{
                               width: '100%',
-                              background: (k.trim().startsWith('AIza') || k.trim().startsWith('AQ.'))
+                              background: is_valid_key(k)
                                 ? 'rgba(16,185,129,0.08)'
                                 : 'rgba(255,255,255,0.04)',
-                              border: `1px solid ${(k.trim().startsWith('AIza') || k.trim().startsWith('AQ.')) ? 'rgba(16,185,129,0.4)' : 'var(--glass-border)'}`,
+                              border: `1px solid ${is_valid_key(k) ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
                               borderRadius: '8px',
                               padding: '8px 12px',
                               color: 'var(--text-primary)',
@@ -581,6 +595,22 @@ function App() {
                     </button>
                   </div>
 
+                  {/* 키 에러 메시지 */}
+                  {key_error_msg && (
+                    <div style={{
+                      marginTop: '6px',
+                      padding: '8px 10px',
+                      background: 'rgba(239,68,68,0.12)',
+                      border: '1px solid rgba(239,68,68,0.35)',
+                      borderRadius: '7px',
+                      color: '#f87171',
+                      fontSize: '11px',
+                      lineHeight: 1.5,
+                      wordBreak: 'break-all',
+                    }}>
+                      {key_error_msg}
+                    </div>
+                  )}
                   <p className="helper-text" style={{ marginTop: '6px' }}>할당량 초과 시 자동으로 다음 키로 전환됩니다.</p>
                 </div>
 
