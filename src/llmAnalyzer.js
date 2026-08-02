@@ -199,11 +199,12 @@ async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
         const data = await response.json();
         const raw_text = data.response || "{}";
 
-        // 강력한 JSON 추출 및 복구 파서
-        const parse_json_robust = (text) => {
+        // 강력한 JSON 추출, 복구 및 결과 정규화 파서
+        const parse_and_normalize_ollama = (text) => {
             if (!text) return null;
             let clean = text.trim();
-            
+            let parsed = null;
+
             // 1. ```json ... ``` 패턴 추출
             if (clean.includes("```")) {
                 const match = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -212,37 +213,97 @@ async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
                 }
             }
 
-            // 2. 직접 JSON.parse 시도
+            // 2. JSON.parse 시도
             try {
-                return JSON.parse(clean);
-            } catch (e1) {}
-
-            // 3. 첫 번째 '{'와 마지막 '}' 사이 추출 및 콤마 정제
-            const start = clean.indexOf('{');
-            const end = clean.lastIndexOf('}');
-            if (start !== -1 && end !== -1 && end > start) {
-                const sub = clean.substring(start, end + 1);
-                try {
-                    return JSON.parse(sub);
-                } catch (e2) {
+                parsed = JSON.parse(clean);
+            } catch (e1) {
+                const start = clean.indexOf('{');
+                const end = clean.lastIndexOf('}');
+                if (start !== -1 && end !== -1 && end > start) {
+                    const sub = clean.substring(start, end + 1);
                     try {
-                        const repaired = sub.replace(/,\s*([\}\]])/g, '$1');
-                        return JSON.parse(repaired);
-                    } catch (e3) {}
+                        parsed = JSON.parse(sub);
+                    } catch (e2) {
+                        try {
+                            const repaired = sub.replace(/,\s*([\}\]])/g, '$1');
+                            parsed = JSON.parse(repaired);
+                        } catch (e3) {}
+                    }
                 }
             }
 
-            // 4. 최후의 수단: 텍스트를 요약에 담아 유효 객체로 포맷팅
+            if (!parsed || typeof parsed !== 'object') {
+                parsed = { summary: text };
+            }
+
+            // 3. 필드명 정규화 (Ollama가 다른 키 이름으로 생성한 경우 자동 복구)
+            const score = typeof parsed.score === 'number' && !isNaN(parsed.score) 
+                ? parsed.score 
+                : (typeof parsed.overallScore === 'number' ? parsed.overallScore : 85);
+
+            const summary = parsed.summary || parsed.overview || parsed.analysis || parsed.result || raw_text.substring(0, 1500) || "로컬 LLM 분석 완료";
+
+            // typos (오탈자/결함 목록) 유연한 추출
+            let raw_typos = parsed.typos || parsed.typo_list || parsed.corrections || parsed.errors || parsed.issues || parsed.items || [];
+            if (!Array.isArray(raw_typos) && typeof raw_typos === 'object') {
+                raw_typos = Object.values(raw_typos);
+            }
+            
+            const typos = (Array.isArray(raw_typos) ? raw_typos : []).map(t => ({
+                page: String(t.page || t.location || t.section || '1페이지'),
+                originalText: String(t.originalText || t.original || t.errorText || t.before || ''),
+                correction: String(t.correction || t.correct || t.after || t.suggestion || ''),
+                errorType: String(t.errorType || t.type || t.reason || t.category || '[표현 품질] 오탈자 및 교정')
+            })).filter(t => t.originalText || t.correction);
+
+            // requirementMapping (요구사항 매핑) 유연한 추출
+            let raw_reqs = parsed.requirementMapping || parsed.rtm || parsed.requirements || parsed.mapping || [];
+            if (!Array.isArray(raw_reqs) && typeof raw_reqs === 'object') {
+                raw_reqs = Object.values(raw_reqs);
+            }
+            
+            const requirementMapping = (Array.isArray(raw_reqs) ? raw_reqs : []).map((r, idx) => ({
+                id: r.id || `REQ-${String(idx + 1).padStart(3, '0')}`,
+                category: String(r.category || '기능'),
+                type: String(r.type || '필수'),
+                levelLabel: String(r.levelLabel || '개별문장'),
+                path: String(r.path || '본문'),
+                requirement: String(r.requirement || r.req || ''),
+                artifactSection: String(r.artifactSection || r.section || '해당 없음'),
+                artifactContent: String(r.artifactContent || r.content || ''),
+                status: String(r.status || '이행(O)'),
+                gap: r.gap || null
+            }));
+
+            const rtm = requirementMapping.map(req => ({
+                type: req.type,
+                requirement: req.requirement,
+                status: req.status,
+                location: req.artifactSection,
+                category: req.category,
+                levelLabel: req.levelLabel
+            }));
+
+            const omissions = requirementMapping
+                .filter(req => req.status !== '이행(O)')
+                .map(req => ({
+                    title: `[ID: ${req.id}] ${String(req.requirement || '').substring(0, 30)}...`,
+                    evidence: req.requirement || '-',
+                    reason: req.gap || '구체적인 수행 방안 보완이 필요합니다.',
+                    recommendation: '실행 계획을 산출물에 추가하십시오.'
+                }));
+
             return {
-                score: 80,
-                summary: `[로컬 LLM 분석 내용]\n${raw_text.substring(0, 1500)}`,
-                requirementMapping: [],
-                rtm: [],
-                typos: []
+                score,
+                summary,
+                requirementMapping,
+                rtm,
+                omissions,
+                typos
             };
         };
 
-        return parse_json_robust(raw_text);
+        return parse_and_normalize_ollama(raw_text);
 
     } catch (err) {
         if (err.name === 'TypeError' && err.message.includes('fetch')) {
@@ -456,7 +517,41 @@ ${ragContext ? `\n${ragContext}` : ''}
 `;
 
     if (llmProvider === 'ollama') {
-        return await analyze_with_ollama(userInput, ollamaModel, onProgress);
+        const ollamaPrompt = `[시스템 지시사항]
+당신은 ISMP 공공 산출물 검증 및 문서 교정 전문 AI 에이전트입니다.
+입력된 산출물 텍스트를 전수 조사하여 반드시 아래 JSON 구조로만 결과를 생성하십시오. (추가 설명 금지)
+
+{
+  "score": 85,
+  "summary": "입력된 산출물에 대한 5대 품질 관점에서의 종합 분석 소감 및 검토 의견 (최소 3문장 이상 구체적 작성)",
+  "typos": [
+    {
+      "page": "위치/페이지",
+      "originalText": "오류/보완 대상 원문 문장",
+      "correction": "올바른 교정 및 보완 제안 문장",
+      "errorType": "[1. 표현 품질] 띄어쓰기 및 맞춤법 교정"
+    }
+  ],
+  "requirementMapping": [
+    {
+      "id": "REQ-001",
+      "category": "기능",
+      "type": "필수",
+      "levelLabel": "개별문장",
+      "path": "본문",
+      "requirement": "주요 요구사항 또는 핵심 명세",
+      "artifactSection": "산출물 관련 위치",
+      "artifactContent": "반영 내역",
+      "status": "이행(O)",
+      "gap": null
+    }
+  ]
+}
+
+[분석 대상 데이터]
+${userInput}
+`;
+        return await analyze_with_ollama(ollamaPrompt, ollamaModel, onProgress);
     }
 
     try {
