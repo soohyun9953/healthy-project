@@ -223,6 +223,18 @@ function App() {
   const [showKey, setShowKey] = useState(false); // API 키 보이기/숨기기 토글
   const [isLightMode, setIsLightMode] = useState(() => localStorage.getItem('theme_mode') === 'light');
 
+  // LLM 엔진 수동 선택 상태 (gemini | ollama)
+  const [llmProvider, setLlmProvider] = useState(() => localStorage.getItem('llm_provider') || 'gemini');
+  const [ollamaModel, setOllamaModel] = useState(() => localStorage.getItem('ollama_model') || 'qwen2.5:3b');
+
+  useEffect(() => {
+    localStorage.setItem('llm_provider', llmProvider);
+  }, [llmProvider]);
+
+  useEffect(() => {
+    localStorage.setItem('ollama_model', ollamaModel);
+  }, [ollamaModel]);
+
   // 사이드바 및 테마 상태 저장
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', isSidebarCollapsed);
@@ -610,6 +622,68 @@ function App() {
                   <p className="helper-text" style={{ marginTop: '6px' }}>할당량 초과 시 자동으로 다음 키로 전환됩니다.</p>
                 </div>
 
+                {/* 분석 엔진 수동 선택 영역 */}
+                <div className="setting-group" style={{ marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px', border: '1px solid var(--glass-border)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', fontSize: '13px', fontWeight: 600 }}>
+                    <Cpu size={15} style={{ color: 'var(--accent-blue)' }} /> LLM 분석 엔진 수동 선택
+                  </label>
+                  
+                  <div style={{ display: 'flex', gap: '12px', marginBottom: '10px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px' }}>
+                      <input 
+                        type="radio" 
+                        name="llmProvider" 
+                        value="gemini" 
+                        checked={llmProvider === 'gemini'} 
+                        onChange={() => setLlmProvider('gemini')}
+                      />
+                      <span>온라인 Gemini API (기본)</span>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px' }}>
+                      <input 
+                        type="radio" 
+                        name="llmProvider" 
+                        value="ollama" 
+                        checked={llmProvider === 'ollama'} 
+                        onChange={() => setLlmProvider('ollama')}
+                      />
+                      <span style={{ color: llmProvider === 'ollama' ? '#38bdf8' : 'inherit', fontWeight: llmProvider === 'ollama' ? 600 : 400 }}>
+                        로컬 LLM (Ollama 오프라인)
+                      </span>
+                    </label>
+                  </div>
+
+                  {llmProvider === 'ollama' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ollama 모델명 선택 / 입력:</label>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <select
+                          value={ollamaModel}
+                          onChange={(e) => setOllamaModel(e.target.value)}
+                          style={{
+                            flex: 1,
+                            background: 'rgba(255,255,255,0.06)',
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: '6px',
+                            padding: '6px 8px',
+                            color: 'var(--text-primary)',
+                            fontSize: '12px',
+                            outline: 'none'
+                          }}
+                        >
+                          <option value="qwen2.5:3b">qwen2.5:3b (권장 - 한국어 우수)</option>
+                          <option value="llama3.2">llama3.2 (3B)</option>
+                          <option value="gemma2:2b">gemma2:2b (경량)</option>
+                        </select>
+                      </div>
+                      <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'rgba(56,189,248,0.8)', lineHeight: 1.4 }}>
+                        * PC에 Ollama 앱이 실행 중이어야 동작합니다. (http://localhost:11434)
+                      </p>
+                    </div>
+                  )}
+                </div>
+
 
 
                 <div className="setting-group usage-section">
@@ -713,10 +787,10 @@ function App() {
             </div>
           )}
 
-          {activeTab === 'main' && <DocumentValidator apiKey={apiKey} />}
-          {activeTab === 'hwpx-report' && <HwpxGenerator apiKey={apiKey} />}
+          {activeTab === 'main' && <DocumentValidator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} />}
+          {activeTab === 'hwpx-report' && <HwpxGenerator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} />}
           {activeTab === 'ismpda' && <IsmpDaDashboard />}
-          {activeTab === 'typo' && <TypoValidator apiKey={apiKey} />}
+          {activeTab === 'typo' && <TypoValidator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} />}
           {activeTab === 'law' && <LawConsultant apiKey={apiKey} isMcpMode={false} />}
           {activeTab === 'law-mcp' && <LawConsultant apiKey={apiKey} isMcpMode={true} />}
           { activeTab === 'erd' && <ErdGenerator apiKey={apiKey} /> }

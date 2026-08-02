@@ -5,7 +5,7 @@ import ResultDashboard from './ResultDashboard';
 import { analyzeDocumentsWithLLM } from '../llmAnalyzer';
 import { getRagContext } from '../utils/ragService';
 
-function DocumentValidator({ apiKey }) {
+function DocumentValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b' }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStage, setAnalysisStage] = useState(0); // 1: 추출, 2: 심층분석
   const [retryStatus, setRetryStatus] = useState(null); // API 재시도 상태 메시지
@@ -26,7 +26,7 @@ function DocumentValidator({ apiKey }) {
     setAnalysisStage(2); // 2단계: 의미론적 심층 분석 시작
 
     try {
-      if (apiKey && apiKey.match(/^(AIza|AQ\.)/)) {
+      if (llmProvider === 'ollama' || (apiKey && apiKey.match(/^(AIza|AQ\.)/))) {
         let ragContext = "";
         if (useRag) {
           if (setRetryStatus) setRetryStatus("RAG 지식베이스 검색 중...");
@@ -41,7 +41,9 @@ function DocumentValidator({ apiKey }) {
           (status) => setRetryStatus(status),
           'auto',
           false,
-          ragContext
+          ragContext,
+          llmProvider,
+          ollamaModel
         );
         setResultData({ ...result, artifactFileName });
       } else {

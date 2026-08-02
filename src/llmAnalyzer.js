@@ -162,10 +162,60 @@ function mergeResults(res1, res2, isTypoMode) {
     return merged;
 }
 
-export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "") {
-    const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-    if (keys.length === 0) {
-        throw new Error("유효한 API 키가 제공되지 않았습니다.");
+async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
+    if (onProgress) onProgress(`로컬 LLM (${model}) 분석 진행 중... (Ollama http://localhost:11434)`);
+    try {
+        const response = await fetch('http://localhost:11434/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: model || 'qwen2.5:3b',
+                prompt: prompt,
+                stream: false,
+                options: { temperature: 0.1 }
+            })
+        });
+
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error(`Ollama에 '${model}' 모델이 설치되어 있지 않습니다.\n터미널에서 [ollama run ${model}] 명령어로 모델을 먼저 받거나 설정에서 변경해 주세요.`);
+            }
+            throw new Error(`로컬 LLM (Ollama) 응답 오류: HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        let content = data.response || "{}";
+
+        if (content.includes("```")) {
+            const match = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+            if (match && match[1]) {
+                content = match[1];
+            }
+        }
+
+        try {
+            return JSON.parse(content.trim());
+        } catch (e) {
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                return JSON.parse(jsonMatch[0]);
+            }
+            throw new Error("로컬 LLM 응답 결과를 JSON 구조로 파싱하지 못했습니다.");
+        }
+    } catch (err) {
+        if (err.name === 'TypeError' && err.message.includes('fetch')) {
+            throw new Error("로컬 LLM (Ollama) 서버가 실행되어 있지 않습니다.\nPC에서 Ollama 앱을 실행해 주세요. (http://localhost:11434)");
+        }
+        throw err;
+    }
+}
+
+export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b') {
+    if (llmProvider !== 'ollama') {
+        const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+        if (keys.length === 0) {
+            throw new Error("유효한 Gemini API 키가 제공되지 않았습니다. [설정] 메뉴에서 API 키를 등록하거나 '로컬 LLM (Ollama)'을 선택해 주세요.");
+        }
     }
 
     let currentKeyIndex = 0;
@@ -364,6 +414,10 @@ ${String(artifactText || '').substring(0, 2000000)}
 ${inspectionScope || '없음'}
 ${ragContext ? `\n${ragContext}` : ''}
 `;
+
+    if (llmProvider === 'ollama') {
+        return await analyze_with_ollama(userInput, ollamaModel, onProgress);
+    }
 
     try {
 
