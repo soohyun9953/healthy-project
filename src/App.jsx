@@ -308,7 +308,7 @@ function App() {
 
   const tabs = [
     { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316', useGemini: false },
-    { id: 'ppt-verify', label: 'PPT 검증(표준산출물)', icon: ShieldAlert, color: '#e11d48', useGemini: true },
+    { id: 'ppt-verify', label: 'PPT 검증(표준산출물)', icon: ShieldAlert, color: '#e11d48', useGemini: false },
     { id: 'main', label: 'AI 산출물 검증', icon: Shield, color: 'var(--accent-blue)', useGemini: true },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
     { id: 'law', label: 'AI 법률 자문(제미나이)', icon: MessageSquare, color: 'var(--success-color)', useGemini: true },
@@ -358,7 +358,6 @@ function App() {
 
         <nav className="sidebar-nav">
           {tabs.map((tab) => {
-            const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
               <button
@@ -374,32 +373,6 @@ function App() {
                   });
                 }}
               >
-                <div className="nav-icon-wrapper" style={{ color: isActive ? tab.color : 'inherit', position: 'relative' }}>
-                  <Icon size={20} />
-                  {tab.useGemini && (
-                    <span style={{
-                      position: 'absolute',
-                      top: '-5px',
-                      right: '-6px',
-                      background: 'rgba(56,189,248,0.18)',
-                      border: '1px solid rgba(56,189,248,0.5)',
-                      borderRadius: '50%',
-                      width: '14px',
-                      height: '14px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
-                      <Sparkles
-                        size={8}
-                        style={{
-                          color: '#38bdf8',
-                          filter: 'drop-shadow(0 0 3px rgba(56, 189, 248, 0.9))'
-                        }}
-                      />
-                    </span>
-                  )}
-                </div>
                 {!isSidebarCollapsed && (
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
                     {tab.label}
@@ -423,6 +396,9 @@ function App() {
                       </span>
                     )}
                   </span>
+                )}
+                {isSidebarCollapsed && tab.useGemini && (
+                  <Sparkles size={10} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56,189,248,0.7))' }} />
                 )}
                 {isActive && !isSidebarCollapsed && <div className="active-indicator" style={{ backgroundColor: tab.color }} />}
               </button>
