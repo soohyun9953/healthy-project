@@ -51,16 +51,7 @@ function split_text_into_chunks(text, max_chunk_size = 15000) {
     return chunks;
 }
 
-function merge_multiple_results(results_array, is_typo_mode) {
-    if (!results_array || results_array.length === 0) return null;
-    let merged = results_array[0];
-    
-    for (let i = 1; i < results_array.length; i++) {
-        merged = mergeResults(merged, results_array[i], is_typo_mode);
-    }
-    
-    return merged;
-}
+
 
 function splitTextAtNewline(text) {
     if (!text || text.length <= 1) return [text, ""];
@@ -89,11 +80,32 @@ function splitTextAtNewline(text) {
     return [part1, part2];
 }
 
-function mergeResults(res1, res2, isTypoMode) {
+function merge_multiple_results(results_array, is_typo_mode) {
+    if (!results_array || results_array.length === 0) return null;
+    const valid_results = results_array.filter(Boolean);
+    if (valid_results.length === 0) return null;
+    
+    let merged = valid_results[0];
+    for (let i = 1; i < valid_results.length; i++) {
+        merged = mergeResults(merged, valid_results[i], is_typo_mode, i + 1);
+    }
+    
+    return merged;
+}
+
+function mergeResults(res1, res2, isTypoMode, partNumber = 2) {
+    const s1 = typeof res1?.score === 'number' && !isNaN(res1.score) ? res1.score : 80;
+    const s2 = typeof res2?.score === 'number' && !isNaN(res2.score) ? res2.score : 80;
+    
+    const sum1 = res1?.summary && res1.summary !== 'undefined' ? res1.summary : '분석 완료';
+    const sum2 = res2?.summary && res2.summary !== 'undefined' ? res2.summary : '분석 완료';
+
     const merged = {
-        score: Math.round((res1.score + res2.score) / 2),
-        inspectionScope: res1.inspectionScope || res2.inspectionScope,
-        summary: `[1부 분석 요약]\n${res1.summary}\n\n[2부 분석 요약]\n${res2.summary}`,
+        score: Math.round((s1 + s2) / 2),
+        inspectionScope: res1?.inspectionScope || res2?.inspectionScope || null,
+        summary: partNumber === 2 
+            ? `[1부 분석 요약]\n${sum1}\n\n[2부 분석 요약]\n${sum2}`
+            : `${sum1}\n\n[${partNumber}부 분석 요약]\n${sum2}`,
         requirementMapping: [],
         typos: []
     };
@@ -102,22 +114,22 @@ function mergeResults(res1, res2, isTypoMode) {
         const uniqueTypos = [];
         const seen = new Set();
         const addTypos = (typos) => {
-            if (!typos) return;
+            if (!typos || !Array.isArray(typos)) return;
             typos.forEach(typo => {
-                const sig = `${typo.page}_${typo.originalText}_${typo.correction}`;
+                const sig = `${typo.page || typo.location}_${typo.originalText || typo.errorText}_${typo.correction}`;
                 if (!seen.has(sig)) {
                     seen.add(sig);
                     uniqueTypos.push(typo);
                 }
             });
         };
-        addTypos(res1.typos);
-        addTypos(res2.typos);
+        addTypos(res1?.typos);
+        addTypos(res2?.typos);
         merged.typos = uniqueTypos;
     } else {
         let combinedMapping = [];
-        if (res1.requirementMapping) combinedMapping = combinedMapping.concat(res1.requirementMapping);
-        if (res2.requirementMapping) combinedMapping = combinedMapping.concat(res2.requirementMapping);
+        if (res1?.requirementMapping && Array.isArray(res1.requirementMapping)) combinedMapping = combinedMapping.concat(res1.requirementMapping);
+        if (res2?.requirementMapping && Array.isArray(res2.requirementMapping)) combinedMapping = combinedMapping.concat(res2.requirementMapping);
         
         combinedMapping.forEach((req, index) => {
             req.id = `REQ-${String(index + 1).padStart(3, '0')}`;
@@ -145,17 +157,17 @@ function mergeResults(res1, res2, isTypoMode) {
         const uniqueTypos = [];
         const seen = new Set();
         const addTypos = (typos) => {
-            if (!typos) return;
+            if (!typos || !Array.isArray(typos)) return;
             typos.forEach(typo => {
-                const sig = `${typo.location}_${typo.originalText}_${typo.correction}`;
+                const sig = `${typo.location || typo.page}_${typo.originalText}_${typo.correction}`;
                 if (!seen.has(sig)) {
                     seen.add(sig);
                     uniqueTypos.push(typo);
                 }
             });
         };
-        addTypos(res1.typos);
-        addTypos(res2.typos);
+        addTypos(res1?.typos);
+        addTypos(res2?.typos);
         merged.typos = uniqueTypos;
     }
 

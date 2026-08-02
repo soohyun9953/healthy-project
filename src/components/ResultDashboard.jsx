@@ -39,6 +39,18 @@ async function exportToExcel(data, isTypoMode = false) {
         });
     };
 
+    // ── 공통 시트0: 종합 검토 요약 (시트가 비어 엑셀이 열리지 않는 현상 완전 방지) ──
+    const summaryHeaders = [
+        { header: '항목', key: '항목', width: 20 },
+        { header: '내용 및 종합 평가 결과', key: '내용', width: 80 }
+    ];
+    const summaryRows = [
+        { '항목': '준수율 / 점수', '내용': `${isNaN(data.score) || data.score === undefined || data.score === null ? 0 : Math.round(Number(data.score))}%` },
+        { '항목': '점검 범위', '내용': data.inspectionScope || '전체 점검' },
+        { '항목': '종합 분석 의견', '내용': data.summary || '분석 완료' }
+    ];
+    addSheet('종합_요약', summaryHeaders, summaryRows);
+
     if (!isTypoMode) {
         // ── 시트1: 요구사항 매핑 현황 (RTM) ──
         const rtmHeaders = [
@@ -52,12 +64,12 @@ async function exportToExcel(data, isTypoMode = false) {
         ];
         const rtmRows = (data.rtm || []).map((item, idx) => ({
             '번호': idx + 1,
-            '분류': item.type || '필수',
-            '기준문서요건': item.requirement || '',
-            '카테고리': item.category || '',
-            '수준': item.levelLabel || '',
-            '상태': item.status || '',
-            '산출물증빙위치': item.location || '',
+            '분류': String(item.type || '필수'),
+            '기준문서요건': String(item.requirement || ''),
+            '카테고리': String(item.category || ''),
+            '수준': String(item.levelLabel || ''),
+            '상태': String(item.status || ''),
+            '산출물증빙위치': String(item.location || ''),
         }));
         addSheet('매핑현황(RTM)', rtmHeaders, rtmRows);
 
@@ -77,16 +89,16 @@ async function exportToExcel(data, isTypoMode = false) {
         ];
         const detailRows = (data.requirementMapping || []).map((item, idx) => ({
             '번호': idx + 1,
-            'ID': item.id || '',
-            '분류': item.type || '필수',
-            '카테고리': item.category || '',
-            '수준': item.levelLabel || '',
-            '계층경로': item.path || '',
-            '요구사항': item.requirement || '',
-            '산출물대응섹션': item.artifactSection || '',
-            '산출물기술내용': (item.artifactContent || '').replace(/^"|"$/g, ''),
-            '상태': item.status || '',
-            '차이점': item.gap || '',
+            'ID': String(item.id || ''),
+            '분류': String(item.type || '필수'),
+            '카테고리': String(item.category || ''),
+            '수준': String(item.levelLabel || ''),
+            '계층경로': String(item.path || ''),
+            '요구사항': String(item.requirement || ''),
+            '산출물대응섹션': String(item.artifactSection || ''),
+            '산출물기술내용': String(item.artifactContent || '').replace(/^"|"$/g, ''),
+            '상태': String(item.status || ''),
+            '차이점': String(item.gap || ''),
         }));
         addSheet('매핑상세', detailHeaders, detailRows);
 
@@ -101,17 +113,17 @@ async function exportToExcel(data, isTypoMode = false) {
             ];
             const omiRows = data.omissions.map((item, idx) => ({
                 '번호': idx + 1,
-                '항목': item.title || '',
-                '근거': item.evidence || '',
-                '사유': item.reason || '',
-                '권고사항': item.recommendation || '',
+                '항목': String(item.title || ''),
+                '근거': String(item.evidence || ''),
+                '사유': String(item.reason || ''),
+                '권고사항': String(item.recommendation || ''),
             }));
             addSheet('누락사항', omiHeaders, omiRows);
         }
     }
 
-    // ── 시트4: 문서 품질(오탈자 등) 점검 (오직 오탈자 점검 모드에서만 출력) ──
-    if (isTypoMode && data.typos && data.typos.length > 0) {
+    // ── 시트4: 문서 품질(오탈자 등) 점검 ──
+    if (isTypoMode || (data.typos && data.typos.length > 0)) {
         const typoHeaders = [
             { header: '순번', key: '순번', width: 6 },
             { header: '페이지/위치', key: '위치', width: 25 },
@@ -119,23 +131,26 @@ async function exportToExcel(data, isTypoMode = false) {
             { header: '수정 제안 문장', key: '수정', width: 40 },
             { header: '오류 유형/사유', key: '사유', width: 60 }
         ];
-        const typoRows = data.typos.map((item, idx) => ({
+        const typoRows = (data.typos || []).map((item, idx) => ({
             '순번': idx + 1,
-            '위치': item.page || item.location || item.type || '',
-            '원문': item.originalText || item.errorText || '',
-            '수정': item.correction || '',
-            '사유': item.errorType || item.reason || item.context || '',
+            '위치': String(item.page || item.location || item.type || ''),
+            '원문': String(item.originalText || item.errorText || ''),
+            '수정': String(item.correction || ''),
+            '사유': String(item.errorType || item.reason || item.context || ''),
         }));
         addSheet('교정교열_결과', typoHeaders, typoRows);
     }
 
     const now = new Date();
     const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-    const filePrefix = data.artifactFileName ? `[${data.artifactFileName}]_` : '';
+    const rawFileName = data.artifactFileName ? String(data.artifactFileName).replace(/[\\/:*?"<>|]/g, '_') : '';
+    const filePrefix = rawFileName ? `[${rawFileName}]_` : '';
     const fileName = isTypoMode ? `${filePrefix}교정교열_결과_${dateStr}.xlsx` : `${filePrefix}기준문서_검증결과_${dateStr}.xlsx`;
 
     try {
         const buffer = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        
         if (window.showSaveFilePicker) {
             try {
                 const handle = await window.showSaveFilePicker({
@@ -155,7 +170,7 @@ async function exportToExcel(data, isTypoMode = false) {
             }
         }
         
-        saveAs(new Blob([buffer]), fileName);
+        saveAs(blob, fileName);
     } catch (e) {
         console.error('Excel export failed:', e);
     }
@@ -163,6 +178,8 @@ async function exportToExcel(data, isTypoMode = false) {
 
 export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
     if (!data) return null;
+
+    const displayScore = isNaN(data.score) || data.score === undefined || data.score === null ? 0 : Math.round(Number(data.score));
 
     return (
         <div className="glass-panel animate-fade-in" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '24px', gap: '24px', overflowY: 'auto' }}>
@@ -182,9 +199,9 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                 <div className="glass-panel" style={{ padding: '32px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
                     <div style={{ position: 'absolute', top: '-10%', left: '-10%', width: '40%', height: '40%', background: 'var(--success-color)', opacity: 0.1, filter: 'blur(40px)', borderRadius: '50%' }}></div>
                     <h3 style={{ margin: '0 0 24px', fontSize: '15px', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase' }}>전체 요구사항 준수율</h3>
-                    <div style={{ position: 'relative', width: '160px', height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: `conic-gradient(var(--success-color) ${data.score}%, rgba(255,255,255,0.05) 0)`, boxShadow: '0 0 30px rgba(16, 185, 129, 0.15)' }}>
+                    <div style={{ position: 'relative', width: '160px', height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: `conic-gradient(var(--success-color) ${displayScore}%, rgba(255,255,255,0.05) 0)`, boxShadow: '0 0 30px rgba(16, 185, 129, 0.15)' }}>
                         <div style={{ position: 'absolute', width: '130px', height: '130px', background: 'var(--bg-secondary)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 0 20px rgba(0,0,0,0.4)' }}>
-                            <span style={{ fontSize: '38px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-1px' }}>{data.score}%</span>
+                            <span style={{ fontSize: '38px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-1px' }}>{displayScore}%</span>
                             <span style={{ fontSize: '11px', color: 'var(--success-color)', fontWeight: 600, marginTop: '-4px' }}>COMPLIANCE</span>
                         </div>
                     </div>
