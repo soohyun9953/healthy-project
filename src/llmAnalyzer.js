@@ -241,39 +241,38 @@ async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
                 ? parsed.score 
                 : (typeof parsed.overallScore === 'number' ? parsed.overallScore : 85);
 
-            // 재귀적 Deep Walker: 자율적 JSON 구조(예: {"슬라이드 26": ...})에서도 typos 전수 수집
+            // 재귀적 Deep Walker: 자율적 JSON 구조에서도 실제 의미있는 typos만 엄격히 필터링 수집
             const deep_extracted_typos = [];
             const summary_bullets = [];
 
             const walk_json_tree = (obj, path = "1페이지") => {
                 if (!obj) return;
                 if (typeof obj === 'string') {
-                    if (obj.trim().length > 3) {
-                        deep_extracted_typos.push({
-                            page: path,
-                            originalText: obj.trim(),
-                            correction: "문맥 검토 및 구체적 명세 보완 권고",
-                            errorType: "[품질 점검] 내용 검토 권고"
-                        });
-                        summary_bullets.push(`- [${path}] ${obj.trim().substring(0, 80)}...`);
+                    const str = obj.trim();
+                    if (str.length > 3) {
+                        summary_bullets.push(`- [${path}] ${str.substring(0, 100)}`);
                     }
                     return;
                 }
                 if (Array.isArray(obj)) {
-                    obj.forEach((item, idx) => walk_json_tree(item, path));
+                    obj.forEach((item) => walk_json_tree(item, path));
                     return;
                 }
                 if (typeof obj === 'object') {
-                    // 이미 오탈자/결함 표준 객체 형태인 경우
-                    if (obj.originalText || obj.original || obj.errorText || obj.before || obj.correction || obj.correct || obj.suggestion) {
+                    // 원문(originalText)과 수정안(correction)이 명시되어 있고 두 텍스트가 실제로 다를 때만 진짜 교정건으로 수집!
+                    const orig = String(obj.originalText || obj.original || obj.errorText || obj.before || '').trim();
+                    const corr = String(obj.correction || obj.correct || obj.suggestion || '').trim();
+                    
+                    if (orig && corr && orig !== corr && corr !== '문맥 검토 및 구체적 명세 보완 권고' && corr !== '보완 권고') {
                         deep_extracted_typos.push({
                             page: String(obj.page || obj.location || obj.section || path),
-                            originalText: String(obj.originalText || obj.original || obj.errorText || obj.before || path),
-                            correction: String(obj.correction || obj.correct || obj.after || obj.suggestion || '보완 권고'),
-                            errorType: String(obj.errorType || obj.type || obj.reason || obj.category || '[표현 품질] 교정 권고')
+                            originalText: orig,
+                            correction: corr,
+                            errorType: String(obj.errorType || obj.type || obj.reason || obj.category || '[표현 품질] 띄어쓰기 및 맞춤법 교정')
                         });
                         return;
                     }
+
                     // 일반 키-값 객체 (예: {"슬라이드 26": { ... }})
                     for (const [key, value] of Object.entries(obj)) {
                         if (['score', 'summary', 'overview'].includes(key)) continue;
@@ -292,12 +291,12 @@ async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
             } else if (parsed.overview || parsed.analysis) {
                 summary = String(parsed.overview || parsed.analysis);
             } else if (summary_bullets.length > 0) {
-                summary = `[로컬 LLM 분석 요약 (총 ${deep_extracted_typos.length}건 도출)]\n${summary_bullets.slice(0, 10).join('\n')}`;
+                summary = `[로컬 LLM 산출물 핵심 명세 요약]\n${summary_bullets.slice(0, 10).join('\n')}`;
             } else {
-                summary = "로컬 LLM 분석 완료 (세부 항목을 확인하십시오.)";
+                summary = "로컬 LLM 점검 완료: 띄어쓰기 및 명백한 맞춤법 오류 위주로 정밀 검수를 완료했습니다.";
             }
 
-            // typos 목록 정밀 병합
+            // typos 목록 정밀 병합 (원문 != 수정안 인 진짜 결함만 남김)
             let raw_typos = parsed.typos || parsed.typo_list || parsed.corrections || parsed.errors || parsed.issues || parsed.items || [];
             if (!Array.isArray(raw_typos) && typeof raw_typos === 'object') {
                 raw_typos = Object.values(raw_typos);
@@ -305,12 +304,12 @@ async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
             
             const direct_typos = (Array.isArray(raw_typos) ? raw_typos : []).map(t => ({
                 page: String(t.page || t.location || t.section || '1페이지'),
-                originalText: String(t.originalText || t.original || t.errorText || t.before || ''),
-                correction: String(t.correction || t.correct || t.after || t.suggestion || ''),
-                errorType: String(t.errorType || t.type || t.reason || t.category || '[표현 품질] 오탈자 및 교정')
-            })).filter(t => t.originalText || t.correction);
+                originalText: String(t.originalText || t.original || t.errorText || t.before || '').trim(),
+                correction: String(t.correction || t.correct || t.after || t.suggestion || '').trim(),
+                errorType: String(t.errorType || t.type || t.reason || t.category || '[표현 품질] 띄어쓰기 및 맞춤법 교정')
+            })).filter(t => t.originalText && t.correction && t.originalText !== t.correction && t.correction !== '문맥 검토 및 구체적 명세 보완 권고');
 
-            // 직접 수집된 typos와 Deep Walker 수집 typos 병합
+            // 직접 수집된 typos 중 유효한 건이 있으면 사용하고, 아니면 딥 워커 수집건 적용
             const final_typos = direct_typos.length > 0 ? direct_typos : deep_extracted_typos;
 
             // requirementMapping (요구사항 매핑) 유연한 추출
