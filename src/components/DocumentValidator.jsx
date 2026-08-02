@@ -5,7 +5,7 @@ import ResultDashboard from './ResultDashboard';
 import { analyzeDocumentsWithLLM } from '../llmAnalyzer';
 import { getRagContext } from '../utils/ragService';
 
-function DocumentValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b' }) {
+function DocumentValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b', omniRouteModel = 'auto' }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStage, setAnalysisStage] = useState(0); // 1: 추출, 2: 심층분석
   const [retryStatus, setRetryStatus] = useState(null); // API 재시도 상태 메시지
@@ -26,11 +26,10 @@ function DocumentValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen
     setAnalysisStage(2); // 2단계: 의미론적 심층 분석 시작
 
     try {
-      if (llmProvider === 'ollama' || (apiKey && apiKey.match(/^(AIza|AQ\.)/))) {
+      if (llmProvider === 'ollama' || llmProvider === 'omniroute' || (apiKey && apiKey.match(/^(AIza|AQ\.)/))) {
         let ragContext = "";
         if (useRag) {
           if (setRetryStatus) setRetryStatus("RAG 지식베이스 검색 중...");
-          // Use a combination of inspectionScope and artifact snippet for search query
           const searchQuery = `${inspectionScope} ${artifact.substring(0, 500)}`;
           ragContext = await getRagContext(searchQuery);
           if (setRetryStatus) setRetryStatus("RAG 검색 완료");
@@ -43,7 +42,8 @@ function DocumentValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen
           false,
           ragContext,
           llmProvider,
-          ollamaModel
+          ollamaModel,
+          omniRouteModel
         );
         setResultData({ ...result, artifactFileName });
       } else {

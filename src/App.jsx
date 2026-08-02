@@ -223,9 +223,11 @@ function App() {
   const [showKey, setShowKey] = useState(false); // API 키 보이기/숨기기 토글
   const [isLightMode, setIsLightMode] = useState(() => localStorage.getItem('theme_mode') === 'light');
 
-  // LLM 엔진 수동 선택 상태 (gemini | ollama)
+  // LLM 엔진 수동 선택 상태 (gemini | ollama | omniroute)
   const [llmProvider, setLlmProvider] = useState(() => localStorage.getItem('llm_provider') || 'gemini');
   const [ollamaModel, setOllamaModel] = useState(() => localStorage.getItem('ollama_model') || 'qwen2.5:3b');
+  const [omniRouteModel, setOmniRouteModel] = useState(() => localStorage.getItem('omniroute_model') || 'auto');
+  const [omniRouteApiKey, setOmniRouteApiKey] = useState(() => localStorage.getItem('omniroute_api_key') || '');
 
   useEffect(() => {
     localStorage.setItem('llm_provider', llmProvider);
@@ -234,6 +236,14 @@ function App() {
   useEffect(() => {
     localStorage.setItem('ollama_model', ollamaModel);
   }, [ollamaModel]);
+
+  useEffect(() => {
+    localStorage.setItem('omniroute_model', omniRouteModel);
+  }, [omniRouteModel]);
+
+  useEffect(() => {
+    localStorage.setItem('omniroute_api_key', omniRouteApiKey);
+  }, [omniRouteApiKey]);
 
   // 사이드바 및 테마 상태 저장
   useEffect(() => {
@@ -644,6 +654,19 @@ function App() {
                       <input 
                         type="radio" 
                         name="llmProvider" 
+                        value="omniroute" 
+                        checked={llmProvider === 'omniroute'} 
+                        onChange={() => setLlmProvider('omniroute')}
+                      />
+                      <span style={{ color: llmProvider === 'omniroute' ? '#a78bfa' : 'inherit', fontWeight: llmProvider === 'omniroute' ? 700 : 400 }}>
+                        🔀 OmniRoute (268개 프로바이더 자동 라우팅)
+                      </span>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px' }}>
+                      <input 
+                        type="radio" 
+                        name="llmProvider" 
                         value="ollama" 
                         checked={llmProvider === 'ollama'} 
                         onChange={() => setLlmProvider('ollama')}
@@ -653,6 +676,89 @@ function App() {
                       </span>
                     </label>
                   </div>
+
+                  {llmProvider === 'omniroute' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px dashed rgba(167,139,250,0.3)', marginTop: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 10px', background: 'rgba(167,139,250,0.08)', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.2)' }}>
+                        <span style={{ fontSize: '16px' }}>🔀</span>
+                        <div>
+                          <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: '#a78bfa' }}>OmniRoute 연결 정보</p>
+                          <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--text-muted)' }}>localhost:20128 · 268개 프로바이더 · 자동 폴백 · 무료 티어 90개+</p>
+                        </div>
+                      </div>
+
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>OmniRoute 모델 선택 (대시보드에서 추가한 모델명):</label>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <select
+                          value={['auto', 'claude-3-5-sonnet', 'gpt-4o', 'gpt-4o-mini', 'gemini-2.0-flash', 'gemini-1.5-pro', 'qwen/qwen-2.5-72b-instruct'].includes(omniRouteModel) ? omniRouteModel : 'custom'}
+                          onChange={(e) => { if (e.target.value !== 'custom') setOmniRouteModel(e.target.value); }}
+                          style={{
+                            flex: 1,
+                            background: '#1e1b4b',
+                            border: '1px solid rgba(167,139,250,0.4)',
+                            borderRadius: '6px',
+                            padding: '6px 8px',
+                            color: '#e2e8f0',
+                            fontSize: '12px',
+                            outline: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value="auto" style={{ background: '#0f172a', color: '#e2e8f0' }}>🔀 auto (★ 추천: OmniRoute 자동 선택)</option>
+                          <option value="claude-3-5-sonnet" style={{ background: '#0f172a', color: '#e2e8f0' }}>claude-3-5-sonnet (Anthropic)</option>
+                          <option value="gpt-4o" style={{ background: '#0f172a', color: '#e2e8f0' }}>gpt-4o (OpenAI)</option>
+                          <option value="gpt-4o-mini" style={{ background: '#0f172a', color: '#e2e8f0' }}>gpt-4o-mini (OpenAI 경량)</option>
+                          <option value="gemini-2.0-flash" style={{ background: '#0f172a', color: '#e2e8f0' }}>gemini-2.0-flash (Google)</option>
+                          <option value="gemini-1.5-pro" style={{ background: '#0f172a', color: '#e2e8f0' }}>gemini-1.5-pro (Google)</option>
+                          <option value="qwen/qwen-2.5-72b-instruct" style={{ background: '#0f172a', color: '#e2e8f0' }}>qwen-2.5-72b (Alibaba 무료)</option>
+                          <option value="custom" style={{ background: '#0f172a', color: '#e2e8f0' }}>-- 직접 입력 --</option>
+                        </select>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={omniRouteModel}
+                        onChange={(e) => setOmniRouteModel(e.target.value)}
+                        placeholder="모델명 직접 입력 (예: auto, gpt-4o, claude-3-5-sonnet)"
+                        style={{
+                          flex: 1,
+                          background: 'rgba(255,255,255,0.06)',
+                          border: '1px solid rgba(167,139,250,0.3)',
+                          borderRadius: '6px',
+                          padding: '6px 8px',
+                          color: 'var(--text-primary)',
+                          fontSize: '12px',
+                          outline: 'none',
+                          width: '100%',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>OmniRoute 대시보드 API Key (없으면 비워두세요):</label>
+                      <input
+                        type="password"
+                        value={omniRouteApiKey}
+                        onChange={(e) => setOmniRouteApiKey(e.target.value)}
+                        placeholder="대시보드(localhost:20128/dashboard)에서 발급한 API 키"
+                        style={{
+                          background: 'rgba(255,255,255,0.06)',
+                          border: '1px solid rgba(167,139,250,0.3)',
+                          borderRadius: '6px',
+                          padding: '6px 8px',
+                          color: 'var(--text-primary)',
+                          fontSize: '12px',
+                          outline: 'none',
+                          width: '100%',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+
+                      <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'rgba(167,139,250,0.8)', lineHeight: 1.5 }}>
+                        * 터미널에서 <code style={{ background: 'rgba(167,139,250,0.15)', padding: '1px 5px', borderRadius: '4px' }}>omniroute</code> 명령어로 서버를 시작한 뒤 사용하세요.<br/>
+                        * 대시보드: <a href="http://localhost:20128/dashboard" target="_blank" rel="noopener" style={{ color: '#a78bfa' }}>localhost:20128/dashboard</a>
+                      </p>
+                    </div>
+                  )}
 
                   {llmProvider === 'ollama' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
@@ -815,10 +921,10 @@ function App() {
             </div>
           )}
 
-          {activeTab === 'main' && <DocumentValidator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} />}
-          {activeTab === 'hwpx-report' && <HwpxGenerator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} />}
+          {activeTab === 'main' && <DocumentValidator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} omniRouteModel={omniRouteModel} />}
+          {activeTab === 'hwpx-report' && <HwpxGenerator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} omniRouteModel={omniRouteModel} />}
           {activeTab === 'ismpda' && <IsmpDaDashboard />}
-          {activeTab === 'typo' && <TypoValidator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} />}
+          {activeTab === 'typo' && <TypoValidator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} omniRouteModel={omniRouteModel} />}
           {activeTab === 'law' && <LawConsultant apiKey={apiKey} isMcpMode={false} />}
           {activeTab === 'law-mcp' && <LawConsultant apiKey={apiKey} isMcpMode={true} />}
           { activeTab === 'erd' && <ErdGenerator apiKey={apiKey} /> }

@@ -137,7 +137,7 @@ export async function extractTextFromExcel(file) {
     return allText.join('\n').trim();
 }
 
-// ── PPTX 텍스트 추출 ─────────────────────────────────────────
+// ── PPTX 텍스트 추출 (DOMParser & 엔티티 디코딩 100% 전수 수집) ─────────────────
 export async function extractTextFromPPTX(file) {
     const arrayBuffer = await file.arrayBuffer();
     const zip = await JSZip.loadAsync(arrayBuffer);
@@ -152,27 +152,58 @@ export async function extractTextFromPPTX(file) {
         return numA - numB;
     });
 
+    const decodeXml = (str) => {
+        if (!str) return '';
+        return str
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&apos;/g, "'");
+    };
+
     for (const fileName of slideFiles) {
         const content = await zip.files[fileName].async('string');
-        const paragraphRegex = /<a:p[^>]*>([\s\S]*?)<\/a:p>/g;
-        let pMatch;
         const slideParagraphs = [];
 
-        while ((pMatch = paragraphRegex.exec(content)) !== null) {
-            const pContent = pMatch[1];
-            const textRegex = /<a:t.*?>(.*?)<\/a:t>/g;
-            let tMatch;
-            const textRuns = [];
-            while ((tMatch = textRegex.exec(pContent)) !== null) {
-                textRuns.push(tMatch[1].replace(/<[^>]+>/g, ''));
+        try {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(content, 'text/xml');
+            const paragraphs = xmlDoc.getElementsByTagNameNS('*', 'p');
+
+            for (let i = 0; i < paragraphs.length; i++) {
+                const p = paragraphs[i];
+                const tElements = p.getElementsByTagNameNS('*', 't');
+                let pText = '';
+                for (let j = 0; j < tElements.length; j++) {
+                    pText += tElements[j].textContent || '';
+                }
+                const trimmed = decodeXml(pText).trim();
+                if (trimmed.length > 0) {
+                    slideParagraphs.push(trimmed);
+                }
             }
-            if (textRuns.length > 0) {
-                slideParagraphs.push(textRuns.join(''));
+        } catch (_) {
+            // DOMParser 실패 시 Regex 폴백
+            const paragraphRegex = /<a:p[^>]*>([\s\S]*?)<\/a:p>/g;
+            let pMatch;
+            while ((pMatch = paragraphRegex.exec(content)) !== null) {
+                const pContent = pMatch[1];
+                const textRegex = /<a:t[^>]*>([\s\S]*?)<\/a:t>/g;
+                let tMatch;
+                const textRuns = [];
+                while ((tMatch = textRegex.exec(pContent)) !== null) {
+                    textRuns.push(decodeXml(tMatch[1].replace(/<[^>]+>/g, '')));
+                }
+                const joined = textRuns.join('').trim();
+                if (joined.length > 0) slideParagraphs.push(joined);
             }
         }
 
         if (slideParagraphs.length > 0) {
-            textBlocks.push(`[슬라이드 ${fileName.match(/\d+/)[0]}]\n` + slideParagraphs.join('\n'));
+            const slideNum = fileName.match(/\d+/)[0];
+            textBlocks.push(`[슬라이드 ${slideNum}]\n` + slideParagraphs.join('\n'));
         }
     }
     

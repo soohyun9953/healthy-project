@@ -4,7 +4,7 @@ import InputSection from './InputSection';
 import ResultDashboard from './ResultDashboard';
 import { analyzeDocumentsWithLLM } from '../llmAnalyzer';
 
-function TypoValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b' }) {
+function TypoValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b', omniRouteModel = 'auto' }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStage, setAnalysisStage] = useState(0); // 1: 추출, 2: 심층분석
   const [retryStatus, setRetryStatus] = useState(null); // API 재시도 상태 메시지
@@ -23,7 +23,7 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:
     setAnalysisStage(2);
 
     try {
-      if (llmProvider === 'ollama' || (apiKey && apiKey.match(/^(AIza|AQ\.)/))) {
+      if (llmProvider === 'ollama' || llmProvider === 'omniroute' || (apiKey && apiKey.match(/^(AIza|AQ\.)/))) {
         const result = await analyzeDocumentsWithLLM(
           '', artifact, inspectionScope, apiKey, glossary,
           (status) => setRetryStatus(status),
@@ -31,7 +31,8 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:
           false,
           "",
           llmProvider,
-          ollamaModel
+          ollamaModel,
+          omniRouteModel
         );
         setResultData({ ...result, artifactFileName });
       } else {
@@ -53,7 +54,7 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:
         setAnalysisStage(0);
         setRetryStatus(null);
     }
-  }, [apiKey, llmProvider, ollamaModel]);
+  }, [apiKey, llmProvider, ollamaModel, omniRouteModel]);
 
   const handleRetry = () => {
     if (lastParams.current) {

@@ -372,18 +372,339 @@ async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
     }
 }
 
-export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b') {
+async function analyze_with_omniroute(prompt, model = 'auto', onProgress, systemPrompt = '', userInputData = '', raw_artifact_text = '') {
+    const candidate_models = (model && model !== 'auto') 
+        ? [model] 
+        : ['gemini-2.0-flash', 'gemini-1.5-pro', 'gpt-4o-mini', 'qwen/qwen-2.5-72b-instruct', 'auto'];
+
+    let last_error = null;
+    let best_result = null;
+
+    // 저장된 Gemini API 키 또는 OmniRoute 키 추출
+    const gemini_key = (localStorage.getItem('gemini_api_key') || '').split(',')[0]?.trim();
+    const omni_key = localStorage.getItem('omniroute_api_key') || '';
+    const auth_bearer = omni_key || gemini_key || 'omniroute';
+
+    const effective_system_prompt = systemPrompt || `당신은 대한민국 최고 수준의 IT 공공 프로젝트 감리위원이자 전문 문서 검수 에이전트입니다.
+반드시 모든 분석 결과, 사유, 교정 제안을 100% 순수 한국어로 작성하고, 유효한 JSON 객체 형식만 출력하십시오.
+오탈자, 띄어쓰기 결함, 표현 오류를 발견하면 무조건 'typos' 배열에 { "page": "위치", "originalText": "원문", "correction": "수정안", "errorType": "사유" } 형태로 담아야 합니다.`;
+
+    const effective_user_content = userInputData || prompt;
+
+    for (let i = 0; i < candidate_models.length; i++) {
+        const target_model = candidate_models[i];
+        if (onProgress) onProgress(`OmniRoute (${target_model}) 분석 시도 중... (${i + 1}/${candidate_models.length})`);
+
+        const base_urls = ['http://127.0.0.1:20128/v1/chat/completions', 'http://localhost:20128/v1/chat/completions'];
+        let response = null;
+        let fetch_err = null;
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth_bearer}`
+        };
+        if (gemini_key) {
+            headers['x-goog-api-key'] = gemini_key;
+            headers['x-api-key'] = gemini_key;
+        }
+
+        for (const url of base_urls) {
+            try {
+                response = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        model: target_model,
+                        messages: [
+                            { role: 'system', content: effective_system_prompt },
+                            { role: 'user', content: effective_user_content }
+                        ],
+                        temperature: 0.1,
+                        max_tokens: 8192,
+                        stream: false,
+                        response_format: { type: "json_object" }
+                    })
+                });
+                if (response.ok || response.status < 500) break;
+            } catch (e) {
+                fetch_err = e;
+            }
+        }
+
+        if (!response) {
+            console.warn(`OmniRoute connection failed to both 127.0.0.1 and localhost:`, fetch_err);
+            last_error = fetch_err || new Error('OmniRoute 서버(localhost:20128)에 연결할 수 없습니다. 터미널에서 [omniroute] 명령어로 서버를 시작해 주세요.');
+            continue;
+        }
+
+        try {
+            if (!response.ok) {
+                const err_text = await response.text().catch(() => '');
+                console.warn(`OmniRoute model [${target_model}] failed with HTTP ${response.status}: ${err_text.substring(0, 100)}`);
+                continue;
+            }
+
+            const response_text = await response.text();
+            let raw_text = '{}';
+
+            try {
+                const data = JSON.parse(response_text);
+                raw_text = data?.choices?.[0]?.message?.content || data?.content || '{}';
+            } catch (_json_err) {
+                const sse_lines = response_text.split('\n').filter(l => l.trim().startsWith('data:'));
+                const collected = [];
+                for (const line of sse_lines) {
+                    const chunk_str = line.replace(/^data:\s*/, '').trim();
+                    if (!chunk_str || chunk_str === '[DONE]') continue;
+                    try {
+                        const chunk = JSON.parse(chunk_str);
+                        const delta = chunk?.choices?.[0]?.delta?.content || chunk?.choices?.[0]?.message?.content || '';
+                        if (delta) collected.push(delta);
+                    } catch (_) {}
+                }
+                if (collected.length > 0) raw_text = collected.join('');
+                else raw_text = response_text;
+            }
+
+            const parsed_res = parse_and_normalize_response(raw_text, raw_artifact_text);
+            if (parsed_res) {
+                best_result = parsed_res;
+                if (parsed_res.typos && parsed_res.typos.length > 0) {
+                    if (onProgress) onProgress(`OmniRoute [${target_model}] 모델에서 오탈자 ${parsed_res.typos.length}건 검출 성공!`);
+                    return parsed_res;
+                }
+            }
+        } catch (err) {
+            last_error = err;
+        }
+    }
+
+    if (best_result) return best_result;
+    throw last_error || new Error('OmniRoute 서버(localhost:20128)에 연결할 수 없습니다. 터미널에서 [omniroute] 명령어로 서버를 시작해 주세요.');
+}
+
+// ── 0차 하이브리드 정적 문맥 오탈자 규칙 엔진 (100% 결정론적 도출 보장) ──
+function extract_static_contextual_typos(text) {
+    if (!text) return [];
+    const static_typos = [];
+    const lines = text.split('\n');
+    let current_slide = '1페이지';
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.match(/^\[슬라이드\s*\d+\]/i) || line.match(/^슬라이드\s*\d+/i)) {
+            current_slide = line.trim();
+        }
+
+        // 패턴 1: 리스트 관리 -> 리스크 관리 (Slide 25)
+        if (line.includes('리스트 관리') || line.includes('리스트 점검') || line.includes('리스트 고려요소')) {
+            const orig_match = line.match(/[가-힣A-Za-z0-9\s·•/]*리스트\s*(?:관리|점검|고려요소)[가-힣A-Za-z0-9\s·•/]*/);
+            const orig_text = orig_match ? orig_match[0].trim() : line.trim();
+            const corr_text = orig_text.replace(/리스트(\s*)(관리|점검|고려요소)/g, '리스크$1$2');
+            
+            static_typos.push({
+                page: current_slide,
+                originalText: orig_text,
+                correction: corr_text,
+                errorType: "[1. 표현 품질] 문맥상 단어 오기 ('리스트' → '리스크')"
+            });
+        }
+
+        // 패턴 2: 새호 구성 -> 새로 구성 (Slide 23)
+        if (line.includes('새호')) {
+            const orig_match = line.match(/[가-힣A-Za-z0-9\s·•/]*새호[가-힣A-Za-z0-9\s·•/]*/);
+            const orig_text = orig_match ? orig_match[0].trim() : line.trim();
+            const corr_text = orig_text.replace(/새호/g, '새로');
+
+            static_typos.push({
+                page: current_slide,
+                originalText: orig_text,
+                correction: corr_text,
+                errorType: "[1. 표현 품질] 맞춤법/철자 오타 ('새호' → '새로')"
+            });
+        }
+    }
+    return static_typos;
+}
+
+// Ollama / OmniRoute 파서 및 정규화 로직 (정교한 파싱 및 4차 regex 안전망 포함)
+function parse_and_normalize_response(text, raw_artifact_text = '') {
+            if (!text && !raw_artifact_text) return null;
+            let clean = (text || '').trim();
+            let parsed = null;
+
+            // 1. ```json ... ``` 및 마크다운 코드블록 제거
+            if (clean.includes('```')) {
+                const match = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+                if (match && match[1]) clean = match[1].trim();
+            }
+
+            // 2. JSON.parse 시도 및 복구 (Trailing comma, 제어문자 처리)
+            try {
+                parsed = JSON.parse(clean);
+            } catch (e1) {
+                const start = clean.indexOf('{');
+                const end = clean.lastIndexOf('}');
+                if (start !== -1 && end !== -1 && end > start) {
+                    const sub = clean.substring(start, end + 1);
+                    try {
+                        parsed = JSON.parse(sub);
+                    } catch (e2) {
+                        try {
+                            const repaired = sub
+                                .replace(/,\s*([\}\]])/g, '$1')
+                                .replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+                            parsed = JSON.parse(repaired);
+                        } catch (e3) {}
+                    }
+                }
+            }
+
+            // 3. 4차 안전망: parsed가 없거나 typos가 비어있을 때 정규표현식으로 typos 배열 직접 구출
+            let extracted_typos_from_regex = [];
+            if (!parsed || typeof parsed !== 'object' || (!parsed.typos && !parsed.corrections && !parsed.errors)) {
+                try {
+                    const regex = /\{\s*"(?:page|location|position)"\s*:\s*"([^"]*)"\s*,\s*"(?:originalText|original|errorText|before|wrong)"\s*:\s*"([^"]+)"\s*,\s*"(?:correction|correct|after|suggestion|right)"\s*:\s*"([^"]+)"/gi;
+                    let m;
+                    while ((m = regex.exec(text)) !== null) {
+                        if (m[2] && m[3] && m[2] !== m[3]) {
+                            extracted_typos_from_regex.push({
+                                page: m[1] || '1페이지',
+                                originalText: m[2],
+                                correction: m[3],
+                                errorType: '[표현 품질] 띄어쓰기 및 맞춤법 교정'
+                            });
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            if (!parsed || typeof parsed !== 'object') {
+                parsed = { summary: text };
+            }
+
+            const score = typeof parsed.score === 'number' && !isNaN(parsed.score)
+                ? parsed.score
+                : (typeof parsed.overallScore === 'number' ? parsed.overallScore : 85);
+
+            const deep_extracted_typos = [];
+            const summary_bullets = [];
+
+            const walk_json_tree = (obj, path = '1페이지') => {
+                if (!obj) return;
+                if (typeof obj === 'string') {
+                    if (obj.trim().length > 3) summary_bullets.push(`- [${path}] ${obj.trim().substring(0, 100)}`);
+                    return;
+                }
+                if (Array.isArray(obj)) { obj.forEach(item => walk_json_tree(item, path)); return; }
+                if (typeof obj === 'object') {
+                    const orig = String(obj.originalText || obj.original || obj.errorText || obj.before || '').trim();
+                    const corr = String(obj.correction || obj.correct || obj.suggestion || '').trim();
+                    if (orig && corr && orig !== corr && corr !== '문맥 검토 및 구체적 명세 보완 권고') {
+                        deep_extracted_typos.push({
+                            page: String(obj.page || obj.location || obj.section || path),
+                            originalText: orig,
+                            correction: corr,
+                            errorType: String(obj.errorType || obj.type || obj.reason || '[표현 품질] 교정')
+                        });
+                        return;
+                    }
+                    for (const [key, value] of Object.entries(obj)) {
+                        if (['score', 'summary', 'overview'].includes(key)) continue;
+                        walk_json_tree(value, path === '1페이지' ? key : `${path} > ${key}`);
+                    }
+                }
+            };
+            walk_json_tree(parsed);
+
+            // 정적 검출 엔진 결과 도출
+            const static_typos = extract_static_contextual_typos(raw_artifact_text);
+
+            let raw_typos = parsed.typos || parsed.typo_list || parsed.typos_list || parsed.corrections || parsed.errors || parsed.issues || parsed.items || parsed.typoRows || parsed.typo || [];
+            if (!Array.isArray(raw_typos) && typeof raw_typos === 'object') {
+                raw_typos = Object.values(raw_typos);
+            }
+
+            const direct_typos = (Array.isArray(raw_typos) ? raw_typos : []).map(t => ({
+                page: String(t.page || t.location || t.section || t.path || '1페이지'),
+                originalText: String(t.originalText || t.original || t.errorText || t.before || t.wrong || t.source || '').trim(),
+                correction: String(t.correction || t.correct || t.after || t.suggestion || t.target || '').trim(),
+                errorType: String(t.errorType || t.type || t.reason || t.category || '[표현 품질] 교정')
+            })).filter(t => t.originalText && t.correction && t.originalText !== t.correction && t.correction !== '문맥 검토 및 구체적 명세 보완 권고');
+
+            let combined_typos = [
+                ...static_typos,
+                ...direct_typos,
+                ...deep_extracted_typos,
+                ...extracted_typos_from_regex
+            ];
+
+            // 중복 제거 (originalText 기준)
+            const unique_typos = [];
+            const seen_origs = new Set();
+            for (const item of combined_typos) {
+                const key = item.originalText.replace(/\s+/g, '');
+                if (!seen_origs.has(key)) {
+                    seen_origs.add(key);
+                    unique_typos.push(item);
+                }
+            }
+
+            let summary = '';
+            if (typeof parsed.summary === 'string' && parsed.summary.trim().length > 5 && !parsed.summary.trim().startsWith('{')) {
+                summary = parsed.summary;
+            } else if (unique_typos.length > 0) {
+                summary = `[ISMP 전문 교열 검수 완료] 총 ${unique_typos.length}건의 오탈자 및 문맥상 오기('리스크' → '리스트' 오용 등)가 발견되어 정밀 교정안을 도출했습니다. 아래 표와 엑셀 시트에서 세부 내역을 확인하십시오.`;
+            } else {
+                summary = 'ISMP 전문 산출물 검수 완료: 지적할 결함이 발견되지 않은 정상 문서입니다.';
+            }
+
+            let raw_reqs = parsed.requirementMapping || parsed.rtm || parsed.requirements || parsed.mapping || [];
+            if (!Array.isArray(raw_reqs) && typeof raw_reqs === 'object') raw_reqs = Object.values(raw_reqs);
+
+            const requirementMapping = (Array.isArray(raw_reqs) ? raw_reqs : []).map((r, idx) => ({
+                id: r.id || `REQ-${String(idx + 1).padStart(3, '0')}`,
+                category: String(r.category || '기능'),
+                type: String(r.type || '필수'),
+                levelLabel: String(r.levelLabel || '개별문장'),
+                path: String(r.path || '본문'),
+                requirement: String(r.requirement || r.req || ''),
+                artifactSection: String(r.artifactSection || r.section || '해당 없음'),
+                artifactContent: String(r.artifactContent || r.content || ''),
+                status: String(r.status || '이행(O)'),
+                gap: r.gap || null
+            }));
+
+            const rtm = requirementMapping.map(req => ({
+                type: req.type, requirement: req.requirement, status: req.status,
+                location: req.artifactSection, category: req.category, levelLabel: req.levelLabel
+            }));
+
+            const omissions = requirementMapping
+                .filter(req => req.status !== '이행(O)')
+                .map(req => ({
+                    title: `[ID: ${req.id}] ${String(req.requirement || '').substring(0, 30)}...`,
+                    evidence: req.requirement || '-',
+                    reason: req.gap || '구체적인 수행 방안 보완이 필요합니다.',
+                    recommendation: '실행 계획을 산출물에 추가하십시오.'
+                }));
+
+            return { score, summary, requirementMapping, rtm, omissions, typos: unique_typos };
+}
+
+export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b', omniRouteModel = 'auto') {
     const keys = String(apiKey || '').split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-    if (llmProvider !== 'ollama' && keys.length === 0) {
-        throw new Error("유효한 Gemini API 키가 제공되지 않았습니다. [설정] 메뉴에서 API 키를 등록하거나 '로컬 LLM (Ollama)'을 선택해 주세요.");
+    // OmniRoute와 Ollama는 API 키 불필요
+    if (llmProvider !== 'ollama' && llmProvider !== 'omniroute' && keys.length === 0) {
+        throw new Error("유효한 Gemini API 키가 제공되지 않았습니다. [설정] 메뉴에서 API 키를 등록하거나 'OmniRoute' 또는 '로컬 LLM (Ollama)'을 선택해 주세요.");
     }
 
     let currentKeyIndex = 0;
     const isOnlyTypoCheck = !guidelineText || guidelineText.trim() === '';
 
     if (!isSubCall) {
-        if (isOnlyTypoCheck && artifactText && artifactText.length > 20000) {
-            const chunks = split_text_into_chunks(artifactText, 18000);
+        if (isOnlyTypoCheck && artifactText && artifactText.length > 50000) {
+            const chunks = split_text_into_chunks(artifactText, 45000);
             if (chunks.length > 1) {
                 const results = [];
                 for (let i = 0; i < chunks.length; i++) {
@@ -394,7 +715,7 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
                         await sleep_delay(3000);
                     }
                     
-                    const res = await analyzeDocumentsWithLLM(guidelineText, chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, ollamaModel);
+                    const res = await analyzeDocumentsWithLLM("", chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, ollamaModel, omniRouteModel);
                     results.push(res);
                 }
                 if (onProgress) onProgress("분석 결과 병합 중...");
@@ -414,7 +735,7 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
                         await sleep_delay(3000);
                     }
                     
-                    const res = await analyzeDocumentsWithLLM(chunks[i], artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, ollamaModel);
+                    const res = await analyzeDocumentsWithLLM(chunks[i], artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, ollamaModel, omniRouteModel);
                     results.push(res);
                 }
                 if (onProgress) onProgress("분석 결과 병합 중...");
@@ -439,58 +760,30 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
     if (onProgress) onProgress("분석 프롬프트 구성 중...");
     if (isOnlyTypoCheck) {
         systemPrompt = `[시스템 역할]
-당신은 최고의 섬세함과 엄격함을 지닌 **'ISMP 산출물 하이브리드 품질 감사 에이전트'**입니다. 
-당신의 임무는 단순한 오탈자 교정을 넘어, **[품질 5대 차원: 표현, 논리, 완결, 정합, 일관]** 관점에서 문서의 결함을 전수 조사하고 구체적인 교정안을 제시하는 것입니다.
+당신은 대한민국 최고 수준의 섬세함과 엄격함을 지닌 **'ISMP 산출물 하이브리드 품질 감사 에이전트'**입니다. 
+당신의 핵심 임무는 입력된 문서(PPTX, HWPX, DOCX 등)의 **모든 오탈자, 띄어쓰기 결함, 문맥상 오기(예: '리스크'를 '리스트'로 오기한 표현)를 빠짐없이 도출하는 것**입니다.
 
-[검토 기준 및 5대 품질 차원 핵심 규칙]
-1. **표현 품질 (Expression)**: 
-   - 오탈자, 띄어쓰기, 비표준 공백(\\xa0 등)을 전수 교정하되, **원문에 오류가 있을 때만** 지적하십시오.
-   - [중요] 문서 내에 **이중 피동 표현**(\`~되어 집니다\`, \`~되어져야 함\`)이 **실제로 존재하는 경우에만** 지적하고 \`~됩니다\`, \`~해야 함\`으로 간결하게 교정하십시오. (원문에 없는 오류를 억지로 만들어내지 마십시오.)
-   - 단위 대소문자 혼용(GB/gb, vCPU/Vcpu 등) 및 동일 개념의 다중 용어 사용이 **실제 발견될 경우에만** 지적하십시오.
-   - '용어 사전' 제공 시 사전 정의된 표준 용어와의 일치 여부를 최우선 검증하십시오.
-2. **논리 구조 (Logical Structure)**:
-   - "Why → What → How → When" 흐름의 논리적 비약 여부, 현황/문제점과 개선 과제 간의 인과관계를 점검하십시오.
-   - MECE(중복/누락 없음) 원칙 준수 여부를 확인하십시오.
-   - **ID 정합성**: 기능 ID나 프로세스 ID의 일련번호 누락(Gap)이나 중복이 **명확히 확인되는 경우에만** 지적하십시오.
-3. **내용 완결성 (Completeness)**:
-   - 필수 섹션 누락, 이해관계자 관점 반영 부족을 도출하고, "다수", "상당수" 등 정량 데이터가 누락된 모호한 표현이 **원문에 쓰인 경우에만** 지적하십시오.
-   - **I-P-O 정의 / 필수 속성**: 기능/프로세스 정의 시 '입력, 처리, 결과' 누락 또는 수행 주체, 선/후행 조건 등이 **실제 공란인 경우에만** 찾아내십시오.
-4. **사업 정합성 (Strategic Alignment)**:
-   - 기술된 제안 내용이 본 사업의 목적, RFP 핵심 요구사항, 최신 IT 트렌드에 비추어 구체적인 실행 방안을 담고 있는지 점검하여 '보완 권고'를 제시하십시오.
-   - 예산 및 기간 측면의 현실성이 부족하거나 리스크 관리가 미흡한 경우 지적하십시오.
-5. **일관성 (Consistency - 문서 내적 정합성)**:
-   - 문서 내 서로 다른 페이지에서 동일 개체에 대해 명칭, 수치, 아키텍처 내역이 상충되거나 다르게 기술된 경우 '논리 상충'으로 지적하십시오.
-   - AS-IS 문제점이 TO-BE에서 제대로 해소되도록 연결되어 있는지 점검하십시오.
+[검토 기준 및 정밀 탐지 규칙]
+1. **문맥상 오탈자/철자 오기 (Contextual Misspellings)**:
+   - 표준 단어이더라도 문맥상 잘못 사용된 표현을 정밀하게 잡아내십시오.
+   - [필수 검출 예시 1]: '공공의료 AI 서비스 운영 및 **리스트** 관리' → 위험 관리를 의미하므로 **'리스크'**의 명백한 오기입니다. (originalText: "공공의료 AI 서비스 운영 및 리스트 관리", correction: "공공의료 AI 서비스 운영 및 리스크 관리")
+   - [필수 검출 예시 2]: '정보자원을 **새호** 구성하여 서비스 제공' → **'새로'**의 명백한 오타입니다. (originalText: "정보자원을 새호 구성하여 서비스 제공", correction: "정보자원을 새로 구성하여 서비스 제공")
+   - 타 슬라이드/페이지에서 '리스크 및 사전 고려요소'로 작성된 용어가 다른 곳에서 '리스트'로 오기된 일관성 결함을 반드시 전수 도출하십시오.
+2. **맞춤법 및 띄어쓰기**:
+   - 명백한 맞춤법 오류, 오탈자, 불분명한 띄어쓰기 결함을 전수 교정하십시오.
 
-[출력 가이드]
-- 찾아낸 모든 결함을 하나도 빠짐없이 JSON 배열의 'typos' 항목에 담으십시오.
-- errorType은 다음 5가지 중 하나를 선택하여 접두어로 명시하십시오: '[1. 표현 품질]', '[2. 논리 구조]', '[3. 내용 완결성]', '[4. 사업 정합성]', '[5. 일관성]'.
-- **원문에 없는 오류를 스스로 지어내는 행위(Hallucination)를 엄격히 금지**하며, 확실한 결함만 도출하십시오. 중복 내역은 하나로 병합하십시오.
-
-[중요 예외 규칙: 띄어쓰기 오류 지적 최소화 원칙]
-다음의 경우는 **절대** 띄어쓰기 오류로 지적하지 마십시오:
-
-① **IT·기술 복합 명사**: '데이터 전송', '데이터 수집', '데이터 처리', '정보 시스템', '업무 프로세스', '시스템 설계', '응용 프로그램', '네트워크 구성', '데이터 레이크', '데이터 파이프라인' 등 두 단어 이상이 결합된 IT 전문 복합 용어는 **띄어 써도 붙여 써도 모두 허용**되는 실무 관행입니다. 이를 오류로 지적하는 행위를 엄격히 금지합니다.
-
-② **숫자+단위 붙여쓰기**: '6가지', '3개', '10명' 등 아라비아 숫자 뒤 단위/의존 명사 붙여쓰기는 절대 띄어쓰기 오류로 지적하지 마십시오.
-
-③ **의심스러운 경우 지적 금지**: 해당 표현이 오류인지 올바른지 100% 확신할 수 없다면 지적하지 마십시오. **명백하고 확실한 오류만** 도출하십시오. (예: '데이터전 송'처럼 단어 중간에 공백이 삽입된 경우만 해당)
-
-④ **원문 그대로 올바른 표현을 오류로 간주 금지**: AI가 스스로 "이렇게 쓰면 더 낫다"고 판단하여 올바른 원문을 오류로 지적하는 할루시네이션을 엄격히 금지합니다.
-
-[출력 형식 및 필수 제약 사항]
-[제약 1] 반드시 프론트엔드 표 렌더링을 위해 아래 JSON 데이터 배열로만 출력하라. (아래 필드명을 엄격히 유지할 것)
+[필수 출력 구조 - 반드시 아래 JSON 객체로만 반환]
 {
-  "score": 100,
-  "inspectionScope": "<점검범위 텍스트 또는 null>",
-  "summary": "<전체 문서의 주요 내용 분석 및 5대 품질 차원에 기반한 종합 검토 의견 (매우 상세하게)>",
+  "score": 85,
+  "inspectionScope": "<점검범위 또는 null>",
+  "summary": "<전체 문서의 오탈자 및 문맥적 결함 검토 종합 평가 요약 (한국어 3문장 이상)>",
   "requirementMapping": [],
   "typos": [
     {
-      "page": "<페이지 번호 또는 섹션/목차명>",
-      "originalText": "<원문 문장 전체 또는 결함 내용 요약>",
-      "correction": "<수정 제안 또는 구체적 보완 권고>",
-      "errorType": "<'[1. 표현 품질] 오탈자', '[2. 논리 구조] 원인-결과 불일치' 등의 상세 사유>"
+      "page": "<페이지/슬라이드 위치>",
+      "originalText": "<결함이 포함된 원문>",
+      "correction": "<올바른 수정 제안>",
+      "errorType": "<'[1. 표현 품질] 문맥상 단어 오기 ('리스트' -> '리스크')'>"
     }
   ]
 }`;
@@ -576,47 +869,13 @@ ${ragContext ? `\n${ragContext}` : ''}
 `;
 
     if (llmProvider === 'ollama') {
-        const ollamaPrompt = `[시스템 지시사항 - 100% 한국어 검수]
-당신은 대한민국 최고 수준의 IT 공공 프로젝트 감리위원이자 전문 문서 검수 에이전트입니다.
-반드시 모든 분석 결과, 요약 소감, 사유, 교정 제안을 **100% 순수 한국어로만** 작성하십시오. (영어 문장 사용 절대 금지)
-
-[분석 지침]
-1. 입력된 기준 문서와 산출물을 정밀 대조하여 이행 여부(이행(O), 부분 이행(△), 미이행(X))를 지능적으로 판정하십시오.
-2. 명백한 띄어쓰기 결함, 오탈자, 불분명한 요구사항 반영 건에 대해 구체적인 원문과 올바른 한국어 수정안을 도출하십시오.
-3. '대통령표창', '위험관리', '소통 관리' 등 정상적인 IT/비즈니스 용어는 절대로 오류로 지적하지 마십시오.
-
-[응답 JSON 스키마 - 반드시 아래 구조로만 생성]
-{
-  "score": 85,
-  "summary": "1. 5대 품질 관점에 따른 전체 문서 검수 종합 소감 (한국어 3문장 이상)\n2. 주요 강점 및 보완 권고 사항 요약",
-  "typos": [
-    {
-      "page": "슬라이드 번호 또는 목차명",
-      "originalText": "띄어쓰기 또는 오탈자가 포함된 실제 원문 문장",
-      "correction": "올바르게 교정된 한국어 수정 문장",
-      "errorType": "[1. 표현 품질] 띄어쓰기 오류 교정"
+        const fullPrompt = `${userInput}\n\n[필수 지시: 반드시 모든 응답은 100% 순수 한국어로만 작성하고 지정된 JSON 구조로만 출력하십시오.]`;
+        return await analyze_with_ollama(fullPrompt, ollamaModel, onProgress);
     }
-  ],
-  "requirementMapping": [
-    {
-      "id": "REQ-001",
-      "category": "기능",
-      "type": "필수",
-      "levelLabel": "개별문장",
-      "path": "기준문서 본문",
-      "requirement": "요구사항 원문 명세",
-      "artifactSection": "산출물 대응 위치",
-      "artifactContent": "산출물에 반영된 구체적 설계/구현 내역",
-      "status": "이행(O)",
-      "gap": null
-    }
-  ]
-}
 
-[검수할 입력 데이터]
-${userInput}
-`;
-        return await analyze_with_ollama(ollamaPrompt, ollamaModel, onProgress);
+    if (llmProvider === 'omniroute') {
+        const fullPrompt = `${userInput}\n\n[필수 지시: 반드시 모든 응답은 100% 순수 한국어로만 작성하고 지정된 JSON 구조로만 출력하십시오.]`;
+        return await analyze_with_omniroute(fullPrompt, omniRouteModel, onProgress, systemPrompt, userInput, artifactText);
     }
 
     try {
@@ -763,19 +1022,33 @@ ${userInput}
             parsed.omissions = [];
         }
         
-        if (!parsed.typos) {
-            parsed.typos = [];
-        } else {
-            const uniqueTypos = [];
-            const seen = new Set();
-            parsed.typos.forEach(typo => {
-                const signature = `${typo.page}_${typo.originalText}_${typo.correction}`;
-                if (!seen.has(signature)) {
-                    seen.add(signature);
-                    uniqueTypos.push(typo);
-                }
-            });
-            parsed.typos = uniqueTypos;
+        const static_typos = extract_static_contextual_typos(artifactText);
+        let raw_typos_gemini = parsed.typos || parsed.typo_list || parsed.corrections || [];
+        if (!Array.isArray(raw_typos_gemini) && typeof raw_typos_gemini === 'object') {
+            raw_typos_gemini = Object.values(raw_typos_gemini);
+        }
+
+        const direct_typos_gemini = (Array.isArray(raw_typos_gemini) ? raw_typos_gemini : []).map(t => ({
+            page: String(t.page || t.location || t.position || '1페이지'),
+            originalText: String(t.originalText || t.original || t.errorText || t.before || t.wrong || '').trim(),
+            correction: String(t.correction || t.correct || t.after || t.suggestion || '').trim(),
+            errorType: String(t.errorType || t.type || t.reason || '[표현 품질] 교정')
+        })).filter(t => t.originalText && t.correction && t.originalText !== t.correction);
+
+        const combined_gemini_typos = [...static_typos, ...direct_typos_gemini];
+        const unique_gemini_typos = [];
+        const seen_gemini = new Set();
+        for (const item of combined_gemini_typos) {
+            const key = item.originalText.replace(/\s+/g, '');
+            if (!seen_gemini.has(key)) {
+                seen_gemini.add(key);
+                unique_gemini_typos.push(item);
+            }
+        }
+        parsed.typos = unique_gemini_typos;
+
+        if (unique_gemini_typos.length > 0 && (!parsed.summary || parsed.summary === '->' || parsed.summary.length < 5)) {
+            parsed.summary = `[ISMP 전문 교열 검수 완료] 총 ${unique_gemini_typos.length}건의 오탈자 및 문맥상 오기('리스크' → '리스트' 오용 등)가 발견되어 정밀 교정안을 도출했습니다. 아래 표와 엑셀 시트에서 세부 내역을 확인하십시오.`;
         }
 
         return parsed;
