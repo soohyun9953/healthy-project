@@ -377,30 +377,50 @@ function App() {
                 <div className="nav-icon-wrapper" style={{ color: isActive ? tab.color : 'inherit', position: 'relative' }}>
                   <Icon size={20} />
                   {tab.useGemini && (
-                    <Sparkles 
-                      size={10} 
-                      style={{ 
-                        position: 'absolute', 
-                        top: '-4px', 
-                        right: '-4px', 
-                        color: '#38bdf8',
-                        filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.7))'
-                      }} 
-                    />
+                    <span style={{
+                      position: 'absolute',
+                      top: '-5px',
+                      right: '-6px',
+                      background: 'rgba(56,189,248,0.18)',
+                      border: '1px solid rgba(56,189,248,0.5)',
+                      borderRadius: '50%',
+                      width: '14px',
+                      height: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Sparkles
+                        size={8}
+                        style={{
+                          color: '#38bdf8',
+                          filter: 'drop-shadow(0 0 3px rgba(56, 189, 248, 0.9))'
+                        }}
+                      />
+                    </span>
                   )}
                 </div>
                 {!isSidebarCollapsed && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
                     {tab.label}
                     {tab.useGemini && (
-                      <Sparkles 
-                        size={13} 
-                        style={{ 
-                          color: '#38bdf8', 
-                          filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))',
-                          flexShrink: 0
-                        }} 
-                      />
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '2px',
+                        background: 'rgba(56,189,248,0.13)',
+                        border: '1px solid rgba(56,189,248,0.4)',
+                        borderRadius: '4px',
+                        padding: '1px 4px',
+                        fontSize: '9px',
+                        fontWeight: 700,
+                        color: '#38bdf8',
+                        letterSpacing: '0.03em',
+                        flexShrink: 0,
+                      }}>
+                        <Sparkles size={8} style={{ color: '#38bdf8' }} />
+                        AI
+                      </span>
                     )}
                   </span>
                 )}
