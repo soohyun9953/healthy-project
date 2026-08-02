@@ -655,12 +655,16 @@ function App() {
                   </div>
 
                   {llmProvider === 'ollama' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
-                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ollama 모델명 선택 / 입력:</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ollama 로컬 모델 선택 / 직접 입력:</label>
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <select
-                          value={ollamaModel}
-                          onChange={(e) => setOllamaModel(e.target.value)}
+                          value={['qwen2.5:7b', 'qwen2.5:3b', 'llama3.1:8b', 'gemma2:9b', 'qwen2.5:14b', 'llama3.2:3b'].includes(ollamaModel) ? ollamaModel : 'custom'}
+                          onChange={(e) => {
+                            if (e.target.value !== 'custom') {
+                              setOllamaModel(e.target.value);
+                            }
+                          }}
                           style={{
                             flex: 1,
                             background: 'rgba(255,255,255,0.06)',
@@ -672,13 +676,36 @@ function App() {
                             outline: 'none'
                           }}
                         >
-                          <option value="qwen2.5:3b">qwen2.5:3b (권장 - 한국어 우수)</option>
-                          <option value="llama3.2">llama3.2 (3B)</option>
-                          <option value="gemma2:2b">gemma2:2b (경량)</option>
+                          <option value="qwen2.5:7b">qwen2.5:7b (★ 강력 추천: 7B 고성능)</option>
+                          <option value="qwen2.5:3b">qwen2.5:3b (경량 3B)</option>
+                          <option value="llama3.1:8b">llama3.1:8b (Meta 8B)</option>
+                          <option value="gemma2:9b">gemma2:9b (Google 9B)</option>
+                          <option value="qwen2.5:14b">qwen2.5:14b (초고성능 14B)</option>
+                          <option value="llama3.2:3b">llama3.2:3b (경량)</option>
+                          <option value="custom">-- 사용자 직접 입력 --</option>
                         </select>
                       </div>
+
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input
+                          type="text"
+                          value={ollamaModel}
+                          onChange={(e) => setOllamaModel(e.target.value)}
+                          placeholder="설치한 Ollama 모델명 입력 (예: qwen2.5:7b)"
+                          style={{
+                            flex: 1,
+                            background: 'rgba(255,255,255,0.06)',
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: '6px',
+                            padding: '6px 8px',
+                            color: 'var(--text-primary)',
+                            fontSize: '12px',
+                            outline: 'none'
+                          }}
+                        />
+                      </div>
                       <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'rgba(56,189,248,0.8)', lineHeight: 1.4 }}>
-                        * PC에 Ollama 앱이 실행 중이어야 동작합니다. (http://localhost:11434)
+                        * 터미널에서 [ollama run {ollamaModel}] 명령어로 먼저 받아두셔야 동작합니다.
                       </p>
                     </div>
                   )}
