@@ -175,7 +175,7 @@ function mergeResults(res1, res2, isTypoMode, partNumber = 2) {
 }
 
 async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
-    if (onProgress) onProgress(`로컬 LLM (${model}) 분석 진행 중... (Ollama http://localhost:11434)`);
+    if (onProgress) onProgress(`로컬 LLM (${model}) 정밀 분석 진행 중... (Ollama http://localhost:11434)`);
     try {
         const response = await fetch('http://localhost:11434/api/generate', {
             method: 'POST',
@@ -185,7 +185,10 @@ async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
                 prompt: prompt,
                 format: 'json', // Ollama 강제 JSON 포맷 지정
                 stream: false,
-                options: { temperature: 0.1 }
+                options: {
+                    temperature: 0.1,
+                    num_ctx: 16384 // 컨텍스트 창 16K 토큰으로 대폭 확장
+                }
             })
         });
 
@@ -573,19 +576,25 @@ ${ragContext ? `\n${ragContext}` : ''}
 `;
 
     if (llmProvider === 'ollama') {
-        const ollamaPrompt = `[시스템 지시사항]
-당신은 ISMP 공공 산출물 검증 및 문서 교정 전문 AI 에이전트입니다.
-입력된 산출물 텍스트를 전수 조사하여 반드시 아래 JSON 구조로만 결과를 생성하십시오. (추가 설명 금지)
+        const ollamaPrompt = `[시스템 지시사항 - 100% 한국어 검수]
+당신은 대한민국 최고 수준의 IT 공공 프로젝트 감리위원이자 전문 문서 검수 에이전트입니다.
+반드시 모든 분석 결과, 요약 소감, 사유, 교정 제안을 **100% 순수 한국어로만** 작성하십시오. (영어 문장 사용 절대 금지)
 
+[분석 지침]
+1. 입력된 기준 문서와 산출물을 정밀 대조하여 이행 여부(이행(O), 부분 이행(△), 미이행(X))를 지능적으로 판정하십시오.
+2. 명백한 띄어쓰기 결함, 오탈자, 불분명한 요구사항 반영 건에 대해 구체적인 원문과 올바른 한국어 수정안을 도출하십시오.
+3. '대통령표창', '위험관리', '소통 관리' 등 정상적인 IT/비즈니스 용어는 절대로 오류로 지적하지 마십시오.
+
+[응답 JSON 스키마 - 반드시 아래 구조로만 생성]
 {
   "score": 85,
-  "summary": "입력된 산출물에 대한 5대 품질 관점에서의 종합 분석 소감 및 검토 의견 (최소 3문장 이상 구체적 작성)",
+  "summary": "1. 5대 품질 관점에 따른 전체 문서 검수 종합 소감 (한국어 3문장 이상)\n2. 주요 강점 및 보완 권고 사항 요약",
   "typos": [
     {
-      "page": "위치/페이지",
-      "originalText": "오류/보완 대상 원문 문장",
-      "correction": "올바른 교정 및 보완 제안 문장",
-      "errorType": "[1. 표현 품질] 띄어쓰기 및 맞춤법 교정"
+      "page": "슬라이드 번호 또는 목차명",
+      "originalText": "띄어쓰기 또는 오탈자가 포함된 실제 원문 문장",
+      "correction": "올바르게 교정된 한국어 수정 문장",
+      "errorType": "[1. 표현 품질] 띄어쓰기 오류 교정"
     }
   ],
   "requirementMapping": [
@@ -594,17 +603,17 @@ ${ragContext ? `\n${ragContext}` : ''}
       "category": "기능",
       "type": "필수",
       "levelLabel": "개별문장",
-      "path": "본문",
-      "requirement": "주요 요구사항 또는 핵심 명세",
-      "artifactSection": "산출물 관련 위치",
-      "artifactContent": "반영 내역",
+      "path": "기준문서 본문",
+      "requirement": "요구사항 원문 명세",
+      "artifactSection": "산출물 대응 위치",
+      "artifactContent": "산출물에 반영된 구체적 설계/구현 내역",
       "status": "이행(O)",
       "gap": null
     }
   ]
 }
 
-[분석 대상 데이터]
+[검수할 입력 데이터]
 ${userInput}
 `;
         return await analyze_with_ollama(ollamaPrompt, ollamaModel, onProgress);
