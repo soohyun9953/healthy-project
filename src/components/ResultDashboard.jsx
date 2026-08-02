@@ -231,14 +231,55 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                             </button>
                         </div>
                     </div>
-                    <p style={{ 
-                        margin: 0, lineHeight: '1.6', 
-                        color: data.summary && (data.summary.includes('실패') || data.summary.includes('소진')) ? 'var(--danger-color)' : 'var(--text-primary)', 
-                        fontSize: '15px',
-                        fontWeight: data.summary && (data.summary.includes('실패') || data.summary.includes('소진')) ? 500 : 400
-                    }}>
-                        {data.summary}
-                    </p>
+                    {(() => {
+                        const is_error = data.summary && (data.summary.includes('실패') || data.summary.includes('소진') || data.summary.includes('오류'));
+                        if (is_error) {
+                            // 첫 줄(요약)과 [시도별 실패 원인] 세부 내용 분리
+                            const parts = data.summary.split('\n\n');
+                            const main_msg = parts[0] || data.summary;
+                            const detail_lines = parts.slice(1).join('\n\n');
+                            return (
+                                <div>
+                                    <p style={{ margin: '0 0 10px', lineHeight: '1.7', color: 'var(--danger-color)', fontSize: '14px', fontWeight: 600 }}>
+                                        {main_msg}
+                                    </p>
+                                    {detail_lines && (
+                                        <div style={{
+                                            background: 'rgba(239,68,68,0.06)',
+                                            border: '1px solid rgba(239,68,68,0.25)',
+                                            borderRadius: '8px',
+                                            padding: '12px 14px',
+                                        }}>
+                                            <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: 'rgba(239,68,68,0.8)', letterSpacing: '0.05em' }}>
+                                                ▼ 시도별 실패 원인 상세
+                                            </p>
+                                            <pre style={{
+                                                margin: 0,
+                                                fontSize: '11px',
+                                                lineHeight: '1.8',
+                                                color: 'var(--text-secondary)',
+                                                whiteSpace: 'pre-wrap',
+                                                wordBreak: 'break-all',
+                                                fontFamily: 'monospace',
+                                            }}>
+                                                {detail_lines}
+                                            </pre>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        }
+                        return (
+                            <p style={{
+                                margin: 0, lineHeight: '1.6',
+                                color: 'var(--text-primary)',
+                                fontSize: '15px', fontWeight: 400,
+                                whiteSpace: 'pre-wrap'
+                            }}>
+                                {data.summary}
+                            </p>
+                        );
+                    })()}
                 </div>
             </section>
 
