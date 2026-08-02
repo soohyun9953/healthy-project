@@ -667,22 +667,23 @@ function App() {
                           }}
                           style={{
                             flex: 1,
-                            background: 'rgba(255,255,255,0.06)',
-                            border: '1px solid var(--glass-border)',
+                            background: '#1e293b',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
                             borderRadius: '6px',
                             padding: '6px 8px',
-                            color: 'var(--text-primary)',
+                            color: '#f8fafc',
                             fontSize: '12px',
-                            outline: 'none'
+                            outline: 'none',
+                            cursor: 'pointer'
                           }}
                         >
-                          <option value="qwen2.5:7b">qwen2.5:7b (★ 강력 추천: 7B 고성능)</option>
-                          <option value="qwen2.5:3b">qwen2.5:3b (경량 3B)</option>
-                          <option value="llama3.1:8b">llama3.1:8b (Meta 8B)</option>
-                          <option value="gemma2:9b">gemma2:9b (Google 9B)</option>
-                          <option value="qwen2.5:14b">qwen2.5:14b (초고성능 14B)</option>
-                          <option value="llama3.2:3b">llama3.2:3b (경량)</option>
-                          <option value="custom">-- 사용자 직접 입력 --</option>
+                          <option value="qwen2.5:7b" style={{ background: '#0f172a', color: '#f8fafc' }}>qwen2.5:7b (★ 강력 추천: 7B 고성능)</option>
+                          <option value="qwen2.5:3b" style={{ background: '#0f172a', color: '#f8fafc' }}>qwen2.5:3b (경량 3B)</option>
+                          <option value="llama3.1:8b" style={{ background: '#0f172a', color: '#f8fafc' }}>llama3.1:8b (Meta 8B)</option>
+                          <option value="gemma2:9b" style={{ background: '#0f172a', color: '#f8fafc' }}>gemma2:9b (Google 9B)</option>
+                          <option value="qwen2.5:14b" style={{ background: '#0f172a', color: '#f8fafc' }}>qwen2.5:14b (초고성능 14B)</option>
+                          <option value="llama3.2:3b" style={{ background: '#0f172a', color: '#f8fafc' }}>llama3.2:3b (경량)</option>
+                          <option value="custom" style={{ background: '#0f172a', color: '#f8fafc' }}>-- 사용자 직접 입력 --</option>
                         </select>
                       </div>
 
