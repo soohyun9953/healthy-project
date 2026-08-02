@@ -375,10 +375,13 @@ ${ragContext ? `\n${ragContext}` : ''}
 
         const fetchWithRetry = async (maxModelRetries = FALLBACK_MODELS.length) => {
             let modelRetries = 0;
+            const error_log = []; // 각 시도별 실패 원인 수집
             
             while (modelRetries < maxModelRetries) {
                 const activeKey = keys[currentKeyIndex];
+                const keyLabel = `키${currentKeyIndex + 1}(${activeKey.substring(0, 8)}...)`;
                 const modelId = FALLBACK_MODELS[currentModelIndex];
+                const modelLabel = modelId.split('/').pop();
                 const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent?key=${activeKey}`;
                 
                 const fetchOptions = {
@@ -392,13 +395,15 @@ ${ragContext ? `\n${ragContext}` : ''}
 
                 if (onProgress) {
                     const keyInfo = keys.length > 1 ? ` (키 ${currentKeyIndex + 1}/${keys.length} 사용 중)` : '';
-                    onProgress(`${modelId.split('/').pop()} 모델로 분석 요청 중...${keyInfo}`);
+                    onProgress(`${modelLabel} 모델로 분석 요청 중...${keyInfo}`);
                 }
 
                 let response;
                 try {
                     response = await fetch_with_timeout(fetchUrl, { ...fetchOptions, timeout: 25000 });
                 } catch (fetchErr) {
+                    const reason = fetchErr.name === 'AbortError' ? '25초 타임아웃 초과' : `네트워크 오류(${fetchErr.message})`;
+                    error_log.push(`[${modelLabel} / ${keyLabel}] ${reason}`);
                     console.warn(`Fetch failed or timed out for ${modelId}:`, fetchErr);
                     if (keys.length > 1 && (currentKeyIndex + 1) < keys.length) {
                         currentKeyIndex++;
@@ -411,7 +416,7 @@ ${ragContext ? `\n${ragContext}` : ''}
                         await sleep_delay(5000);
                         continue;
                     }
-                    throw new Error("네트워크 타임아웃 또는 연결 지연이 반복되어 분석을 완료하지 못했습니다.");
+                    throw new Error(`네트워크 타임아웃 또는 연결 지연이 반복되어 분석을 완료하지 못했습니다.\n\n[시도 기록]\n${error_log.join('\n')}`);
                 }
                 
                 if (response.ok) {
@@ -421,11 +426,22 @@ ${ragContext ? `\n${ragContext}` : ''}
 
                 const errData = await response.json().catch(() => ({}));
                 const errMsg = errData.error?.message || response.statusText || '';
-                const isModelUnavailable = response.status === 404
-                    || response.status === 400
+                const httpStatus = response.status;
+                const isModelUnavailable = httpStatus === 404
+                    || httpStatus === 400
                     || errMsg.toLowerCase().includes('not found')
                     || errMsg.toLowerCase().includes('not supported')
                     || errMsg.toLowerCase().includes('deprecated');
+
+                // 상세 실패 원인 분류 및 기록
+                let fail_reason = `HTTP ${httpStatus}`;
+                if (httpStatus === 429) fail_reason = `429 Rate Limit (할당량 초과)`;
+                else if (httpStatus === 401) fail_reason = `401 인증 실패 (API 키 오류)`;
+                else if (httpStatus === 403) fail_reason = `403 접근 거부 (키 권한 없음)`;
+                else if (httpStatus === 404) fail_reason = `404 모델 없음 (지원 종료)`;
+                else if (httpStatus >= 500) fail_reason = `${httpStatus} 서버 오류`;
+                if (errMsg) fail_reason += ` - ${errMsg.substring(0, 100)}`;
+                error_log.push(`[${modelLabel} / ${keyLabel}] ${fail_reason}`);
 
                 if (keys.length > 1 && (currentKeyIndex + 1) < keys.length) {
                     currentKeyIndex++;
@@ -441,13 +457,14 @@ ${ragContext ? `\n${ragContext}` : ''}
                         continue;
                     }
                     
-                    throw new Error("모든 API 키와 모델의 사용 한도가 소진되었습니다.");
+                    throw new Error(`모든 API 키와 모델의 사용 한도가 소진되었습니다.\n\n[시도별 실패 원인]\n${error_log.join('\n')}`);
                 }
                 
-                throw new Error(errMsg || response.statusText);
+                throw new Error(`API 호출 실패: ${fail_reason}\n\n[시도 기록]\n${error_log.join('\n')}`);
             }
-            throw new Error("모든 모델을 시도했으나 응답을 받지 못했습니다.");
+            throw new Error(`모든 모델을 시도했으나 응답을 받지 못했습니다.\n\n[시도 기록]\n${error_log.join('\n')}`);
         };
+
 
         const response = await fetchWithRetry();
         const data = await response.json();
