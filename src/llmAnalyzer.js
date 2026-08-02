@@ -236,25 +236,82 @@ async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
                 parsed = { summary: text };
             }
 
-            // 3. 필드명 정규화 (Ollama가 다른 키 이름으로 생성한 경우 자동 복구)
+            // 3. 필드명 정규화
             const score = typeof parsed.score === 'number' && !isNaN(parsed.score) 
                 ? parsed.score 
                 : (typeof parsed.overallScore === 'number' ? parsed.overallScore : 85);
 
-            const summary = parsed.summary || parsed.overview || parsed.analysis || parsed.result || raw_text.substring(0, 1500) || "로컬 LLM 분석 완료";
+            // 재귀적 Deep Walker: 자율적 JSON 구조(예: {"슬라이드 26": ...})에서도 typos 전수 수집
+            const deep_extracted_typos = [];
+            const summary_bullets = [];
 
-            // typos (오탈자/결함 목록) 유연한 추출
+            const walk_json_tree = (obj, path = "1페이지") => {
+                if (!obj) return;
+                if (typeof obj === 'string') {
+                    if (obj.trim().length > 3) {
+                        deep_extracted_typos.push({
+                            page: path,
+                            originalText: obj.trim(),
+                            correction: "문맥 검토 및 구체적 명세 보완 권고",
+                            errorType: "[품질 점검] 내용 검토 권고"
+                        });
+                        summary_bullets.push(`- [${path}] ${obj.trim().substring(0, 80)}...`);
+                    }
+                    return;
+                }
+                if (Array.isArray(obj)) {
+                    obj.forEach((item, idx) => walk_json_tree(item, path));
+                    return;
+                }
+                if (typeof obj === 'object') {
+                    // 이미 오탈자/결함 표준 객체 형태인 경우
+                    if (obj.originalText || obj.original || obj.errorText || obj.before || obj.correction || obj.correct || obj.suggestion) {
+                        deep_extracted_typos.push({
+                            page: String(obj.page || obj.location || obj.section || path),
+                            originalText: String(obj.originalText || obj.original || obj.errorText || obj.before || path),
+                            correction: String(obj.correction || obj.correct || obj.after || obj.suggestion || '보완 권고'),
+                            errorType: String(obj.errorType || obj.type || obj.reason || obj.category || '[표현 품질] 교정 권고')
+                        });
+                        return;
+                    }
+                    // 일반 키-값 객체 (예: {"슬라이드 26": { ... }})
+                    for (const [key, value] of Object.entries(obj)) {
+                        if (['score', 'summary', 'overview'].includes(key)) continue;
+                        const next_path = (path === "1페이지" || !path) ? key : `${path} > ${key}`;
+                        walk_json_tree(value, next_path);
+                    }
+                }
+            };
+
+            walk_json_tree(parsed);
+
+            // summary 정교화: JSON 객체가 요약에 찍히지 않도록 가공
+            let summary = "";
+            if (typeof parsed.summary === 'string' && !parsed.summary.trim().startsWith('{')) {
+                summary = parsed.summary;
+            } else if (parsed.overview || parsed.analysis) {
+                summary = String(parsed.overview || parsed.analysis);
+            } else if (summary_bullets.length > 0) {
+                summary = `[로컬 LLM 분석 요약 (총 ${deep_extracted_typos.length}건 도출)]\n${summary_bullets.slice(0, 10).join('\n')}`;
+            } else {
+                summary = "로컬 LLM 분석 완료 (세부 항목을 확인하십시오.)";
+            }
+
+            // typos 목록 정밀 병합
             let raw_typos = parsed.typos || parsed.typo_list || parsed.corrections || parsed.errors || parsed.issues || parsed.items || [];
             if (!Array.isArray(raw_typos) && typeof raw_typos === 'object') {
                 raw_typos = Object.values(raw_typos);
             }
             
-            const typos = (Array.isArray(raw_typos) ? raw_typos : []).map(t => ({
+            const direct_typos = (Array.isArray(raw_typos) ? raw_typos : []).map(t => ({
                 page: String(t.page || t.location || t.section || '1페이지'),
                 originalText: String(t.originalText || t.original || t.errorText || t.before || ''),
                 correction: String(t.correction || t.correct || t.after || t.suggestion || ''),
                 errorType: String(t.errorType || t.type || t.reason || t.category || '[표현 품질] 오탈자 및 교정')
             })).filter(t => t.originalText || t.correction);
+
+            // 직접 수집된 typos와 Deep Walker 수집 typos 병합
+            const final_typos = direct_typos.length > 0 ? direct_typos : deep_extracted_typos;
 
             // requirementMapping (요구사항 매핑) 유연한 추출
             let raw_reqs = parsed.requirementMapping || parsed.rtm || parsed.requirements || parsed.mapping || [];
@@ -299,7 +356,7 @@ async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
                 requirementMapping,
                 rtm,
                 omissions,
-                typos
+                typos: final_typos
             };
         };
 

@@ -123,7 +123,7 @@ async function exportToExcel(data, isTypoMode = false) {
     }
 
     // ── 시트4: 문서 품질(오탈자 등) 점검 ──
-    if (isTypoMode || (data.typos && data.typos.length > 0)) {
+    if (isTypoMode || (data.typos && data.typos.length > 0) || data.summary) {
         const typoHeaders = [
             { header: '순번', key: '순번', width: 6 },
             { header: '페이지/위치', key: '위치', width: 25 },
@@ -131,12 +131,24 @@ async function exportToExcel(data, isTypoMode = false) {
             { header: '수정 제안 문장', key: '수정', width: 40 },
             { header: '오류 유형/사유', key: '사유', width: 60 }
         ];
-        const typoRows = (data.typos || []).map((item, idx) => ({
+
+        let sourceTypos = (data.typos && data.typos.length > 0) ? data.typos : [];
+        if (sourceTypos.length === 0 && data.summary) {
+            const lines = String(data.summary).split('\n').map(l => l.trim()).filter(l => l.length > 5);
+            sourceTypos = lines.map((line, idx) => ({
+                page: `분석 항목 ${idx + 1}`,
+                originalText: line,
+                correction: '문맥 검토 및 구체적 명세 보완 권고',
+                errorType: '[품질 점검] 내용 검토 권고'
+            }));
+        }
+
+        const typoRows = sourceTypos.map((item, idx) => ({
             '순번': idx + 1,
-            '위치': String(item.page || item.location || item.type || ''),
+            '위치': String(item.page || item.location || item.type || '1페이지'),
             '원문': String(item.originalText || item.errorText || ''),
-            '수정': String(item.correction || ''),
-            '사유': String(item.errorType || item.reason || item.context || ''),
+            '수정': String(item.correction || '보완 권고'),
+            '사유': String(item.errorType || item.reason || item.context || '[표현 품질] 교정 권고'),
         }));
         addSheet('교정교열_결과', typoHeaders, typoRows);
     }
