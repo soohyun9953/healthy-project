@@ -65,7 +65,7 @@ function DocumentValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen
         setAnalysisStage(0);
         setRetryStatus(null);
     }
-  }, [apiKey]);
+  }, [apiKey, llmProvider, ollamaModel]);
 
   const handleRetry = () => {
     if (lastParams.current) {

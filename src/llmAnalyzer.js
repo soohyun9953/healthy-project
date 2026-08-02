@@ -232,7 +232,7 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
                         await sleep_delay(3000);
                     }
                     
-                    const res = await analyzeDocumentsWithLLM(guidelineText, chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
+                    const res = await analyzeDocumentsWithLLM(guidelineText, chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, ollamaModel);
                     results.push(res);
                 }
                 if (onProgress) onProgress("분석 결과 병합 중...");
@@ -252,7 +252,7 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
                         await sleep_delay(3000);
                     }
                     
-                    const res = await analyzeDocumentsWithLLM(chunks[i], artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext);
+                    const res = await analyzeDocumentsWithLLM(chunks[i], artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, ollamaModel);
                     results.push(res);
                 }
                 if (onProgress) onProgress("분석 결과 병합 중...");

@@ -53,7 +53,7 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:
         setAnalysisStage(0);
         setRetryStatus(null);
     }
-  }, [apiKey]);
+  }, [apiKey, llmProvider, ollamaModel]);
 
   const handleRetry = () => {
     if (lastParams.current) {
