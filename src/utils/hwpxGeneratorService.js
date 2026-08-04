@@ -3,14 +3,9 @@ import { processFile } from './fileExtractor.js';
 import { FALLBACK_MODELS } from './geminiModels.js';
 
 /**
- * Gemini LLM API를 호출하여 HWPX 템플릿의 문단을 소스 문서들의 내용에 맞게 치환할 텍스트 맵을 생성합니다.
+ * 지정된 LLM API 엔진(Gemini, OmniRoute)을 호출하여 HWPX 템플릿의 문단을 소스 문서들의 내용에 맞게 치환할 텍스트 맵을 생성합니다.
  */
-export async function generateHwpxReportWithLLM(paragraphs, materialsText, apiKey, instruction = '', selectedModel = 'auto', onProgress) {
-    const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-    if (keys.length === 0) {
-        throw new Error("유효한 API 키가 제공되지 않았습니다.");
-    }
-
+export async function generateHwpxReportWithLLM(paragraphs, materialsText, apiKey, instruction = '', selectedModel = 'auto', llmProvider = 'gemini', omniRouteModel = 'auto', onProgress) {
     if (onProgress) onProgress("AI 보고서 생성 프롬프트 조립 중...");
 
     const systemPrompt = `[시스템 역할]
@@ -64,22 +59,54 @@ ${paragraphsJson}
     let currentKeyIndex = 0;
 
     const fetchWithRetry = async (maxModelRetries = FALLBACK_MODELS.length) => {
-        const modelToUse = FALLBACK_MODELS[currentModelIndex] || FALLBACK_MODELS[0];
-        const keyToUse = keys[currentKeyIndex];
-
-        if (onProgress) onProgress(`AI 엔진 호출 중... (모델: ${modelToUse.split('/').pop()})`);
+        let apiURL = '';
+        let headers = { 'Content-Type': 'application/json' };
+        let reqBody = {};
+        
+        if (llmProvider === 'omniroute') {
+            // OmniRoute 로컬 프록시 호출
+            const modelName = omniRouteModel === 'auto' ? 'auto' : omniRouteModel;
+            apiURL = 'http://localhost:20128/v1/chat/completions';
+            if (onProgress) onProgress(`OmniRoute 호출 중... (모델: ${modelName})`);
+            
+            const omniKey = localStorage.getItem('omniroute_api_key') || 'omniroute';
+            headers['Authorization'] = `Bearer ${omniKey}`;
+            
+            reqBody = {
+                model: modelName,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userInput }
+                ],
+                temperature: 0.2,
+                response_format: { type: "json_object" }
+            };
+        } else {
+            // 구글 Gemini API 직접 호출
+            const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+            if (keys.length === 0) {
+                throw new Error("유효한 Gemini API 키가 제공되지 않았습니다. [설정] 메뉴에서 API 키를 등록해 주세요.");
+            }
+            
+            const modelToUse = FALLBACK_MODELS[currentModelIndex] || FALLBACK_MODELS[0];
+            const keyToUse = keys[currentKeyIndex];
+            
+            if (onProgress) onProgress(`Gemini API 호출 중... (모델: ${modelToUse.split('/').pop()})`);
+            
+            apiURL = `https://generativelanguage.googleapis.com/v1beta/${modelToUse}:generateContent?key=${keyToUse}`;
+            reqBody = {
+                contents: [{ parts: [{ text: userInput }] }],
+                generationConfig: {
+                    responseMimeType: "application/json"
+                }
+            };
+        }
 
         try {
-            const apiURL = `https://generativelanguage.googleapis.com/v1beta/${modelToUse}:generateContent?key=${keyToUse}`;
             const response = await fetch(apiURL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: userInput }] }],
-                    generationConfig: {
-                        responseMimeType: "application/json"
-                    }
-                })
+                headers,
+                body: JSON.stringify(reqBody)
             });
 
             if (!response.ok) {
@@ -88,50 +115,49 @@ ${paragraphsJson}
             }
 
             const resJson = await response.json();
-            const textResponse = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!textResponse) throw new Error("API 응답 구조에 유효한 텍스트가 없습니다.");
+            let textResponse = '';
             
-            // 사용량 기록
-            try {
-                const modelShortName = modelToUse.split('/').pop();
-                const usage = JSON.parse(localStorage.getItem('gemini_model_usage') || '{}');
-                usage[modelShortName] = (usage[modelShortName] || 0) + 1;
-                localStorage.setItem('gemini_model_usage', JSON.stringify(usage));
-                window.dispatchEvent(new CustomEvent('gemini_usage_updated'));
-            } catch (e) {
-                console.error("Usage logging failed:", e);
+            if (llmProvider === 'omniroute') {
+                textResponse = resJson.choices?.[0]?.message?.content;
+            } else {
+                textResponse = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
             }
+            
+            if (!textResponse) throw new Error("API 응답에 텍스트 데이터가 포함되어 있지 않습니다.");
 
             // JSON 파싱
             let parsedMap;
             try {
-                // 혹시 모를 마크다운 백틱 정제
                 const cleanText = textResponse.replace(/^```json\s*|```\s*$/g, '').trim();
                 parsedMap = JSON.parse(cleanText);
             } catch (jsonErr) {
-                console.error("JSON parse error on LLM response:", textResponse);
-                throw new Error("AI가 유효한 JSON 형식의 치환 맵을 생성하지 못했습니다. 다시 시도해 주세요.");
+                console.error("JSON 파싱 에러:", textResponse);
+                throw new Error("AI가 보고서 작성에 필요한 유효한 JSON 형식의 데이터 생성에 실패했습니다.");
             }
 
             return parsedMap;
 
         } catch (error) {
-            console.warn(`모델 ${modelToUse} 호출 실패:`, error.message);
+            console.warn(`호출 실패:`, error.message);
             
-            // 키 또는 모델 순환 교체 시도
-            if (keys.length > 1 && currentKeyIndex < keys.length - 1) {
-                currentKeyIndex++;
-                if (onProgress) onProgress(`보조 API 키로 전환하여 재시도 중...`);
-                return fetchWithRetry(maxModelRetries);
-            } else {
-                currentKeyIndex = 0; // 키 초기화
-                if (maxModelRetries > 1) {
-                    currentModelIndex = (currentModelIndex + 1) % FALLBACK_MODELS.length;
-                    if (onProgress) onProgress(`대체 AI 모델로 전환하여 재시도 중...`);
-                    return fetchWithRetry(maxModelRetries - 1);
+            if (llmProvider === 'gemini') {
+                const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+                if (keys.length > 1 && currentKeyIndex < keys.length - 1) {
+                    currentKeyIndex++;
+                    if (onProgress) onProgress(`보조 API 키로 전환하여 재시도 중...`);
+                    return fetchWithRetry(maxModelRetries);
                 } else {
-                    throw new Error(`AI 호출 및 폴백에 최종 실패했습니다: ${error.message}`);
+                    currentKeyIndex = 0;
+                    if (maxModelRetries > 1) {
+                        currentModelIndex = (currentModelIndex + 1) % FALLBACK_MODELS.length;
+                        if (onProgress) onProgress(`대체 AI 모델로 전환하여 재시도 중...`);
+                        return fetchWithRetry(maxModelRetries - 1);
+                    } else {
+                        throw new Error(`AI 호출 및 폴백에 최종 실패했습니다: ${error.message}`);
+                    }
                 }
+            } else {
+                throw error;
             }
         }
     };
@@ -142,187 +168,183 @@ ${paragraphsJson}
 /**
  * HWPX 샘플 템플릿과 참고 자료를 활용하여 완성된 HWPX 보고서를 조립합니다.
  */
-export async function generateReportFromTemplate(hwpxTemplateFile, dataFiles, apiKey, instruction = '', onProgress) {
+export async function generateReportFromTemplate(hwpxTemplateFile, dataFiles, apiKey, instruction = '', llmProvider = 'gemini', omniRouteModel = 'auto', onProgress) {
     if (!hwpxTemplateFile) throw new Error('HWPX 템플릿 양식 파일이 없습니다.');
     if (!dataFiles || dataFiles.length === 0) throw new Error('보고서에 반영할 참고 자료 파일이 없습니다.');
 
     // 1. 참고 자료 파일들로부터 텍스트 일괄 추출
     if (onProgress) onProgress("참고 자료 파일(PPT, HWPX, MD 등) 텍스트 추출 중...");
-    const extractedTexts = [];
+    let materialsText = "";
     for (let i = 0; i < dataFiles.length; i++) {
         const file = dataFiles[i];
-        if (onProgress) onProgress(`자료 파일 읽는 중 (${i+1}/${dataFiles.length}): ${file.name}`);
-        try {
-            const fileData = await processFile(file);
-            extractedTexts.push(`[자료 파일명: ${file.name}]\n${fileData.text}`);
-        } catch (fileErr) {
-            console.warn(`${file.name} 파일 텍스트 추출 실패:`, fileErr);
-            extractedTexts.push(`[자료 파일명: ${file.name} (텍스트 추출 에러: ${fileErr.message})]`);
-        }
+        if (onProgress) onProgress(`자료 파일 분석 중 [${i + 1}/${dataFiles.length}]: ${file.name}`);
+        const text = await processFile(file);
+        materialsText += `\n\n=== 파일명: ${file.name} ===\n${text}`;
     }
-    const mergedMaterialsText = extractedTexts.join('\n\n=========================================\n\n');
 
-    // 2. HWPX 템플릿 압축 풀기 및 section0.xml 파싱
-    if (onProgress) onProgress("HWPX 양식 템플릿 로딩 및 XML 구조 분석 중...");
-    const templateBuffer = await hwpxTemplateFile.arrayBuffer();
-    const templateZip = new JSZip();
-    await templateZip.loadAsync(templateBuffer);
-
-    // HWPX 본문 XML 파일 찾기 (기본 section0.xml)
-    const section0Path = 'Contents/section0.xml';
-    if (!templateZip.files[section0Path]) {
-        throw new Error('HWPX 템플릿 내부에서 Contents/section0.xml을 찾을 수 없습니다.');
-    }
+    // 2. HWPX 템플릿 로딩 및 압축 해제
+    if (onProgress) onProgress("HWPX 템플릿 구조 로딩 중...");
+    const zip = await JSZip.loadAsync(hwpxTemplateFile);
     
-    const sectionXmlStr = await templateZip.files[section0Path].async('text');
+    // 3. section0.xml 파싱하여 치환 가능한 본문 문단 추출
+    const sectionPath = 'HPB/Content/section0.xml';
+    const sectionXmlText = await zip.file(sectionPath).async('text');
+    
     const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(sectionXmlStr, 'application/xml');
+    const xmlDoc = parser.parseFromString(sectionXmlText, 'text/xml');
     
-    if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
-        throw new Error('HWPX section0.xml 구조 해석 오류가 발생했습니다.');
-    }
-
-    // 3. XML에서 모든 문단 (<hp:p>) 구조 추출 및 고유 ID 부여
-    const pNodes = xmlDoc.getElementsByTagName('hp:p');
-    if (pNodes.length === 0) {
-        throw new Error('HWPX 템플릿 내부에 문단(<hp:p>)이 존재하지 않는 비정상적인 구조입니다.');
-    }
-
-    const templateParagraphs = [];
-    const nodeMap = new Map(); // ID -> XML Node 매핑
-
-    for (let i = 0; i < pNodes.length; i++) {
-        const pNode = pNodes[i];
+    // 치환을 진행할 후보 문단들 수집 (ID 바인딩)
+    const pElements = xmlDoc.getElementsByTagName('hp:p');
+    const paragraphsToTranslate = [];
+    
+    for (let i = 0; i < pElements.length; i++) {
+        const pEl = pElements[i];
         
-        // 문단 내 모든 텍스트(<hp:t>) 수집
-        const tNodes = pNode.getElementsByTagName('hp:t');
-        let textContent = '';
-        for (let j = 0; j < tNodes.length; j++) {
-            textContent += tNodes[j].textContent || '';
+        // hp:t 요소들을 모아서 문단 전체 텍스트 수집
+        const tElements = pEl.getElementsByTagName('hp:t');
+        let fullText = "";
+        for (let j = 0; j < tElements.length; j++) {
+            fullText += tElements[j].textContent || "";
         }
         
-        const trimmed = textContent.trim();
-        // 텍스트가 존재하는 문단 위주로 AI 분석에 전송 (메타 정보 유실 차단)
-        if (trimmed.length > 0) {
-            const pId = `para_${i}`;
-            templateParagraphs.push({
-                id: pId,
-                text: trimmed
+        const cleanText = fullText.trim();
+        // 치환 후보 판별: {{내용}} 마크가 포함되어 있거나, 빈 공간 혹은 특정 치환 지시어 감지
+        if (cleanText.includes('{{') && cleanText.includes('}}') || 
+            cleanText.includes('[작성') || 
+            cleanText.includes('[여기에') ||
+            cleanText === '작성란' ||
+            cleanText === '내용 작성') {
+            
+            // 문단 요소에 임시 ID 부착
+            const tempId = `para_${i}`;
+            pEl.setAttribute('tempId', tempId);
+            
+            paragraphsToTranslate.push({
+                id: tempId,
+                text: cleanText
             });
-            nodeMap.set(pId, pNode);
         }
     }
 
-    if (templateParagraphs.length === 0) {
-        throw new Error('HWPX 템플릿에 치환할 본문 텍스트가 존재하지 않습니다.');
+    if (paragraphsToTranslate.length === 0) {
+        throw new Error("템플릿 문서에서 치환할 대상 마커({{내용}} 또는 [작성란] 등)를 찾을 수 없습니다.");
     }
 
-    // 4. Gemini API를 통해 치환 맵 받아오기
-    if (onProgress) onProgress("AI 보고서 내용 생성 요청 중...");
-    const replacementMap = await generateHwpxReportWithLLM(
-        templateParagraphs,
-        mergedMaterialsText,
+    // 4. LLM 호출하여 치환 텍스트 맵 획득
+    if (onProgress) onProgress(`AI 치환 맵 분석 및 보고서 작성 진행 중... (총 ${paragraphsToTranslate.length}개 구획)`);
+    const parsedMap = await generateHwpxReportWithLLM(
+        paragraphsToTranslate,
+        materialsText,
         apiKey,
         instruction,
         'auto',
+        llmProvider,
+        omniRouteModel,
         onProgress
     );
 
-    // 5. 생성된 치환 맵을 기반으로 HWPX XML 수정
-    if (onProgress) onProgress("생성된 내용을 한글 보고서 구조에 이식 중...");
-    let replaceCount = 0;
-
-    for (const [pId, replacementText] of Object.entries(replacementMap)) {
-        const originalNode = nodeMap.get(pId);
-        if (!originalNode || !replacementText) continue;
-
-        // 개행(\n)이 포함되어 있다면 복수 문단으로 분할 복제 확장
-        const textLines = replacementText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        if (textLines.length === 0) continue;
-
-        let lastInsertedNode = originalNode;
-
-        for (let lIdx = 0; lIdx < textLines.length; lIdx++) {
-            const lineText = textLines[lIdx];
-            let targetNode;
-
-            if (lIdx === 0) {
-                // 첫 단락은 기존 노드를 그대로 재활용하여 덮어쓰기
-                targetNode = originalNode;
-            } else {
-                // 두 번째 단락부터는 기존 문단 노드를 복제(Clone)하여 스타일에 어긋나지 않게 추가
-                targetNode = originalNode.cloneNode(true);
-                // 복제본의 중복 고유 ID 속성 제거 (한글 프로그램 '파일 손상' 에러 방지)
-                removeAllIdAttributes(targetNode);
-                // 복제된 노드를 이전 노드 바로 다음에 삽입
-                originalNode.parentNode.insertBefore(targetNode, lastInsertedNode.nextSibling);
-                lastInsertedNode = targetNode;
-            }
-
-            // 문단 내부의 모든 <hp:t>를 정리하고 새 본문 텍스트 적용
-            const tNodes = targetNode.getElementsByTagName('hp:t');
-            if (tNodes.length > 0) {
-                // 첫 번째 <hp:t> 에 텍스트를 기입하고, 스타일 깨짐 방지를 위해 나머지 <hp:t> 들은 빈 값 처리
-                tNodes[0].textContent = lineText;
-                for (let tIdx = 1; tIdx < tNodes.length; tIdx++) {
-                    tNodes[tIdx].textContent = '';
+    // 5. XML 치환 작업 진행
+    if (onProgress) onProgress("보고서 본문 조립 및 XML 결합 진행 중...");
+    
+    for (let i = 0; i < pElements.length; i++) {
+        const pEl = pElements[i];
+        const tempId = pEl.getAttribute('tempId');
+        if (tempId && parsedMap[tempId]) {
+            const replacementText = parsedMap[tempId];
+            
+            // 줄바꿈이 있는 경우 문단 스타일 복제 기법 적용
+            if (replacementText.includes('\n')) {
+                const lines = replacementText.split('\n');
+                let lastInsertedNode = pEl;
+                
+                // 첫 줄은 원본 문단 내에 치환 기입
+                replaceParagraphText(pEl, lines[0]);
+                
+                // 나머지 줄들은 원본의 스타일 정보(paraPr 등)를 고스란히 복제하여 새 문단 생성 후 추가
+                for (let k = 1; k < lines.length; k++) {
+                    const clonedP = pEl.cloneNode(true);
+                    
+                    // 복제된 문단 구조의 모든 ID 속성을 완전하게 소거하여 한글 프로그램 폭사/오류 방지
+                    clonedP.removeAttribute('id');
+                    clonedP.removeAttribute('tempId');
+                    const allChildNodes = clonedP.getElementsByTagName('*');
+                    for (let n = 0; n < allChildNodes.length; n++) {
+                        allChildNodes[n].removeAttribute('id');
+                    }
+                    
+                    replaceParagraphText(clonedP, lines[k]);
+                    
+                    // XML 상에서 이전 노드 바로 뒤에 삽입
+                    lastInsertedNode.parentNode.insertBefore(clonedP, lastInsertedNode.nextSibling);
+                    lastInsertedNode = clonedP;
                 }
             } else {
-                // 만약 <hp:t> 노드가 없다면 강제로 생성 (안전장치)
-                const runNode = targetNode.getElementsByTagName('hp:run')[0];
-                if (runNode) {
-                    const tElem = xmlDoc.createElement('hp:t');
-                    tElem.textContent = lineText;
-                    runNode.appendChild(tElem);
-                }
+                replaceParagraphText(pEl, replacementText);
             }
-            replaceCount++;
+            
+            // 임시 마킹 제거
+            pEl.removeAttribute('tempId');
         }
     }
 
-    if (onProgress) onProgress(`총 ${replaceCount}개 문단 구조 생성 및 이식 완료. 파일 빌드 중...`);
-
-    // 6. section0.xml을 직렬화하여 zip에 다시 담기
+    // 6. 변경된 XML을 다시 HWPX 아카이브에 기입
     const serializer = new XMLSerializer();
-    const updatedXmlStr = serializer.serializeToString(xmlDoc);
-    templateZip.file(section0Path, updatedXmlStr);
+    const newXmlText = serializer.serializeToString(xmlDoc);
+    zip.file(sectionPath, newXmlText);
 
-    // 디지털 서명 무결성 검증 우회: 본문 내용 치환으로 인한 '문서 손상/변조' 경고를 방지하기 위해 
-    // META-INF 디렉토리 및 하위 서명 파일들을 완전히 제거합니다.
-    Object.keys(templateZip.files).forEach(filePath => {
-        if (filePath.startsWith('META-INF/') || filePath === 'META-INF') {
-            templateZip.remove(filePath);
+    // 7. 한글 프로그램 디지털 서명 에러 방지를 위해 META-INF 폴더 일괄 제거
+    if (onProgress) onProgress("디지털 서명(META-INF) 우회 및 한글 깨짐 방지 처리 중...");
+    const filesToRemove = [];
+    zip.forEach((relativePath) => {
+        if (relativePath.startsWith('META-INF/')) {
+            filesToRemove.push(relativePath);
         }
     });
+    filesToRemove.forEach(path => zip.remove(path));
 
-    // HWPX 파일 압축 빌드
-    const finalBuffer = await templateZip.generateAsync({ type: 'blob' });
-    if (onProgress) onProgress("보고서 HWPX 파일 다운로드 준비 완료!");
+    // 8. 최종 압축하여 파일 다운로드용 블롭 생성
+    if (onProgress) onProgress("최종 HWPX 문서 패키징 중...");
+    const finalBlob = await zip.generateAsync({ type: 'blob', mimeType: 'application/hwpx' });
     
-    // 다운로드 결과를 트래킹하기 위해 치환 건수 메타데이터 주입
-    finalBuffer.fusedCount = replaceCount;
-    return finalBuffer;
+    if (onProgress) onProgress("보고서 생성 완결!");
+    return finalBlob;
 }
 
 /**
- * DOM 노드와 그 하위 자식들의 모든 'id' 속성을 제거하는 재귀 헬퍼 함수
+ * 하나의 문단 노드 내부의 텍스트 요소를 새로운 값으로 대체합니다.
  */
-function removeAllIdAttributes(node) {
-    if (!node || node.nodeType !== 1) return;
-    
-    // attributes 배열을 복사하여 순회하며 localName이 'id'인 속성 완전 제거
-    const attrs = Array.from(node.attributes);
-    for (let i = 0; i < attrs.length; i++) {
-        if (attrs[i].localName === 'id') {
-            node.removeAttributeNode(attrs[i]);
+function replaceParagraphText(pEl, newText) {
+    const rElements = pEl.getElementsByTagName('hp:run');
+    if (rElements.length > 0) {
+        // 첫 번째 hp:run의 첫 번째 hp:t에 모든 텍스트를 기입
+        const firstRun = rElements[0];
+        let tEl = firstRun.getElementsByTagName('hp:t')[0];
+        
+        if (!tEl) {
+            // hp:t가 없는 경우 새로 생성하여 주입
+            tEl = pEl.ownerDocument.createElementNS('http://www.hancom.co.kr/hwpml/2011/paragraph', 'hp:t');
+            firstRun.appendChild(tEl);
         }
-    }
-    
-    // 자식 엘리먼트들에 대해 재귀 호출
-    const children = node.children;
-    if (children) {
-        for (let i = 0; i < children.length; i++) {
-            removeAllIdAttributes(children[i]);
+        
+        tEl.textContent = newText;
+        
+        // 나머지 run 요소를 삭제하여 찌꺼기 텍스트가 노출되지 않도록 완전 정제
+        for (let i = rElements.length - 1; i > 0; i--) {
+            rElements[i].parentNode.removeChild(rElements[i]);
         }
+        
+        // 첫 번째 run 내부의 나머지 t 요소도 삭제
+        const tElementsInFirstRun = firstRun.getElementsByTagName('hp:t');
+        for (let j = tElementsInFirstRun.length - 1; j > 0; j--) {
+            tElementsInFirstRun[j].parentNode.removeChild(tElementsInFirstRun[j]);
+        }
+    } else {
+        // 문단 내에 아무런 run이 없는 안전한 구조인 경우 기본 구조 생성
+        const doc = pEl.ownerDocument;
+        const newRun = doc.createElementNS('http://www.hancom.co.kr/hwpml/2011/paragraph', 'hp:run');
+        const newT = doc.createElementNS('http://www.hancom.co.kr/hwpml/2011/paragraph', 'hp:t');
+        newT.textContent = newText;
+        newRun.appendChild(newT);
+        pEl.appendChild(newRun);
     }
 }

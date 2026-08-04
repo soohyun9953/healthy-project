@@ -25,16 +25,34 @@ export default function AiPptDesigner({ apiKey }) {
         if (!file) return;
         processFile(file);
     };
-
     const processFile = async (file) => {
-        if (!file.name.endsWith('.pptx')) {
-            setErrorMsg('지원하지 않는 파일 형식입니다. .pptx 파일만 업로드 가능합니다.');
+        const isPptx = file.name.endsWith('.pptx');
+        const isMd = file.name.endsWith('.md') || file.name.endsWith('.markdown');
+
+        if (!isPptx && !isMd) {
+            setErrorMsg('지원하지 않는 파일 형식입니다. .pptx 또는 .md 파일만 업로드 가능합니다.');
             return;
         }
+
         setInputFile(file);
         setErrorMsg('');
         setStatus('idle');
-        
+
+        if (isMd) {
+            try {
+                const text = await file.text();
+                setInputText(text);
+                setExtractedTexts([text]);
+                setSelectedSlideIndex(0);
+                setInputSlideCount(1);
+            } catch (err) {
+                console.error(err);
+                setErrorMsg('MD 파일에서 텍스트를 읽는 중 오류가 발생했습니다.');
+                setInputFile(null);
+            }
+            return;
+        }
+
         try {
             // Extract text from pptx using JSZip
             const arrayBuffer = await file.arrayBuffer();
@@ -361,7 +379,7 @@ export default function AiPptDesigner({ apiKey }) {
                                     <div style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '50%', border: '1px dashed var(--glass-border)' }}>
                                         <Upload size={24} color="var(--text-muted)" />
                                     </div>
-                                    <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px', fontWeight: 500 }}>여기에 텍스트를 붙여넣거나 PPTX 파일을 드래그하세요</p>
+                                    <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px', fontWeight: 500 }}>여기에 텍스트를 붙여넣거나 PPTX 또는 MD 파일을 드래그하세요</p>
                                     <button 
                                         onClick={(e) => { e.preventDefault(); fileInputRef.current?.click(); }}
                                         style={{ pointerEvents: 'auto', padding: '8px 16px', background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -419,7 +437,7 @@ export default function AiPptDesigner({ apiKey }) {
                                 />
                             </div>
                             
-                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".pptx" style={{ display: 'none' }} />
+                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".pptx,.md,.markdown" style={{ display: 'none' }} />
                             
                             {inputFile && (
                                 <div style={{ position: 'absolute', bottom: '16px', right: '16px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '8px 16px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', backdropFilter: 'blur(8px)' }}>

@@ -223,19 +223,14 @@ function App() {
   const [showKey, setShowKey] = useState(false); // API 키 보이기/숨기기 토글
   const [isLightMode, setIsLightMode] = useState(() => localStorage.getItem('theme_mode') === 'light');
 
-  // LLM 엔진 수동 선택 상태 (gemini | ollama | omniroute)
+  // LLM 엔진 수동 선택 상태 (gemini | omniroute)
   const [llmProvider, setLlmProvider] = useState(() => localStorage.getItem('llm_provider') || 'gemini');
-  const [ollamaModel, setOllamaModel] = useState(() => localStorage.getItem('ollama_model') || 'qwen2.5:3b');
   const [omniRouteModel, setOmniRouteModel] = useState(() => localStorage.getItem('omniroute_model') || 'auto');
   const [omniRouteApiKey, setOmniRouteApiKey] = useState(() => localStorage.getItem('omniroute_api_key') || '');
 
   useEffect(() => {
     localStorage.setItem('llm_provider', llmProvider);
   }, [llmProvider]);
-
-  useEffect(() => {
-    localStorage.setItem('ollama_model', ollamaModel);
-  }, [ollamaModel]);
 
   useEffect(() => {
     localStorage.setItem('omniroute_model', omniRouteModel);
@@ -662,19 +657,6 @@ function App() {
                         🔀 OmniRoute (268개 프로바이더 자동 라우팅)
                       </span>
                     </label>
-
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px' }}>
-                      <input 
-                        type="radio" 
-                        name="llmProvider" 
-                        value="ollama" 
-                        checked={llmProvider === 'ollama'} 
-                        onChange={() => setLlmProvider('ollama')}
-                      />
-                      <span style={{ color: llmProvider === 'ollama' ? '#38bdf8' : 'inherit', fontWeight: llmProvider === 'ollama' ? 600 : 400 }}>
-                        로컬 LLM (Ollama 오프라인)
-                      </span>
-                    </label>
                   </div>
 
                   {llmProvider === 'omniroute' && (
@@ -754,68 +736,13 @@ function App() {
                       />
 
                       <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'rgba(167,139,250,0.8)', lineHeight: 1.5 }}>
-                        * 터미널에서 <code style={{ background: 'rgba(167,139,250,0.15)', padding: '1px 5px', borderRadius: '4px' }}>omniroute</code> 명령어로 서버를 시작한 뒤 사용하세요.<br/>
-                        * 대시보드: <a href="http://localhost:20128/dashboard" target="_blank" rel="noopener" style={{ color: '#a78bfa' }}>localhost:20128/dashboard</a>
+                        * 바탕화면의 <code style={{ background: 'rgba(167,139,250,0.15)', padding: '1px 5px', borderRadius: '4px' }}>OmniRoute-Local-Gateway</code> 폴더 내 <code>start.bat</code> 파일을 기동해 주세요.<br/>
+                        * (현재 에이전트가 백그라운드로 자동 기동하여 즉시 사용 가능한 상태입니다.)
                       </p>
                     </div>
                   )}
 
-                  {llmProvider === 'ollama' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
-                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ollama 로컬 모델 선택 / 직접 입력:</label>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <select
-                          value={['qwen2.5:7b', 'qwen2.5:3b', 'llama3.1:8b', 'gemma2:9b', 'qwen2.5:14b', 'llama3.2:3b'].includes(ollamaModel) ? ollamaModel : 'custom'}
-                          onChange={(e) => {
-                            if (e.target.value !== 'custom') {
-                              setOllamaModel(e.target.value);
-                            }
-                          }}
-                          style={{
-                            flex: 1,
-                            background: '#1e293b',
-                            border: '1px solid rgba(255, 255, 255, 0.2)',
-                            borderRadius: '6px',
-                            padding: '6px 8px',
-                            color: '#f8fafc',
-                            fontSize: '12px',
-                            outline: 'none',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <option value="qwen2.5:7b" style={{ background: '#0f172a', color: '#f8fafc' }}>qwen2.5:7b (★ 강력 추천: 7B 고성능)</option>
-                          <option value="qwen2.5:3b" style={{ background: '#0f172a', color: '#f8fafc' }}>qwen2.5:3b (경량 3B)</option>
-                          <option value="llama3.1:8b" style={{ background: '#0f172a', color: '#f8fafc' }}>llama3.1:8b (Meta 8B)</option>
-                          <option value="gemma2:9b" style={{ background: '#0f172a', color: '#f8fafc' }}>gemma2:9b (Google 9B)</option>
-                          <option value="qwen2.5:14b" style={{ background: '#0f172a', color: '#f8fafc' }}>qwen2.5:14b (초고성능 14B)</option>
-                          <option value="llama3.2:3b" style={{ background: '#0f172a', color: '#f8fafc' }}>llama3.2:3b (경량)</option>
-                          <option value="custom" style={{ background: '#0f172a', color: '#f8fafc' }}>-- 사용자 직접 입력 --</option>
-                        </select>
-                      </div>
 
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <input
-                          type="text"
-                          value={ollamaModel}
-                          onChange={(e) => setOllamaModel(e.target.value)}
-                          placeholder="설치한 Ollama 모델명 입력 (예: qwen2.5:7b)"
-                          style={{
-                            flex: 1,
-                            background: 'rgba(255,255,255,0.06)',
-                            border: '1px solid var(--glass-border)',
-                            borderRadius: '6px',
-                            padding: '6px 8px',
-                            color: 'var(--text-primary)',
-                            fontSize: '12px',
-                            outline: 'none'
-                          }}
-                        />
-                      </div>
-                      <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'rgba(56,189,248,0.8)', lineHeight: 1.4 }}>
-                        * 터미널에서 [ollama run {ollamaModel}] 명령어로 먼저 받아두셔야 동작합니다.
-                      </p>
-                    </div>
-                  )}
                 </div>
 
 
@@ -921,19 +848,19 @@ function App() {
             </div>
           )}
 
-          {activeTab === 'main' && <DocumentValidator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} omniRouteModel={omniRouteModel} />}
-          {activeTab === 'hwpx-report' && <HwpxGenerator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} omniRouteModel={omniRouteModel} />}
+          {activeTab === 'main' && <DocumentValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
+          {activeTab === 'hwpx-report' && <HwpxGenerator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
           {activeTab === 'ismpda' && <IsmpDaDashboard />}
-          {activeTab === 'typo' && <TypoValidator apiKey={apiKey} llmProvider={llmProvider} ollamaModel={ollamaModel} omniRouteModel={omniRouteModel} />}
+          {activeTab === 'typo' && <TypoValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
           {activeTab === 'law' && <LawConsultant apiKey={apiKey} isMcpMode={false} />}
           {activeTab === 'law-mcp' && <LawConsultant apiKey={apiKey} isMcpMode={true} />}
           { activeTab === 'erd' && <ErdGenerator apiKey={apiKey} /> }
           { activeTab === 'aippt' && <AiPptDesigner apiKey={apiKey} /> }
           { activeTab === 'ppt' && <PptGenerator apiKey={apiKey} /> }
-          { activeTab === 'ppt-verify' && <PptValidator apiKey={apiKey} /> }
+          { activeTab === 'ppt-verify' && <PptValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
           {activeTab === 'meeting' && <MeetingMinutes apiKey={apiKey} />}
           {activeTab === 'library' && <ReferenceLibrary />}
-          {activeTab === 'rag' && <RagKnowledgeBase apiKey={apiKey} />}
+          {activeTab === 'rag' && <RagKnowledgeBase apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
         </div>
       </main>
 

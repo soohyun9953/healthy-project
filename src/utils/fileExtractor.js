@@ -140,7 +140,16 @@ export async function extractTextFromExcel(file) {
 // ── PPTX 텍스트 추출 (DOMParser & 엔티티 디코딩 100% 전수 수집) ─────────────────
 export async function extractTextFromPPTX(file) {
     const arrayBuffer = await file.arrayBuffer();
-    const zip = await JSZip.loadAsync(arrayBuffer);
+    let zip;
+    try {
+        zip = await JSZip.loadAsync(arrayBuffer);
+    } catch (zipErr) {
+        console.error('PPTX JSZip 로드 에러:', zipErr);
+        if (zipErr.message.includes('signature') || zipErr.message.includes('corrupted') || zipErr.message.includes('zip') || zipErr.message.includes('expected')) {
+            throw new Error('보안 프로그램(DRM)으로 암호화되었거나 손상된 PPTX 파일입니다. 사내 DRM 보안을 해제(사외반출용 등)하여 원본 평문 문서로 저장한 뒤 업로드해 주세요.');
+        }
+        throw zipErr;
+    }
     const textBlocks = [];
     
     const slideRegex = /^ppt\/slides\/slide\d+\.xml$/;
@@ -216,7 +225,16 @@ export async function extractTextFromPPTX(file) {
 // ── HWPX 텍스트 추출 ─────────────────────────────────────────
 export async function extractTextFromHWPX(file) {
     const arrayBuffer = await file.arrayBuffer();
-    const zip = await JSZip.loadAsync(arrayBuffer);
+    let zip;
+    try {
+        zip = await JSZip.loadAsync(arrayBuffer);
+    } catch (zipErr) {
+        console.error('HWPX JSZip 로드 에러:', zipErr);
+        if (zipErr.message.includes('signature') || zipErr.message.includes('corrupted') || zipErr.message.includes('zip') || zipErr.message.includes('expected')) {
+            throw new Error('보안 프로그램(DRM)으로 암호화되었거나 손상된 HWPX 파일입니다. 사내 DRM 보안을 해제(사외반출용 등)하여 원본 평문 문서로 저장한 뒤 업로드해 주세요.');
+        }
+        throw zipErr;
+    }
     const textBlocks = [];
     
     const sectionRegex = /^Contents\/section\d+\.xml$/;

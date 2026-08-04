@@ -254,12 +254,15 @@ const roman_to_int = (roman) => {
 };
 
 // Gemini API를 직접 호출하여 문맥적인 오탈자 및 맞춤법을 진단받는 비동기 함수
-const call_gemini_ai_typos = async (file_name, slides_text_map, api_key) => {
-  const keys = String(api_key).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-  if (keys.length === 0) {
-    throw new Error('유효한 Gemini API 키가 없습니다. 설정 탭에서 API 키를 등록해 주세요.');
+const call_gemini_ai_typos = async (file_name, slides_text_map, api_key, llmProvider = 'gemini', omniRouteModel = 'auto') => {
+  let key = '';
+  if (llmProvider === 'gemini') {
+    const keys = String(api_key).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+    if (keys.length === 0) {
+      throw new Error('유효한 Gemini API 키가 없습니다. 설정 탭에서 API 키를 등록해 주세요.');
+    }
+    key = keys[0];
   }
-  const key = keys[0];
 
   let document_content = '';
   Object.keys(slides_text_map).forEach(slide_num => {
@@ -303,24 +306,56 @@ const call_gemini_ai_typos = async (file_name, slides_text_map, api_key) => {
 [검토할 슬라이드 텍스트]
 ${document_content}`;
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json'
-      }
-    })
-  });
+  let response;
+  if (llmProvider === 'omniroute') {
+    const omni_key = localStorage.getItem('omniroute_api_key') || '';
+    const gemini_key = (localStorage.getItem('gemini_api_key') || '').split(',')[0]?.trim();
+    const auth_bearer = omni_key || gemini_key || 'omniroute';
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${auth_bearer}`
+    };
+    if (gemini_key) {
+      headers['x-goog-api-key'] = gemini_key;
+      headers['x-api-key'] = gemini_key;
+    }
+
+    response = await fetch(`http://localhost:20128/v1/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: omniRouteModel || 'auto',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      })
+    });
+  } else {
+    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json'
+        }
+      })
+    });
+  }
 
   if (!response.ok) {
     const err_text = await response.text();
-    throw new Error(`Gemini API 호출 실패: ${err_text}`);
+    throw new Error(`AI API 호출 실패: ${err_text}`);
   }
 
   const res_json = await response.json();
-  const text_response = res_json.candidates[0].content.parts[0].text;
+  let text_response = '';
+  if (llmProvider === 'omniroute') {
+    text_response = res_json.choices[0].message.content;
+  } else {
+    text_response = res_json.candidates[0].content.parts[0].text;
+  }
   
   try {
     const parsed = JSON.parse(text_response.trim());
@@ -1683,9 +1718,9 @@ export default function PptValidator({ apiKey }) {
         }
         }
 
-        if (check_ai_typos && apiKey) {
+        if (check_ai_typos && (apiKey || llmProvider === 'omniroute')) {
           try {
-            const aiTypos = await call_gemini_ai_typos(file.name, slides_text_map, apiKey);
+            const aiTypos = await call_gemini_ai_typos(file.name, slides_text_map, apiKey, llmProvider, omniRouteModel);
             aiTypos.forEach(t => {
               allTypos.push(t);
               fileTyposCount++;

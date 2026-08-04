@@ -4,7 +4,7 @@ import { loadRagData, searchRag } from '../utils/ragService';
 import { askRagQuestion, askTotalRagQuestion } from '../llmAnalyzer';
 import { processFile } from '../utils/fileExtractor';
 
-const RagKnowledgeBase = ({ apiKey }) => {
+const RagKnowledgeBase = ({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto' }) => {
     const [allDocs, setAllDocs] = useState([]);
     const [filteredDocs, setFilteredDocs] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -133,7 +133,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
     // 전체 지식베이스 질의 응답 핸들러
     const handleAskTotalQuestion = async () => {
         if (!totalUserQuestion.trim() || isTotalAnswering) return;
-        if (!apiKey) {
+        if (!apiKey && llmProvider !== 'omniroute') {
             alert('Gemini API Key가 설정되지 않았습니다. 상단 설정 메뉴에서 키를 입력해 주세요.');
             return;
         }
@@ -156,7 +156,9 @@ const RagKnowledgeBase = ({ apiKey }) => {
                 question,
                 searchResults,
                 apiKey,
-                (status) => setTotalAnswerStatus(status)
+                (status) => setTotalAnswerStatus(status),
+                llmProvider,
+                omniRouteModel
             );
             
             setTotalChatMessages(prev => [...prev, { 
@@ -196,7 +198,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
 
     const handle_ask_selection_question = async () => {
         if (!selection_user_question.trim() || is_selection_answering) return;
-        if (!apiKey) {
+        if (!apiKey && llmProvider !== 'omniroute') {
             alert('Gemini API Key가 설정되지 않았습니다. 상단 설정 메뉴에서 키를 입력해 주세요.');
             return;
         }
@@ -222,7 +224,9 @@ const RagKnowledgeBase = ({ apiKey }) => {
                 question,
                 selected_docs,
                 apiKey,
-                (status) => set_selection_answer_status(status)
+                (status) => set_selection_answer_status(status),
+                llmProvider,
+                omniRouteModel
             );
 
             set_selection_chat_messages(prev => [...prev, {
@@ -333,7 +337,7 @@ const RagKnowledgeBase = ({ apiKey }) => {
 
     const handleAskQuestion = async () => {
         if (!userQuestion.trim() || isAnswering || !selectedDoc) return;
-        if (!apiKey) {
+        if (!apiKey && llmProvider !== 'omniroute') {
             alert('Gemini API Key가 설정되지 않았습니다. 상단 설정 메뉴에서 키를 입력해 주세요.');
             return;
         }
@@ -353,7 +357,9 @@ const RagKnowledgeBase = ({ apiKey }) => {
                 selectedDoc.content,
                 question,
                 apiKey,
-                (status) => setAnswerStatus(status)
+                (status) => setAnswerStatus(status),
+                llmProvider,
+                omniRouteModel
             );
             
             setChatMessages(prev => [...prev, { 

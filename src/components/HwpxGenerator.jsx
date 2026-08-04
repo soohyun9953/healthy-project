@@ -3,7 +3,7 @@ import { FileText, Upload, RefreshCw, CheckCircle2, ChevronRight, HelpCircle, Al
 import { generateReportFromTemplate } from '../utils/hwpxGeneratorService.js';
 import { FALLBACK_MODELS } from '../utils/geminiModels.js';
 
-function HwpxGenerator({ apiKey }) {
+function HwpxGenerator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto' }) {
   const [templateFile, setTemplateFile] = useState(null);
   const [materialFiles, setMaterialFiles] = useState([]);
   const [instruction, setInstruction] = useState(() => localStorage.getItem('hwpx_gen_instruction') || '');
@@ -158,6 +158,8 @@ function HwpxGenerator({ apiKey }) {
         materialFiles,
         apiKey,
         instruction,
+        llmProvider,
+        omniRouteModel,
         (msg) => setProgressMsg(msg)
       );
 

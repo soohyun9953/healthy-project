@@ -174,213 +174,15 @@ function mergeResults(res1, res2, isTypoMode, partNumber = 2) {
     return merged;
 }
 
-async function analyze_with_ollama(prompt, model = 'qwen2.5:3b', onProgress) {
-    if (onProgress) onProgress(`로컬 LLM (${model}) 정밀 분석 진행 중... (Ollama http://localhost:11434)`);
-    try {
-        const response = await fetch('http://localhost:11434/api/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: model || 'qwen2.5:3b',
-                prompt: prompt,
-                format: 'json', // Ollama 강제 JSON 포맷 지정
-                stream: false,
-                options: {
-                    temperature: 0.1,
-                    num_ctx: 16384 // 컨텍스트 창 16K 토큰으로 대폭 확장
-                }
-            })
-        });
-
-        if (!response.ok) {
-            if (response.status === 404) {
-                throw new Error(`Ollama에 '${model}' 모델이 설치되어 있지 않습니다.\n터미널에서 [ollama run ${model}] 명령어로 모델을 먼저 받거나 설정에서 변경해 주세요.`);
-            }
-            throw new Error(`로컬 LLM (Ollama) 응답 오류: HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        const raw_text = data.response || "{}";
-
-        // 강력한 JSON 추출, 복구 및 결과 정규화 파서
-        const parse_and_normalize_ollama = (text) => {
-            if (!text) return null;
-            let clean = text.trim();
-            let parsed = null;
-
-            // 1. ```json ... ``` 패턴 추출
-            if (clean.includes("```")) {
-                const match = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-                if (match && match[1]) {
-                    clean = match[1].trim();
-                }
-            }
-
-            // 2. JSON.parse 시도
-            try {
-                parsed = JSON.parse(clean);
-            } catch (e1) {
-                const start = clean.indexOf('{');
-                const end = clean.lastIndexOf('}');
-                if (start !== -1 && end !== -1 && end > start) {
-                    const sub = clean.substring(start, end + 1);
-                    try {
-                        parsed = JSON.parse(sub);
-                    } catch (e2) {
-                        try {
-                            const repaired = sub.replace(/,\s*([\}\]])/g, '$1');
-                            parsed = JSON.parse(repaired);
-                        } catch (e3) {}
-                    }
-                }
-            }
-
-            if (!parsed || typeof parsed !== 'object') {
-                parsed = { summary: text };
-            }
-
-            // 3. 필드명 정규화
-            const score = typeof parsed.score === 'number' && !isNaN(parsed.score) 
-                ? parsed.score 
-                : (typeof parsed.overallScore === 'number' ? parsed.overallScore : 85);
-
-            // 재귀적 Deep Walker: 자율적 JSON 구조에서도 실제 의미있는 typos만 엄격히 필터링 수집
-            const deep_extracted_typos = [];
-            const summary_bullets = [];
-
-            const walk_json_tree = (obj, path = "1페이지") => {
-                if (!obj) return;
-                if (typeof obj === 'string') {
-                    const str = obj.trim();
-                    if (str.length > 3) {
-                        summary_bullets.push(`- [${path}] ${str.substring(0, 100)}`);
-                    }
-                    return;
-                }
-                if (Array.isArray(obj)) {
-                    obj.forEach((item) => walk_json_tree(item, path));
-                    return;
-                }
-                if (typeof obj === 'object') {
-                    // 원문(originalText)과 수정안(correction)이 명시되어 있고 두 텍스트가 실제로 다를 때만 진짜 교정건으로 수집!
-                    const orig = String(obj.originalText || obj.original || obj.errorText || obj.before || '').trim();
-                    const corr = String(obj.correction || obj.correct || obj.suggestion || '').trim();
-                    
-                    if (orig && corr && orig !== corr && corr !== '문맥 검토 및 구체적 명세 보완 권고' && corr !== '보완 권고') {
-                        deep_extracted_typos.push({
-                            page: String(obj.page || obj.location || obj.section || path),
-                            originalText: orig,
-                            correction: corr,
-                            errorType: String(obj.errorType || obj.type || obj.reason || obj.category || '[표현 품질] 띄어쓰기 및 맞춤법 교정')
-                        });
-                        return;
-                    }
-
-                    // 일반 키-값 객체 (예: {"슬라이드 26": { ... }})
-                    for (const [key, value] of Object.entries(obj)) {
-                        if (['score', 'summary', 'overview'].includes(key)) continue;
-                        const next_path = (path === "1페이지" || !path) ? key : `${path} > ${key}`;
-                        walk_json_tree(value, next_path);
-                    }
-                }
-            };
-
-            walk_json_tree(parsed);
-
-            // summary 정교화: JSON 객체가 요약에 찍히지 않도록 가공
-            let summary = "";
-            if (typeof parsed.summary === 'string' && !parsed.summary.trim().startsWith('{')) {
-                summary = parsed.summary;
-            } else if (parsed.overview || parsed.analysis) {
-                summary = String(parsed.overview || parsed.analysis);
-            } else if (summary_bullets.length > 0) {
-                summary = `[로컬 LLM 산출물 핵심 명세 요약]\n${summary_bullets.slice(0, 10).join('\n')}`;
-            } else {
-                summary = "로컬 LLM 점검 완료: 띄어쓰기 및 명백한 맞춤법 오류 위주로 정밀 검수를 완료했습니다.";
-            }
-
-            // typos 목록 정밀 병합 (원문 != 수정안 인 진짜 결함만 남김)
-            let raw_typos = parsed.typos || parsed.typo_list || parsed.corrections || parsed.errors || parsed.issues || parsed.items || [];
-            if (!Array.isArray(raw_typos) && typeof raw_typos === 'object') {
-                raw_typos = Object.values(raw_typos);
-            }
-            
-            const direct_typos = (Array.isArray(raw_typos) ? raw_typos : []).map(t => ({
-                page: String(t.page || t.location || t.section || '1페이지'),
-                originalText: String(t.originalText || t.original || t.errorText || t.before || '').trim(),
-                correction: String(t.correction || t.correct || t.after || t.suggestion || '').trim(),
-                errorType: String(t.errorType || t.type || t.reason || t.category || '[표현 품질] 띄어쓰기 및 맞춤법 교정')
-            })).filter(t => t.originalText && t.correction && t.originalText !== t.correction && t.correction !== '문맥 검토 및 구체적 명세 보완 권고');
-
-            // 직접 수집된 typos 중 유효한 건이 있으면 사용하고, 아니면 딥 워커 수집건 적용
-            const final_typos = direct_typos.length > 0 ? direct_typos : deep_extracted_typos;
-
-            // requirementMapping (요구사항 매핑) 유연한 추출
-            let raw_reqs = parsed.requirementMapping || parsed.rtm || parsed.requirements || parsed.mapping || [];
-            if (!Array.isArray(raw_reqs) && typeof raw_reqs === 'object') {
-                raw_reqs = Object.values(raw_reqs);
-            }
-            
-            const requirementMapping = (Array.isArray(raw_reqs) ? raw_reqs : []).map((r, idx) => ({
-                id: r.id || `REQ-${String(idx + 1).padStart(3, '0')}`,
-                category: String(r.category || '기능'),
-                type: String(r.type || '필수'),
-                levelLabel: String(r.levelLabel || '개별문장'),
-                path: String(r.path || '본문'),
-                requirement: String(r.requirement || r.req || ''),
-                artifactSection: String(r.artifactSection || r.section || '해당 없음'),
-                artifactContent: String(r.artifactContent || r.content || ''),
-                status: String(r.status || '이행(O)'),
-                gap: r.gap || null
-            }));
-
-            const rtm = requirementMapping.map(req => ({
-                type: req.type,
-                requirement: req.requirement,
-                status: req.status,
-                location: req.artifactSection,
-                category: req.category,
-                levelLabel: req.levelLabel
-            }));
-
-            const omissions = requirementMapping
-                .filter(req => req.status !== '이행(O)')
-                .map(req => ({
-                    title: `[ID: ${req.id}] ${String(req.requirement || '').substring(0, 30)}...`,
-                    evidence: req.requirement || '-',
-                    reason: req.gap || '구체적인 수행 방안 보완이 필요합니다.',
-                    recommendation: '실행 계획을 산출물에 추가하십시오.'
-                }));
-
-            return {
-                score,
-                summary,
-                requirementMapping,
-                rtm,
-                omissions,
-                typos: final_typos
-            };
-        };
-
-        return parse_and_normalize_ollama(raw_text);
-
-    } catch (err) {
-        if (err.name === 'TypeError' && err.message.includes('fetch')) {
-            throw new Error("로컬 LLM (Ollama) 서버가 실행되어 있지 않습니다.\nPC에서 Ollama 앱을 실행해 주세요. (http://localhost:11434)");
-        }
-        throw err;
-    }
-}
-
 async function analyze_with_omniroute(prompt, model = 'auto', onProgress, systemPrompt = '', userInputData = '', raw_artifact_text = '') {
     const candidate_models = (model && model !== 'auto') 
         ? [model] 
-        : ['gemini-2.0-flash', 'gemini-1.5-pro', 'gpt-4o-mini', 'qwen/qwen-2.5-72b-instruct', 'auto'];
+        : ['gemini-2.0-flash', 'gemini-1.5-pro', 'gpt-4o-mini', 'auto'];
 
     let last_error = null;
     let best_result = null;
 
-    // 저장된 Gemini API 키 또는 OmniRoute 키 추출
+    // 저장된 Gemini API 키 또는 OmniRoute 키 추출 (게이트웨이 대행용)
     const gemini_key = (localStorage.getItem('gemini_api_key') || '').split(',')[0]?.trim();
     const omni_key = localStorage.getItem('omniroute_api_key') || '';
     const auth_bearer = omni_key || gemini_key || 'omniroute';
@@ -441,6 +243,14 @@ async function analyze_with_omniroute(prompt, model = 'auto', onProgress, system
             if (!response.ok) {
                 const err_text = await response.text().catch(() => '');
                 console.warn(`OmniRoute model [${target_model}] failed with HTTP ${response.status}: ${err_text.substring(0, 100)}`);
+                
+                let err_msg = err_text;
+                try {
+                    const parsed_err = JSON.parse(err_text);
+                    err_msg = parsed_err.error?.message || err_text;
+                } catch (_) {}
+
+                last_error = new Error(err_msg || `HTTP Error ${response.status}`);
                 continue;
             }
 
@@ -692,11 +502,11 @@ function parse_and_normalize_response(text, raw_artifact_text = '') {
             return { score, summary, requirementMapping, rtm, omissions, typos: unique_typos };
 }
 
-export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b', omniRouteModel = 'auto') {
+export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', omniRouteModel = 'auto') {
     const keys = String(apiKey || '').split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-    // OmniRoute와 Ollama는 API 키 불필요
-    if (llmProvider !== 'ollama' && llmProvider !== 'omniroute' && keys.length === 0) {
-        throw new Error("유효한 Gemini API 키가 제공되지 않았습니다. [설정] 메뉴에서 API 키를 등록하거나 'OmniRoute' 또는 '로컬 LLM (Ollama)'을 선택해 주세요.");
+    // OmniRoute는 API 키 불필요
+    if (llmProvider !== 'omniroute' && keys.length === 0) {
+        throw new Error("유효한 Gemini API 키가 제공되지 않았습니다. [설정] 메뉴에서 API 키를 등록하거나 'OmniRoute'를 선택해 주세요.");
     }
 
     let currentKeyIndex = 0;
@@ -715,7 +525,7 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
                         await sleep_delay(3000);
                     }
                     
-                    const res = await analyzeDocumentsWithLLM("", chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, ollamaModel, omniRouteModel);
+                    const res = await analyzeDocumentsWithLLM("", chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, omniRouteModel);
                     results.push(res);
                 }
                 if (onProgress) onProgress("분석 결과 병합 중...");
@@ -735,7 +545,7 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
                         await sleep_delay(3000);
                     }
                     
-                    const res = await analyzeDocumentsWithLLM(chunks[i], artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, ollamaModel, omniRouteModel);
+                    const res = await analyzeDocumentsWithLLM(chunks[i], artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, omniRouteModel);
                     results.push(res);
                 }
                 if (onProgress) onProgress("분석 결과 병합 중...");
@@ -867,11 +677,6 @@ ${String(artifactText || '').substring(0, 2000000)}
 ${inspectionScope || '없음'}
 ${ragContext ? `\n${ragContext}` : ''}
 `;
-
-    if (llmProvider === 'ollama') {
-        const fullPrompt = `${userInput}\n\n[필수 지시: 반드시 모든 응답은 100% 순수 한국어로만 작성하고 지정된 JSON 구조로만 출력하십시오.]`;
-        return await analyze_with_ollama(fullPrompt, ollamaModel, onProgress);
-    }
 
     if (llmProvider === 'omniroute') {
         const fullPrompt = `${userInput}\n\n[필수 지시: 반드시 모든 응답은 100% 순수 한국어로만 작성하고 지정된 JSON 구조로만 출력하십시오.]`;
@@ -1057,20 +862,13 @@ ${ragContext ? `\n${ragContext}` : ''}
     }
 }
 
-export async function askRagQuestion(docTitle, docContent, question, apiKey, onProgress) {
-    const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-    if (keys.length === 0) throw new Error("유효한 Gemini API Key가 없습니다.");
-
-    const recordUsage = (modelName) => {
-        try {
-            const usage = JSON.parse(localStorage.getItem('gemini_model_usage') || '{}');
-            usage[modelName] = (usage[modelName] || 0) + 1;
-            localStorage.setItem('gemini_model_usage', JSON.stringify(usage));
-            window.dispatchEvent(new CustomEvent('gemini_usage_updated'));
-        } catch (e) {
-            console.error("Usage recording failed:", e);
-        }
-    };
+export async function askRagQuestion(docTitle, docContent, question, apiKey, onProgress, llmProvider = 'gemini', omniRouteModel = 'auto') {
+    let key = '';
+    if (llmProvider === 'gemini') {
+        const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+        if (keys.length === 0) throw new Error("유효한 Gemini API Key가 없습니다.");
+        key = keys[0];
+    }
 
     const systemPrompt = `당신은 ISMP 산출물 전문 Q&A 어시스턴트입니다. 
 제공된 문서 [${docTitle}]의 내용을 바탕으로 사용자의 질문에 전문적이고 친절하게 답변하십시오.`;
@@ -1080,49 +878,64 @@ export async function askRagQuestion(docTitle, docContent, question, apiKey, onP
 [사용자 질문]: ${question}
 `;
 
+    let response;
+    if (llmProvider === 'omniroute') {
+        const omni_key = localStorage.getItem('omniroute_api_key') || '';
+        const gemini_key = (localStorage.getItem('gemini_api_key') || '').split(',')[0]?.trim();
+        const auth_bearer = omni_key || gemini_key || 'omniroute';
 
-    let currentKeyIndex = 0;
-    let currentModelIndex = 0;
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth_bearer}`
+        };
+        if (gemini_key) {
+            headers['x-goog-api-key'] = gemini_key;
+            headers['x-api-key'] = gemini_key;
+        }
 
-    const fetchWithRetry = async () => {
-        const activeKey = keys[currentKeyIndex];
-        const modelId = FALLBACK_MODELS[currentModelIndex];
-        const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent?key=${activeKey}`;
-        
-        const response = await fetch(fetchUrl, {
+        response = await fetch(`http://localhost:20128/v1/chat/completions`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                model: omniRouteModel || 'auto',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userInput }
+                ],
+                temperature: 0.7
+            })
+        });
+    } else {
+        const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/gemini-1.5-flash:generateContent?key=${key}`;
+        response = await fetch(fetchUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                contents: [{ role: "user", parts: [{ text: userInput }] }]
+                contents: [{ role: "user", parts: [{ text: systemPrompt + "\n" + userInput }] }]
             })
         });
+    }
 
-        if (response.ok) {
-            const data = await response.json();
-            const answer = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            recordUsage(modelId);
-            return answer;
-        }
-        throw new Error("Failed to fetch");
-    };
+    if (!response.ok) {
+        const err_text = await response.text();
+        throw new Error(`AI API 호출 실패: ${err_text}`);
+    }
 
-    return await fetchWithRetry();
+    const res_json = await response.json();
+    if (llmProvider === 'omniroute') {
+        return res_json.choices[0].message.content;
+    } else {
+        return res_json.candidates?.[0]?.content?.parts?.[0]?.text;
+    }
 }
 
-export async function askTotalRagQuestion(question, contextDocs, apiKey, onProgress) {
-    const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-    if (keys.length === 0) throw new Error("유효한 Gemini API Key가 없습니다.");
-
-    const recordUsage = (modelName) => {
-        try {
-            const usage = JSON.parse(localStorage.getItem('gemini_model_usage') || '{}');
-            usage[modelName] = (usage[modelName] || 0) + 1;
-            localStorage.setItem('gemini_model_usage', JSON.stringify(usage));
-            window.dispatchEvent(new CustomEvent('gemini_usage_updated'));
-        } catch (e) {
-            console.error("Usage recording failed:", e);
-        }
-    };
+export async function askTotalRagQuestion(question, contextDocs, apiKey, onProgress, llmProvider = 'gemini', omniRouteModel = 'auto') {
+    let key = '';
+    if (llmProvider === 'gemini') {
+        const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+        if (keys.length === 0) throw new Error("유효한 Gemini API Key가 없습니다.");
+        key = keys[0];
+    }
 
     let contextText = "";
     if (contextDocs && contextDocs.length > 0) {
@@ -1146,32 +959,53 @@ ${contextText}
 ${question}
 `;
 
-    let currentKeyIndex = 0;
-    let currentModelIndex = 0;
+    let response;
+    if (llmProvider === 'omniroute') {
+        const omni_key = localStorage.getItem('omniroute_api_key') || '';
+        const gemini_key = (localStorage.getItem('gemini_api_key') || '').split(',')[0]?.trim();
+        const auth_bearer = omni_key || gemini_key || 'omniroute';
 
-    const fetchWithRetry = async () => {
-        const activeKey = keys[currentKeyIndex];
-        const modelId = FALLBACK_MODELS[currentModelIndex];
-        const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent?key=${activeKey}`;
-        
-        const response = await fetch(fetchUrl, {
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth_bearer}`
+        };
+        if (gemini_key) {
+            headers['x-goog-api-key'] = gemini_key;
+            headers['x-api-key'] = gemini_key;
+        }
+
+        response = await fetch(`http://localhost:20128/v1/chat/completions`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                model: omniRouteModel || 'auto',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userInput }
+                ],
+                temperature: 0.7
+            })
+        });
+    } else {
+        const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/gemini-1.5-flash:generateContent?key=${key}`;
+        response = await fetch(fetchUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                contents: [
-                    { role: "user", parts: [{ text: systemPrompt + "\n" + userInput }] }
-                ]
+                contents: [{ role: "user", parts: [{ text: systemPrompt + "\n" + userInput }] }]
             })
         });
+    }
 
-        if (response.ok) {
-            const data = await response.json();
-            const answer = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            recordUsage(modelId);
-            return answer;
-        }
-        throw new Error("Failed to fetch");
-    };
+    if (!response.ok) {
+        const err_text = await response.text();
+        throw new Error("AI API 호출 실패: " + err_text);
+    }
 
-    return await fetchWithRetry();
+    const res_json = await response.json();
+    if (llmProvider === 'omniroute') {
+        return res_json.choices[0].message.content;
+    } else {
+        return res_json.candidates?.[0]?.content?.parts?.[0]?.text;
+    }
 }

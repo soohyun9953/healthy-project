@@ -4,7 +4,7 @@ import InputSection from './InputSection';
 import ResultDashboard from './ResultDashboard';
 import { analyzeDocumentsWithLLM } from '../llmAnalyzer';
 
-function TypoValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:3b', omniRouteModel = 'auto' }) {
+function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto' }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStage, setAnalysisStage] = useState(0); // 1: 추출, 2: 심층분석
   const [retryStatus, setRetryStatus] = useState(null); // API 재시도 상태 메시지
@@ -23,7 +23,7 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:
     setAnalysisStage(2);
 
     try {
-      if (llmProvider === 'ollama' || llmProvider === 'omniroute' || (apiKey && apiKey.match(/^(AIza|AQ\.)/))) {
+      if (llmProvider === 'omniroute' || (apiKey && apiKey.match(/^(AIza|AQ\.)/))) {
         const result = await analyzeDocumentsWithLLM(
           '', artifact, inspectionScope, apiKey, glossary,
           (status) => setRetryStatus(status),
@@ -31,12 +31,11 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:
           false,
           "",
           llmProvider,
-          ollamaModel,
           omniRouteModel
         );
         setResultData({ ...result, artifactFileName });
       } else {
-        throw new Error('유효한 Gemini API Key가 필요합니다. [설정] 메뉴에서 API Key를 입력하거나 로컬 LLM을 선택해 주세요.');
+        throw new Error('유효한 Gemini API Key가 필요합니다. [설정] 메뉴에서 API Key를 입력해 주세요.');
       }
     } catch (e) {
         console.error('[TypoValidator] 교정교열 오류:', e);
@@ -54,7 +53,7 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', ollamaModel = 'qwen2.5:
         setAnalysisStage(0);
         setRetryStatus(null);
     }
-  }, [apiKey, llmProvider, ollamaModel, omniRouteModel]);
+  }, [apiKey, llmProvider, omniRouteModel]);
 
   const handleRetry = () => {
     if (lastParams.current) {
