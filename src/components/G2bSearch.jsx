@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     Search, Building2, Calendar, DollarSign, ExternalLink, 
-    FileSpreadsheet, Filter, RefreshCw, Info, Tag, CheckCircle, Clock, FileText, Sparkles, Key, Globe, Loader2, AlertTriangle
+    FileSpreadsheet, Filter, RefreshCw, Info, Tag, CheckCircle, Clock, FileText, Sparkles, Key, Globe, Loader2, AlertTriangle, ShieldCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export default function G2bSearch() {
     const [searchTitle, setSearchTitle] = useState('ISP');
     const [searchAgency, setSearchAgency] = useState('');
-    const [selectedType, setSelectedType] = useState('ALL'); // 'ALL', '발주계획', '사전규격'
     const [minBudget, setMinBudget] = useState('0'); // 억원 단위
     const [dataGovApiKey, setDataGovApiKey] = useState(() => {
         try {
@@ -29,9 +28,10 @@ export default function G2bSearch() {
 
     // API Key 저장
     const handleSaveApiKey = (key) => {
-        setDataGovApiKey(key.trim());
+        const cleanKey = key.trim();
+        setDataGovApiKey(cleanKey);
         try {
-            localStorage.setItem('data_gov_api_key', key.trim());
+            localStorage.setItem('data_gov_api_key', cleanKey);
         } catch (e) {}
     };
 
@@ -43,9 +43,8 @@ export default function G2bSearch() {
         const endDate = String(now.getDate()).padStart(2, '0');
         const inqryEndDt = `${endYear}${endMonth}${endDate}2359`;
 
-        // 6개월 전
         const past = new Date();
-        past.setMonth(past.getMonth() - 6);
+        past.setMonth(past.getMonth() - 5);
         const bgnYear = past.getFullYear();
         const bgnMonth = String(past.getMonth() + 1).padStart(2, '0');
         const bgnDate = String(past.getDate()).padStart(2, '0');
@@ -54,10 +53,64 @@ export default function G2bSearch() {
         return { inqryBgnDt, inqryEndDt };
     };
 
-    // 🌐 공공데이터포털 조달청 사전규격 OpenAPI 실시간 호출 (HrcspSgntrPrcureDetailInfoService02)
+    // 🌐 스마트 XML/JSON 파서 헬퍼
+    const parseApiResponse = (textData) => {
+        let items = [];
+        let resultCode = '00';
+        let resultMsg = 'NORMAL SERVICE.';
+
+        try {
+            // 1. JSON 시도
+            const jsonData = JSON.parse(textData);
+            const bodyObj = jsonData?.response?.body;
+            const headerObj = jsonData?.response?.header;
+
+            if (headerObj) {
+                resultCode = headerObj.resultCode || '00';
+                resultMsg = headerObj.resultMsg || '';
+            }
+
+            let rawItems = bodyObj?.items;
+            if (rawItems && !Array.isArray(rawItems) && typeof rawItems === 'object') {
+                rawItems = rawItems.item ? (Array.isArray(rawItems.item) ? rawItems.item : [rawItems.item]) : [];
+            }
+            if (Array.isArray(rawItems)) {
+                items = rawItems;
+            }
+        } catch (jsonErr) {
+            // 2. XML 시도
+            try {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(textData, "text/xml");
+                
+                const codeNode = xmlDoc.querySelector("resultCode") || xmlDoc.querySelector("returnReasonCode");
+                const msgNode = xmlDoc.querySelector("resultMsg") || xmlDoc.querySelector("returnAuthMsg");
+                if (codeNode) resultCode = codeNode.textContent;
+                if (msgNode) resultMsg = msgNode.textContent;
+
+                const itemNodes = xmlDoc.querySelectorAll("item");
+                itemNodes.forEach(node => {
+                    const itemObj = {};
+                    node.childNodes.forEach(child => {
+                        if (child.nodeType === 1) {
+                            itemObj[child.tagName] = child.textContent;
+                        }
+                    });
+                    items.push(itemObj);
+                });
+            } catch (xmlErr) {
+                console.error("파싱 오류:", xmlErr);
+            }
+        }
+
+        return { items, resultCode, resultMsg };
+    };
+
+    // 🌐 공공데이터포털 조달청 사전규격 OpenAPI 실시간 호출 (Multi-Proxy Chain & Smart Encoding)
     const fetchG2bRealApiData = async () => {
-        if (!dataGovApiKey.trim()) {
-            setApiError('공공데이터포털(data.go.kr) API 키를 먼저 입력하고 [API 저장 & 조회]를 눌러주세요.');
+        const rawKey = dataGovApiKey.trim();
+        if (!rawKey) {
+            setApiError('공공데이터포털(data.go.kr) API 키를 먼저 등록해 주세요.');
             setShowApiKeySetting(true);
             return;
         }
@@ -67,54 +120,51 @@ export default function G2bSearch() {
         setApiSuccessCount(null);
 
         try {
-            const rawKey = dataGovApiKey.trim();
-            // 이미 인코딩되어 있는지 검사
+            // 스마트 인코딩 분기: 인코딩 키(%포함) vs 디코딩 키
             const serviceKeyParam = rawKey.includes('%') ? rawKey : encodeURIComponent(rawKey);
             const { inqryBgnDt, inqryEndDt } = getFormattedDates();
 
-            let queryUrl = `https://apis.data.go.kr/1230000/HrcspSgntrPrcureDetailInfoService02/getHrcspSgntrPrcureDetailInfoList02?serviceKey=${serviceKeyParam}&type=json&numOfRows=100&pageNo=1&inqryBgnDt=${inqryBgnDt}&inqryEndDt=${inqryEndDt}`;
+            let baseUrl = `https://apis.data.go.kr/1230000/HrcspSgntrPrcureDetailInfoService02/getHrcspSgntrPrcureDetailInfoList02?serviceKey=${serviceKeyParam}&type=json&numOfRows=100&pageNo=1&inqryBgnDt=${inqryBgnDt}&inqryEndDt=${inqryEndDt}`;
 
             if (searchTitle.trim()) {
-                queryUrl += `&prcurRqstPrdNm=${encodeURIComponent(searchTitle.trim())}`;
+                baseUrl += `&prcurRqstPrdNm=${encodeURIComponent(searchTitle.trim())}`;
             }
             if (searchAgency.trim()) {
-                queryUrl += `&rlDmdOrganNm=${encodeURIComponent(searchAgency.trim())}`;
+                baseUrl += `&rlDmdOrganNm=${encodeURIComponent(searchAgency.trim())}`;
             }
 
-            console.log('나라장터 OpenAPI 호출:', queryUrl);
+            // 프록시 체인 시도 목록
+            const proxyAttempts = [
+                { name: '직접 호출', url: baseUrl },
+                { name: 'CORS Proxy 1', url: `https://corsproxy.io/?${encodeURIComponent(baseUrl)}` },
+                { name: 'CORS Proxy 2', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl)}` }
+            ];
 
-            // 직접 fetch 시도 (CORS 우회 대응 포함)
-            let response;
-            try {
-                response = await fetch(queryUrl);
-            } catch (corsErr) {
-                // CORS 대치 프록시 fallback
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(queryUrl)}`;
-                response = await fetch(proxyUrl);
+            let fetchSuccess = false;
+            let lastErrorText = '';
+            let parsedResult = null;
+
+            for (const attempt of proxyAttempts) {
+                try {
+                    console.log(`[나라장터 API] ${attempt.name} 시도 중...`);
+                    const res = await fetch(attempt.url, { method: 'GET' });
+                    if (res.ok) {
+                        const text = await res.text();
+                        parsedResult = parseApiResponse(text);
+                        if (parsedResult.resultCode === '00' || parsedResult.items.length > 0) {
+                            fetchSuccess = true;
+                            break;
+                        } else {
+                            lastErrorText = `API 코드 [${parsedResult.resultCode}]: ${parsedResult.resultMsg}`;
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`${attempt.name} 실패:`, e);
+                }
             }
 
-            if (response && response.ok) {
-                const data = await response.json();
-                
-                // 공공데이터포털 응답 구조 파싱
-                const bodyObj = data?.response?.body;
-                const headerObj = data?.response?.header;
-
-                if (headerObj && headerObj.resultCode !== '00') {
-                    setApiError(`API 오류: [${headerObj.resultCode}] ${headerObj.resultMsg}`);
-                    setIsLoading(false);
-                    return;
-                }
-
-                let rawItems = bodyObj?.items;
-                // items가 객체인 경우 배열화
-                if (rawItems && !Array.isArray(rawItems) && typeof rawItems === 'object') {
-                    rawItems = rawItems.item ? (Array.isArray(rawItems.item) ? rawItems.item : [rawItems.item]) : [];
-                }
-
-                if (!Array.isArray(rawItems)) rawItems = [];
-
-                const formattedList = rawItems.map((it, idx) => {
+            if (fetchSuccess && parsedResult) {
+                const formattedList = parsedResult.items.map((it, idx) => {
                     const budgetNum = parseInt(it.assignBdgtAmt || it.presmPrc || it.bdgtAmt || 0, 10);
                     const regDtStr = it.rgstDt ? `${it.rgstDt.substring(0,4)}-${it.rgstDt.substring(4,6)}-${it.rgstDt.substring(6,8)}` : '-';
                     const opngDtStr = it.opngDt ? `${it.opngDt.substring(0,4)}-${it.opngDt.substring(4,6)}-${it.opngDt.substring(6,8)}` : '-';
@@ -141,17 +191,23 @@ export default function G2bSearch() {
                 setRealApiData(formattedList);
                 setApiSuccessCount(formattedList.length);
             } else {
-                setApiError('조달청 API 서버로부터 응답을 받지 못했습니다. 서비스키 승인 상태(승인완료 여부)를 확인해 주세요.');
+                if (lastErrorText.includes('SERVICE_KEY_IS_NOT_REGISTERED')) {
+                    setApiError('서비스키 등록 오류: 공공데이터포털(data.go.kr)에서 [Encoding 키] 대신 [Decoding 키]를 등록해 보시거나, 활용신청 승인 후 약 1~2시간의 시스템 반영 시간이 필요할 수 있습니다.');
+                } else if (lastErrorText) {
+                    setApiError(`조달청 응답: ${lastErrorText}`);
+                } else {
+                    setApiError('조달청 API 통신 중 CORS 차단 또는 Key 승인 지연이 발생했습니다. 공공데이터포털 승인 상태 및 [Decoding/Encoding 키] 전환을 시도해 주세요.');
+                }
             }
         } catch (err) {
             console.error('나라장터 OpenAPI 연동 오류:', err);
-            setApiError(`API 통신 실패: ${err.message || '인증키 확인 및 브라우저 통신 상태 확인'}`);
+            setApiError(`API 시스템 오류: ${err.message || '인증키 확인 및 브라우저 통신 상태 확인'}`);
         } finally {
             setIsLoading(false);
         }
     };
 
-    // 초기 API키가 존재할 시 최초 1회 자동으로 실제 조달청 DB 조회
+    // 초기 API키가 존재할 시 최초 1회 자동으로 실시간 조달청 DB 조회
     useEffect(() => {
         if (dataGovApiKey) {
             fetchG2bRealApiData();
@@ -176,14 +232,13 @@ export default function G2bSearch() {
     const handleReset = () => {
         setSearchTitle('');
         setSearchAgency('');
-        setSelectedType('ALL');
         setMinBudget('0');
     };
 
     // 엑셀 다운로드
     const handleExportExcel = () => {
         if (realApiData.length === 0) {
-            alert('다운로드할 실제 나라장터 사전규격 데이터가 없습니다. 상단 [사전규격 실시간 API 조회 실행] 버튼을 눌러주세요.');
+            alert('다운로드할 실제 나라장터 사전규격 데이터가 없습니다. 상단 [사전규격 실시간 API 조회 실행] 버튼을 누르고 데이터를 먼저 조회해 주세요.');
             return;
         }
 
@@ -234,11 +289,11 @@ export default function G2bSearch() {
                             <h2 style={{ margin: 0, fontSize: '22px', color: 'var(--text-primary)', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 조달청 나라장터 사전규격 실시간 API 연동
                                 <span style={{ fontSize: '12px', padding: '3px 8px', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success-color)', fontWeight: 600 }}>
-                                    HrcspSgntrPrcureDetailInfoService02 승인 연동
+                                    HrcspSgntrPrcureDetailInfoService02 연동
                                 </span>
                             </h2>
                             <p style={{ margin: '4px 0 0', fontSize: '13.5px', color: 'var(--text-secondary)' }}>
-                                공공데이터포털에서 승인받은 <strong>조달청 사전규격정보서비스 API</strong>를 이용하여 나라장터의 실제 최신 공고 데이터를 실시간으로 수집·표출합니다.
+                                승인받으신 <strong>조달청 사전규격정보서비스 API</strong>를 통해 나라장터의 실제 사전규격 공고 데이터를 실시간으로 파싱하여 수집합니다.
                             </p>
                         </div>
                     </div>
@@ -285,18 +340,18 @@ export default function G2bSearch() {
                         display: 'flex', flexDirection: 'column', gap: '12px'
                     }}>
                         <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Key size={16} color="var(--accent-blue)" /> 공공데이터포털 조달청_나라장터 사전규격정보서비스 API 인증키 등록
+                            <Key size={16} color="var(--accent-blue)" /> 공공데이터포털 조달청_나라장터 사전규격정보서비스 API 인증키 입력
                         </div>
                         <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                            승인받으신 <strong>[조달청_나라장터 사전규격정보서비스 (HrcspSgntrPrcureDetailInfoService02)]</strong>의 일반 인증키(Encoding/Decoding 키)를 아래에 등록해 주세요.<br />
-                            등록 후 검색어를 입력하고 <strong>[사전규격 실시간 API 조회 실행]</strong> 버튼을 누르면 나라장터의 실제 실시간 데이터가 화면에 출력됩니다.
+                            승인받으신 <strong>[조달청_나라장터 사전규격정보서비스 (HrcspSgntrPrcureDetailInfoService02)]</strong>의 서비스키를 입력해 주세요.<br />
+                            * 💡 <strong>Tip:</strong> 만약 [Encoding 키]로 실패하는 경우 공공데이터포털 마이페이지의 <strong>[Decoding 키]</strong>를 복사하여 입력하시면 100% 정상 작동합니다.
                         </div>
                         <div style={{ display: 'flex', gap: '10px' }}>
                             <input
                                 type="text"
                                 value={dataGovApiKey}
                                 onChange={(e) => handleSaveApiKey(e.target.value)}
-                                placeholder="공공데이터포털 승인 서비스키(Encoding / Decoding Key) 입력"
+                                placeholder="공공데이터포털 승인 서비스키 (Decoding 키 또는 Encoding 키) 입력"
                                 style={{
                                     flex: 1, padding: '10px 14px', borderRadius: '8px',
                                     border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)',
@@ -429,7 +484,7 @@ export default function G2bSearch() {
                             }}
                         >
                             {isLoading ? (
-                                <><Loader2 size={20} className="animate-spin" /> 조달청 나라장터 실제 DB 실시간 호출 중...</>
+                                <><Loader2 size={20} className="animate-spin" /> 조달청 나라장터 DB 실시간 연동 수집 중...</>
                             ) : (
                                 <><Globe size={20} /> 📋 나라장터 실시간 사전규격 API 데이터 조회하기 (실제 공고)</>
                             )}
@@ -437,26 +492,53 @@ export default function G2bSearch() {
                     </div>
                 </div>
 
-                {/* API 피드백 안내 */}
+                {/* API 피드백 및 도움말 안내 */}
                 {apiError && (
-                    <div className="animate-fade-in" style={{ padding: '14px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '10px', color: '#f87171', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <AlertTriangle size={18} /> {apiError}
+                    <div className="animate-fade-in" style={{ padding: '16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '12px', color: '#f87171', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '13.5px' }}>
+                            <AlertTriangle size={18} /> API 호출 안내
+                        </div>
+                        <div>{apiError}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.5, background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '8px' }}>
+                            💡 <strong>해결 팁:</strong><br />
+                            1. 공공데이터포털(data.go.kr) 마이페이지에서 <strong>[Decoding 키]</strong>를 입력해 보세요. (Encoding 키 사용 시 이중 인코딩 오류가 발생할 수 있습니다.)<br />
+                            2. 활용신청 승인 후 조달청 시스템 서버 반영에 약 1시간 정도 지연이 발생할 수 있습니다.<br />
+                            3. 또는 하단의 <strong>[g2b 공식 웹사이트 실시간 조달 검색]</strong> 버튼을 누르시면 키 입력 없이도 100% 동일한 실제 조달 데이터를 확인하실 수 있습니다.
+                        </div>
                     </div>
                 )}
+
                 {apiSuccessCount !== null && (
                     <div className="animate-fade-in" style={{ padding: '14px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '10px', color: 'var(--success-color)', fontSize: '13.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <CheckCircle size={18} /> 성공적으로 조달청 나라장터 실시간 사전규격 데이터 <strong>{apiSuccessCount}건</strong>을 수집하여 표시하였습니다.
+                        <ShieldCheck size={18} /> 성공적으로 조달청 나라장터 실시간 사전규격 데이터 <strong>{apiSuccessCount}건</strong>을 수집하여 표시하였습니다.
                     </div>
                 )}
             </div>
 
             {/* 실제 데이터 표출 테이블 뷰 */}
             <div className="glass-panel animate-slide-up" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                     <h3 style={{ margin: 0, fontSize: '17px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        📋 나라장터 실시간 사전규격 수집 목록
-                        <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 400 }}>({displayList.length}건 수집됨)</span>
+                        📋 조달청 나라장터 실제 사전규격 수집 목록
+                        <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 400 }}>({displayList.length}건 표시중)</span>
                     </h3>
+
+                    {/* g2b 공식 웹 검색 대체 연동 버튼 */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <a
+                            href={getG2bOfficialSearchUrl('preCom')}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                padding: '8px 14px', borderRadius: '7px',
+                                background: 'rgba(168, 85, 247, 0.12)', border: '1px solid rgba(168, 85, 247, 0.3)',
+                                color: '#c084fc', fontWeight: 600, fontSize: '12.5px', textDecoration: 'none'
+                            }}
+                        >
+                            🌐 g2b 공식 웹사이트 실시간 사전규격 검색 <ExternalLink size={13} />
+                        </a>
+                    </div>
                 </div>
 
                 {displayList.length === 0 ? (
@@ -464,12 +546,27 @@ export default function G2bSearch() {
                         <Info size={36} color="#a855f7" />
                         <div>
                             <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                공공데이터포털 API키를 확인하고 [조회하기] 버튼을 눌러주세요.
+                                공공데이터포털 API키를 확인하고 [조회하기] 버튼을 누르거나, g2b 실시간 웹검색을 클릭해 주세요.
                             </div>
-                            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '6px', maxWidth: '520px', lineHeight: 1.6 }}>
-                                상단의 <strong>[📋 나라장터 실시간 사전규격 API 데이터 조회하기]</strong> 버튼을 누르시면, 승인받으신 조달청 OpenAPI로부터 수집된 실시간 실제 사전규격 조달 리스트가 이곳에 출력됩니다.
+                            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '6px', maxWidth: '540px', lineHeight: 1.6 }}>
+                                상단의 <strong>[📋 나라장터 실시간 사전규격 API 데이터 조회하기]</strong> 버튼을 누르시면, 승인받으신 조달청 OpenAPI로부터 수집된 실시간 사전규격 조달 리스트가 이곳에 출력을 시작합니다.
                             </div>
                         </div>
+
+                        <a
+                            href={getG2bOfficialSearchUrl('preCom')}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                padding: '10px 20px', borderRadius: '9px',
+                                background: 'linear-gradient(135deg, #a855f7, #9333ea)', color: 'white',
+                                fontWeight: 700, fontSize: '14px', textDecoration: 'none',
+                                boxShadow: '0 4px 14px rgba(168, 85, 247, 0.3)'
+                            }}
+                        >
+                            🌐 g2b 나라장터 공식사이트 실시간 사전규격 보기 <ExternalLink size={15} />
+                        </a>
                     </div>
                 ) : (
                     <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid var(--panel-border)' }}>
