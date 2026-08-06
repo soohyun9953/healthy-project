@@ -1183,8 +1183,8 @@ export async function processPptBatch(pptFile, options) {
         const xmlDoc = parser.parseFromString(slideXmlStr, 'application/xml');
         if (xmlDoc.getElementsByTagName('parsererror').length > 0) return;
         
-        // [신규] 테이블(표) 표준 디자인 일괄 변경 로직
-        if (applyTableDesign && !slidePath.startsWith('ppt/theme/')) {
+        // [신규] 테이블(표) 표준 디자인 일괄 변경 로직 (실제 슬라이드 내용 ppt/slides/slide*.xml 에만 적용)
+        if (applyTableDesign && slidePath.startsWith('ppt/slides/slide')) {
             const nsA = 'http://schemas.openxmlformats.org/drawingml/2006/main';
             
             // 💡 브라우저 네임스페이스 감지 실패 현상을 원천 방지하기 위해 전체 노드 순회 수집 적용
@@ -1921,9 +1921,11 @@ export async function processPptBatch(pptFile, options) {
             }
         }
         
-        // 변경사항이 있으면 압축 파일 갱신 (더 이상 이중 파싱 및 designChanged 충돌이 없으므로 일괄 직렬화)
+        // 변경사항이 있으면 압축 파일 갱신
         if (fileChanged) {
             slideXmlStr = serializer.serializeToString(xmlDoc);
+            // 💡 [핵심] 브라우저 XMLSerializer가 생성하는 자식 태그 단위 중복 네임스페이스 속성(xmlns:a) 정제하여 OpenXML 파서 100% 통과 보장
+            slideXmlStr = slideXmlStr.replace(/(<a:[a-zA-Z0-9]+)\s+xmlns:a="http:\/\/schemas\.openxmlformats\.org\/drawingml\/2006\/main"/g, '$1');
             zip.file(slidePath, slideXmlStr);
         }
     });
