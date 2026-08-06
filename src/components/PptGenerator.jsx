@@ -375,122 +375,97 @@ export default function PptGenerator() {
                     });
 
                     // ----------------------------------------------------
-                    // 1. PDF 내 표(Table Grid) 구간 감지 (Table Detection)
+                    // 1. PDF 내 표 구간 통합 감지 (Consolidated Table Detection)
                     // ----------------------------------------------------
-                    const tableClusters = []; // [{ lines: [...], lineIndices: Set }]
-                    let curClusterLines = [];
-                    let curClusterLineIndices = [];
-
+                    const rawTableLineIndices = [];
                     for (let i = 0; i < lines.length; i++) {
-                        const line = lines[i];
-                        const isMultiColLine = line.cols.length >= 2; // 2개 이상의 수직 열을 보유한 라인
-
-                        if (isMultiColLine) {
-                            if (curClusterLines.length === 0) {
-                                curClusterLines.push(line);
-                                curClusterLineIndices.push(i);
-                            } else {
-                                const prevLine = curClusterLines[curClusterLines.length - 1];
-                                const yDiff = line.yPt - prevLine.yPt;
-                                // 연속된 Y축 라인 간격이 표 행 간격 범위 이내 (최대 35pt)
-                                if (yDiff <= 35) {
-                                    curClusterLines.push(line);
-                                    curClusterLineIndices.push(i);
-                                } else {
-                                    if (curClusterLines.length >= 2) {
-                                        tableClusters.push({ lines: [...curClusterLines], indices: new Set(curClusterLineIndices) });
-                                    }
-                                    curClusterLines = [line];
-                                    curClusterLineIndices = [i];
-                                }
-                            }
-                        } else {
-                            if (curClusterLines.length >= 2) {
-                                tableClusters.push({ lines: [...curClusterLines], indices: new Set(curClusterLineIndices) });
-                            }
-                            curClusterLines = [];
-                            curClusterLineIndices = [];
+                        if (lines[i].cols.length >= 2) {
+                            rawTableLineIndices.push(i);
                         }
                     }
-                    if (curClusterLines.length >= 2) {
-                        tableClusters.push({ lines: [...curClusterLines], indices: new Set(curClusterLineIndices) });
+
+                    const tableLineIndices = new Set();
+                    if (rawTableLineIndices.length >= 2) {
+                        const minIdx = rawTableLineIndices[0];
+                        const maxIdx = rawTableLineIndices[rawTableLineIndices.length - 1];
+                        // 첫 표 시작 라인부터 마지막 표 라인 사이의 영역을 단일 통합 표 영역으로 정의
+                        for (let i = minIdx; i <= maxIdx; i++) {
+                            tableLineIndices.add(i);
+                        }
                     }
 
-                    // 표에 포함된 라인 인덱스 집합
-                    const tableLineIndices = new Set();
-                    tableClusters.forEach(cluster => {
-                        cluster.indices.forEach(idx => tableLineIndices.add(idx));
-                    });
+                    const tableLines = lines.filter((_, idx) => tableLineIndices.has(idx));
 
                     // ----------------------------------------------------
-                    // 2. 감지된 표(Table) 객체 생성 및 PPTX 슬라이드에 추가
+                    // 2. 단 1개의 통합 표(Table) 객체 생성 및 PPTX 추가
                     // ----------------------------------------------------
-                    for (const cluster of tableClusters) {
-                        // 대표 컬럼 X 좌표 집합 도출
+                    if (tableLines.length >= 2) {
+                        // 페이지 전체 전역 Master Columns X 좌표 도출 (오차범위 0.35inch 그룹핑)
                         const allMinXs = [];
-                        cluster.lines.forEach(l => l.cols.forEach(c => allMinXs.push(c.minX)));
+                        tableLines.forEach(l => l.cols.forEach(c => allMinXs.push(c.minX)));
                         allMinXs.sort((a, b) => a - b);
 
                         const masterCols = [];
                         for (const x of allMinXs) {
-                            let matched = masterCols.find(mc => Math.abs(mc - x) <= 0.4);
+                            let matched = masterCols.find(mc => Math.abs(mc - x) <= 0.35);
                             if (!matched) masterCols.push(x);
                         }
                         masterCols.sort((a, b) => a - b);
 
-                        if (masterCols.length < 2) continue; // 2열 미만 스킵
-
-                        // 2D 표 데이터 배열 구성
-                        const tableData = [];
-                        for (let rIdx = 0; rIdx < cluster.lines.length; rIdx++) {
-                            const line = cluster.lines[rIdx];
-                            const rowCells = new Array(masterCols.length).fill('');
+                        if (masterCols.length >= 2) {
+                            // 단 1개의 통일된 2D 표 데이터 구축
+                            const tableData = [];
                             
-                            for (const col of line.cols) {
-                                let bestColIdx = 0;
-                                let minDist = 999;
-                                masterCols.forEach((mcX, cIdx) => {
-                                    const dist = Math.abs(col.minX - mcX);
-                                    if (dist < minDist) {
-                                        minDist = dist;
-                                        bestColIdx = cIdx;
+                            for (let rIdx = 0; rIdx < tableLines.length; rIdx++) {
+                                const line = tableLines[rIdx];
+                                const rowCells = new Array(masterCols.length).fill('');
+                                
+                                for (const col of line.cols) {
+                                    let bestColIdx = 0;
+                                    let minDist = 999;
+                                    masterCols.forEach((mcX, cIdx) => {
+                                        const dist = Math.abs(col.minX - mcX);
+                                        if (dist < minDist) {
+                                            minDist = dist;
+                                            bestColIdx = cIdx;
+                                        }
+                                    });
+                                    const cellStr = col.items.map(it => it.str).join(' ').trim();
+                                    rowCells[bestColIdx] = rowCells[bestColIdx] ? (rowCells[bestColIdx] + ' ' + cellStr) : cellStr;
+                                }
+
+                                const isHeader = rIdx <= 1; // 상단 1~2개 행을 헤더로 강조
+                                tableData.push(rowCells.map(text => ({
+                                    text: text || ' ',
+                                    options: {
+                                        fill: isHeader ? { color: '1E293B' } : (rIdx % 2 === 1 ? { color: 'F8FAFC' } : { color: 'FFFFFF' }),
+                                        color: isHeader ? 'FFFFFF' : '0F172A',
+                                        fontFace: '맑은 고딕',
+                                        fontSize: isHeader ? 10 : 9,
+                                        bold: isHeader,
+                                        align: 'center',
+                                        valign: 'middle'
                                     }
-                                });
-                                const cellStr = col.items.map(it => it.str).join(' ').trim();
-                                rowCells[bestColIdx] = rowCells[bestColIdx] ? (rowCells[bestColIdx] + ' ' + cellStr) : cellStr;
+                                })));
                             }
 
-                            // pptxgenjs 표 셀 포맷팅
-                            const isHeader = rIdx === 0;
-                            tableData.push(rowCells.map(text => ({
-                                text: text || ' ',
-                                options: {
-                                    fill: isHeader ? { color: '1E293B' } : (rIdx % 2 === 1 ? { color: 'F8FAFC' } : { color: 'FFFFFF' }),
-                                    color: isHeader ? 'FFFFFF' : '0F172A',
-                                    fontFace: '맑은 고딕',
-                                    fontSize: isHeader ? 10.5 : 9.5,
-                                    bold: isHeader,
-                                    align: 'center',
-                                    valign: 'middle'
-                                }
-                            })));
+                            // 표 크기 및 배치 바운딩 박스
+                            const tableX = Math.max(0.4, masterCols[0]);
+                            const tableY = Math.max(0.4, tableLines[0].items[0].y);
+                            const lastLine = tableLines[tableLines.length - 1];
+                            const lastY = lastLine.items[0].y + (lastLine.items[0].h || 0.3);
+                            const tableW = Math.min(page_width_inch - tableX - 0.4, masterCols.length * 1.5);
+                            const tableH = Math.max(1.0, lastY - tableY + 0.3);
+
+                            // 단 1개의 표로 추가
+                            slide.addTable(tableData, {
+                                x: tableX,
+                                y: tableY,
+                                w: tableW,
+                                h: tableH,
+                                border: { pt: 1, color: 'CBD5E1' }
+                            });
                         }
-
-                        // 표 바운딩 박스 계산 (PPTX 인치 단위)
-                        const tableX = Math.max(0.4, masterCols[0]);
-                        const tableY = Math.max(0.4, cluster.lines[0].items[0].y);
-                        const lastLine = cluster.lines[cluster.lines.length - 1];
-                        const lastY = lastLine.items[0].y + (lastLine.items[0].h || 0.3);
-                        const tableW = Math.min(page_width_inch - tableX - 0.4, masterCols.length * 1.8);
-                        const tableH = Math.max(0.6, lastY - tableY + 0.2);
-
-                        slide.addTable(tableData, {
-                            x: tableX,
-                            y: tableY,
-                            w: tableW,
-                            h: tableH,
-                            border: { pt: 1, color: 'CBD5E1' }
-                        });
                     }
 
                     // ----------------------------------------------------
