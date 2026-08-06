@@ -1333,10 +1333,6 @@ export async function processPptBatch(pptFile, options) {
                             }
                             
                             // 💡 [핵심] DrawingML XSD 스키마 100% 정합성 보장을 위한 tcPr 자식 노드 순서 재배치 (Re-ordering)
-                            // 1) hMerge, vMerge, gridSpan (병합 정보)
-                            // 2) lnL, lnR, lnT, lnB (테두리 정보)
-                            // 3) solidFill, gradFill 등 (채우기 정보)
-                            // 4) 기타 여백/맞춤 속성
                             const spanNodes = [];
                             const borderNodes = [];
                             const fillNodes = [];
@@ -1358,7 +1354,6 @@ export async function processPptBatch(pptFile, options) {
                                 }
                             });
                             
-                            // tcPr 자식 비우기 후 XSD 순서대로 재삽입
                             while (tcPr.firstChild) {
                                 tcPr.removeChild(tcPr.firstChild);
                             }
@@ -1412,7 +1407,7 @@ export async function processPptBatch(pptFile, options) {
                                         
                                         const isAttrOnlyNode = (localName === 'endParaRPr' || localName === 'defRPr');
                                         if (!isAttrOnlyNode) {
-                                            // 글자색 흰색(#FFFFFF) 변경
+                                            // 기존 글자색 제거 후 새 글자색 흰색(#FFFFFF) 적용
                                             let textFill = null;
                                             for (let k = 0; k < rPr.childNodes.length; k++) {
                                                 const child = rPr.childNodes[k];
@@ -1450,6 +1445,42 @@ export async function processPptBatch(pptFile, options) {
                                                     rPr.appendChild(fontEl);
                                                 }
                                             });
+
+                                            // 💡 [핵심] a:rPr 자식 노드 XSD 순서 정밀 자동 정렬 (ln -> solidFill -> effect -> font)
+                                            const rLnNodes = [];
+                                            const rFillNodes = [];
+                                            const rEffectNodes = [];
+                                            const rFontNodes = [];
+                                            const rOtherNodes = [];
+
+                                            const fillNames = ['solidFill', 'gradFill', 'blipFill', 'pntFill', 'grpFill', 'noFill'];
+                                            const fontNames = ['latin', 'ea', 'cs', 'sym'];
+
+                                            Array.from(rPr.childNodes).forEach(c => {
+                                                if (c.nodeType === 1) {
+                                                    const name = c.localName || c.tagName.split(':').pop();
+                                                    if (name === 'ln') {
+                                                        rLnNodes.push(c);
+                                                    } else if (fillNames.includes(name)) {
+                                                        rFillNodes.push(c);
+                                                    } else if (['effectLst', 'effectDag', 'highlight'].includes(name)) {
+                                                        rEffectNodes.push(c);
+                                                    } else if (fontNames.includes(name)) {
+                                                        rFontNodes.push(c);
+                                                    } else {
+                                                        rOtherNodes.push(c);
+                                                    }
+                                                }
+                                            });
+
+                                            while (rPr.firstChild) {
+                                                rPr.removeChild(rPr.firstChild);
+                                            }
+                                            rLnNodes.forEach(n => rPr.appendChild(n));
+                                            rFillNodes.forEach(n => rPr.appendChild(n));
+                                            rEffectNodes.forEach(n => rPr.appendChild(n));
+                                            rFontNodes.forEach(n => rPr.appendChild(n));
+                                            rOtherNodes.forEach(n => rPr.appendChild(n));
                                         }
                                     }
                                 }
