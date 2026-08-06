@@ -887,6 +887,7 @@ export default function PptGenerator() {
     const buildBatchReportDetail = (modifiedBlob, options) => {
         const {
             applyTableDesignChecked,
+            applyFirstRowHeaderStyle,
             parsedRules,
             parsedFontRules,
             parsedFontSizeRules,
@@ -933,6 +934,15 @@ export default function PptGenerator() {
                 changes.push(`표 없음(표 스타일 적용 제외됨)`);
             }
         }
+        // 6-1. 첫 행 헤더 특별 포맷팅 수치 표출
+        if (applyFirstRowHeaderStyle !== false) {
+            const count = modifiedBlob.totalHeaderRowsApplied || 0;
+            if (count > 0) {
+                changes.push(`🎯 첫 행 헤더 특별 포맷팅 적용 ${count}개 표`);
+            } else {
+                changes.push(`첫 행 헤더 스타일 적용 0개(대상 표 없음)`);
+            }
+        }
         // 7. 제목 괄호 공백 추가
         if (add_space_before_parenthesis) {
             const count = modifiedBlob.totalTitleSpacesAdded || 0;
@@ -960,9 +970,11 @@ export default function PptGenerator() {
                                   (modifiedBlob.totalReplacedFontSizes || 0) > 0 ||
                                   (modifiedBlob.totalSpecialCharsCleaned || 0) > 0 ||
                                   (modifiedBlob.totalReplacedTextDesigns || 0) > 0 ||
+                                  (modifiedBlob.totalHeaderRowsApplied || 0) > 0 ||
                                   (add_space_before_parenthesis && (modifiedBlob.totalTitleSpacesAdded || 0) > 0) ||
                                   ((textColorRules && textColorRules.trim()) && (modifiedBlob.totalTextColorReplaced || 0) > 0) ||
                                   (preventWordWrap && (modifiedBlob.totalWordWrapPrevented || 0) > 0) ||
+                                  clearAltText;
                                   clearAltText ||
                                   (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
 
@@ -1115,6 +1127,7 @@ export default function PptGenerator() {
                     if (saved) {
                         const detailMsg = buildBatchReportDetail(modifiedBlob, {
                             applyTableDesignChecked,
+                            applyFirstRowHeaderStyle,
                             parsedRules,
                             parsedFontRules,
                             parsedFontSizeRules,
@@ -1162,6 +1175,7 @@ export default function PptGenerator() {
 
                         const detailMsg = buildBatchReportDetail(modifiedBlob, {
                             applyTableDesignChecked,
+                            applyFirstRowHeaderStyle,
                             parsedRules,
                             parsedFontRules,
                             parsedFontSizeRules,

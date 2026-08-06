@@ -886,6 +886,7 @@ export async function processPptBatch(pptFile, options) {
     
     let hasChanges = false;
     let totalTablesCount = 0; // PPT 내에 감지된 총 테이블(표) 요소 개수 누적기
+    let totalHeaderRowsApplied = 0; // 첫 행 헤더 스타일이 적용된 표 개수 카운터
     let totalReplacedWords = 0;
     let totalReplacedFonts = 0;
     let totalReplacedFontSizes = 0;
@@ -1185,7 +1186,7 @@ export async function processPptBatch(pptFile, options) {
         
         // [테이블 디자인] 순수 문자열(regex) 기반 처리 - DOM 방식 완전 폐기
         // DOM XMLSerializer가 삽입하는 중복 xmlns:a 네임스페이스가 PowerPoint OpenXML 파서를 파손하는 문제를 원천 차단
-        if (applyTableDesign && slidePath.startsWith('ppt/slides/slide')) {
+        if ((applyTableDesign || applyFirstRowHeaderStyle) && slidePath.startsWith('ppt/slides/slide')) {
             const useHeaderStyle = applyFirstRowHeaderStyle !== false;
             let xmlStr = slideXmlStr; // 현재 슬라이드 XML 문자열
             let strChanged = false;
@@ -1298,7 +1299,6 @@ export async function processPptBatch(pptFile, options) {
                     tcPrBody = tcPrBody.replace(
                         /(<a:ln[LRTB]\b[^>]*>)([\s\S]*?)(<\/a:ln[LRTB]>)/g,
                         (match, open, body, close) => {
-                            // ln 내부의 solidFill을 lumMod 없는 순백색 srgbClr 로 교체
                             let newBody = body.replace(
                                 /<a:solidFill>[\s\S]*?<\/a:solidFill>/g,
                                 '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
@@ -1349,7 +1349,6 @@ export async function processPptBatch(pptFile, options) {
                             newOpen = newOpen.replace(/ b="[^"]*"/, ' b="1"');
                         }
 
-                        // solidFill이 이미 존재하면 schemeClr/srgbClr 형태에 구애받지 않고 무조건 <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill> 로 통일 대치
                         let newBody = body;
                         if (/<a:solidFill>[\s\S]*?<\/a:solidFill>/.test(newBody)) {
                             newBody = newBody.replace(
@@ -1370,6 +1369,9 @@ export async function processPptBatch(pptFile, options) {
             const { result: processedXml, tableCount } = processTables(xmlStr);
             if (tableCount > 0) {
                 totalTablesCount += tableCount;
+                if (useHeaderStyle) {
+                    totalHeaderRowsApplied += tableCount;
+                }
                 slideXmlStr = processedXml;
                 fileChanged = true;
                 hasChanges = true;
@@ -1758,6 +1760,7 @@ export async function processPptBatch(pptFile, options) {
 
     // 💡 동적 커스텀 프로퍼티 바인딩으로 파일별 수정 메타데이터 보존
     blob.totalTablesCount = totalTablesCount;
+    blob.totalHeaderRowsApplied = totalHeaderRowsApplied;
     blob.hasChanges = hasChanges;
     blob.totalReplacedWords = totalReplacedWords;
     blob.totalReplacedFonts = totalReplacedFonts;
