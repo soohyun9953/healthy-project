@@ -1183,379 +1183,197 @@ export async function processPptBatch(pptFile, options) {
         const xmlDoc = parser.parseFromString(slideXmlStr, 'application/xml');
         if (xmlDoc.getElementsByTagName('parsererror').length > 0) return;
         
-        // [신규] 테이블(표) 표준 디자인 일괄 변경 로직 (실제 슬라이드 내용 ppt/slides/slide*.xml 에만 적용)
+        // [테이블 디자인] 순수 문자열(regex) 기반 처리 - DOM 방식 완전 폐기
+        // DOM XMLSerializer가 삽입하는 중복 xmlns:a 네임스페이스가 PowerPoint OpenXML 파서를 파손하는 문제를 원천 차단
         if (applyTableDesign && slidePath.startsWith('ppt/slides/slide')) {
-            const nsA = 'http://schemas.openxmlformats.org/drawingml/2006/main';
-            
-            // 💡 브라우저 네임스페이스 감지 실패 현상을 원천 방지하기 위해 전체 노드 순회 수집 적용
-            const tblElements = [];
-            const allNodes = xmlDoc.getElementsByTagName('*');
-            for (let i = 0; i < allNodes.length; i++) {
-                const node = allNodes[i];
-                if (node.nodeType === 1) {
-                    const localName = node.localName || node.tagName.split(':').pop();
-                    if (localName === 'tbl') {
-                        tblElements.push(node);
-                    }
-                }
-            }
+            const useHeaderStyle = applyFirstRowHeaderStyle !== false;
+            let xmlStr = slideXmlStr; // 현재 슬라이드 XML 문자열
+            let strChanged = false;
 
-            totalTablesCount += tblElements.length;
-            let tableChanged = false;
-            for (let tIdx = 0; tIdx < tblElements.length; tIdx++) {
-                const tbl = tblElements[tIdx];
-                
-                // 테이블의 모든 행(a:tr) 수집
-                const trs = [];
-                for (let k = 0; k < tbl.childNodes.length; k++) {
-                    const child = tbl.childNodes[k];
-                    if (child.nodeType === 1) {
-                        const localName = child.localName || child.tagName.split(':').pop();
-                        if (localName === 'tr') {
-                            trs.push(child);
-                        }
-                    }
+            // 테이블을 하나씩 찾아 처리 (문자열 내 모든 <a:tbl> 블록)
+            const processTables = (xml) => {
+                let result = xml;
+                let tblStart = 0;
+                let tableCount = 0;
+
+                while (true) {
+                    const tblIdx = result.indexOf('<a:tbl>', tblStart);
+                    if (tblIdx === -1) break;
+
+                    const tblEndIdx = result.indexOf('</a:tbl>', tblIdx);
+                    if (tblEndIdx === -1) break;
+
+                    const tblContent = result.substring(tblIdx, tblEndIdx + 8);
+                    tableCount++;
+
+                    // 테이블 내 모든 행(tr) 찾기
+                    const processedTbl = processTbl(tblContent, useHeaderStyle);
+
+                    result = result.substring(0, tblIdx) + processedTbl + result.substring(tblEndIdx + 8);
+                    tblStart = tblIdx + processedTbl.length;
                 }
-                
-                // 각 행 및 셀 순회하며 포맷팅
-                for (let rIdx = 0; rIdx < trs.length; rIdx++) {
-                    const tr = trs[rIdx];
+
+                return { result, tableCount };
+            };
+
+            const processTbl = (tblXml, useHeaderStyle) => {
+                // tr 행들을 순서대로 처리
+                let result = tblXml;
+                let trStart = 0;
+                let rowIdx = 0;
+
+                while (true) {
+                    const trIdx = result.indexOf('<a:tr ', trStart);
+                    if (trIdx === -1) break;
+
+                    const trEndIdx = result.indexOf('</a:tr>', trIdx);
+                    if (trEndIdx === -1) break;
+
+                    const trContent = result.substring(trIdx, trEndIdx + 7);
+                    const isFirstRow = (rowIdx === 0);
+
+                    const processedTr = processTr(trContent, isFirstRow, useHeaderStyle);
+
+                    result = result.substring(0, trIdx) + processedTr + result.substring(trEndIdx + 7);
+                    trStart = trIdx + processedTr.length;
+                    rowIdx++;
+                }
+
+                return result;
+            };
+
+            const processTr = (trXml, isFirstRow, useHeaderStyle) => {
+                if (!useHeaderStyle || !isFirstRow) return trXml;
+
+                // 첫 번째 행의 각 셀(tc) 처리
+                let result = trXml;
+                let tcStart = 0;
+
+                while (true) {
+                    const tcIdx = result.indexOf('<a:tc>', tcStart);
+                    const tcWithAttrIdx = result.indexOf('<a:tc ', tcStart);
+
+                    // <a:tc> 또는 <a:tc ...> 중 더 앞에 있는 것 선택
+                    let actualTcIdx = -1;
+                    if (tcIdx !== -1 && tcWithAttrIdx !== -1) {
+                        actualTcIdx = Math.min(tcIdx, tcWithAttrIdx);
+                    } else if (tcIdx !== -1) {
+                        actualTcIdx = tcIdx;
+                    } else if (tcWithAttrIdx !== -1) {
+                        actualTcIdx = tcWithAttrIdx;
+                    }
+
+                    if (actualTcIdx === -1) break;
+
+                    const tcEndIdx = result.indexOf('</a:tc>', actualTcIdx);
+                    if (tcEndIdx === -1) break;
+
+                    const tcContent = result.substring(actualTcIdx, tcEndIdx + 7);
+
+                    // hMerge/vMerge 피병합 셀은 스킵
+                    const isMergedPassenger = /hMerge\s*=\s*["']1["']/.test(tcContent) || /vMerge\s*=\s*["']1["']/.test(tcContent);
+
+                    let processedTc = tcContent;
+                    if (!isMergedPassenger) {
+                        processedTc = applyHeaderStyleToTc(tcContent);
+                    }
+
+                    result = result.substring(0, actualTcIdx) + processedTc + result.substring(tcEndIdx + 7);
+                    tcStart = actualTcIdx + processedTc.length;
+                }
+
+                return result;
+            };
+
+            // 셀 배경색을 #0072BA로 변경 (srgbClr val 속성만 정규식으로 교체)
+            const applyHeaderStyleToTc = (tcXml) => {
+                let result = tcXml;
+
+                // tcPr 블록 찾기
+                const tcPrMatch = result.match(/<a:tcPr([^>]*)>([\s\S]*?)<\/a:tcPr>/);
+                if (tcPrMatch) {
+                    const tcPrAttrs = tcPrMatch[1];
+                    let tcPrBody = tcPrMatch[2];
+
+                    // solidFill 내 srgbClr val 교체 (배경색)
+                    // tcPr 내의 마지막 solidFill의 srgbClr val을 0072BA로 교체
+                    // lnL/lnR/lnT/lnB 이후의 solidFill이 배경색
+                    const hasSolidFill = /<a:solidFill>[\s\S]*?<\/a:solidFill>/.test(tcPrBody);
                     
-                    // tr의 모든 셀(a:tc) 수집
-                    const tcs = [];
-                    for (let k = 0; k < tr.childNodes.length; k++) {
-                        const child = tr.childNodes[k];
-                        if (child.nodeType === 1) {
-                            const localName = child.localName || child.tagName.split(':').pop();
-                            if (localName === 'tc') {
-                                tcs.push(child);
+                    if (hasSolidFill) {
+                        // lnL, lnR, lnT, lnB, lnTlToBr, lnBlToTr 이후에 나오는 solidFill을 배경색으로 변경
+                        // 마지막 solidFill 블록을 교체
+                        let lastSolidFillIdx = -1;
+                        let searchFrom = 0;
+                        while (true) {
+                            const idx = tcPrBody.indexOf('<a:solidFill>', searchFrom);
+                            if (idx === -1) break;
+                            // 이 solidFill이 lnL/lnR/lnT/lnB 안에 있는지 확인
+                            // 앞 부분에 <a:ln 태그가 열려있고 아직 닫히지 않았으면 테두리용
+                            const beforeThis = tcPrBody.substring(0, idx);
+                            const lnOpenCount = (beforeThis.match(/<a:ln[LRTB]/g) || []).length;
+                            const lnCloseCount = (beforeThis.match(/<\/a:ln[LRTB]>/g) || []).length;
+                            if (lnOpenCount <= lnCloseCount) {
+                                // 테두리 안에 없는 solidFill = 배경색
+                                lastSolidFillIdx = idx;
                             }
+                            searchFrom = idx + 1;
                         }
-                    }
-                    
-                    for (let cIdx = 0; cIdx < tcs.length; cIdx++) {
-                        const tc = tcs[cIdx];
-                        
-                        try {
-                            // 💡 복구 오류 방지 1: 병합된 피병합 셀(hMerge="1" 또는 vMerge="1")은 구조 변경 시 XML 파손 위험이 있으므로 스킵
-                            const isMergedPassenger = tc.getAttribute('hMerge') === '1' || tc.getAttribute('vMerge') === '1';
-                            if (isMergedPassenger) continue;
 
-                            // 셀 속성 tcPr 찾기 및 생성
-                            let tcPr = null;
-                            for (let k = 0; k < tc.childNodes.length; k++) {
-                                const child = tc.childNodes[k];
-                                if (child.nodeType === 1) {
-                                    const localName = child.localName || child.tagName.split(':').pop();
-                                    if (localName === 'tcPr') {
-                                        tcPr = child;
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            if (!tcPr) {
-                                tcPr = xmlDoc.createElementNS(nsA, 'a:tcPr');
-                                if (tc.firstChild) {
-                                    tc.insertBefore(tcPr, tc.firstChild);
-                                } else {
-                                    tc.appendChild(tcPr);
-                                }
-                            }
-                            
-                            const useHeaderStyle = applyFirstRowHeaderStyle !== false;
-                            const isFirstRow = (rIdx === 0);
-                            const isFirstCol = (cIdx === 0);
-                            
-                            // 💡 복구 오류 방지 2: 기존 노드 파괴 금지 (In-place Mutation)
-                            // 기존 테두리가 존재하면 색상만 변경하고, 없으면 스키마 위치에 신규 생성
-                            const borderNames = ['lnL', 'lnR', 'lnT', 'lnB'];
-                            borderNames.forEach(bName => {
-                                let border_color = '7F7F7F';
-                                const border_width = '6350'; // 0.5pt
-                                
-                                if (useHeaderStyle && rIdx === 0) {
-                                    const is_left_edge = (bName === 'lnL' && cIdx === 0);
-                                    const is_right_edge = (bName === 'lnR' && cIdx === tcs.length - 1);
-                                    const is_top_edge = (bName === 'lnT');
-                                    
-                                    if (is_left_edge || is_right_edge || is_top_edge) {
-                                        border_color = '7F7F7F';
-                                    } else {
-                                        border_color = 'FFFFFF';
-                                    }
-                                } else if (useHeaderStyle && rIdx === 1) {
-                                    if (bName === 'lnT') border_color = 'FFFFFF';
-                                }
-                                
-                                let existingLn = null;
-                                for (let k = 0; k < tcPr.childNodes.length; k++) {
-                                    const child = tcPr.childNodes[k];
-                                    if (child.nodeType === 1 && (child.localName === bName || child.tagName.split(':').pop() === bName)) {
-                                        existingLn = child;
-                                        break;
-                                    }
-                                }
-                                
-                                if (existingLn) {
-                                    existingLn.setAttribute('w', border_width);
-                                    let srgbClr = existingLn.querySelector('srgbClr');
-                                    if (srgbClr) {
-                                        srgbClr.setAttribute('val', border_color);
-                                    } else {
-                                        let solidFill = existingLn.querySelector('solidFill');
-                                        if (!solidFill) {
-                                            solidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                                            existingLn.appendChild(solidFill);
-                                        }
-                                        srgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                                        srgbClr.setAttribute('val', border_color);
-                                        solidFill.appendChild(srgbClr);
-                                    }
-                                } else {
-                                    const ln = xmlDoc.createElementNS(nsA, `a:${bName}`);
-                                    ln.setAttribute('w', border_width);
-                                    const solidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                                    const srgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                                    srgbClr.setAttribute('val', border_color);
-                                    solidFill.appendChild(srgbClr);
-                                    ln.appendChild(solidFill);
-                                    
-                                    const prstDash = xmlDoc.createElementNS(nsA, 'a:prstDash');
-                                    prstDash.setAttribute('val', 'solid');
-                                    ln.appendChild(prstDash);
-                                    
-                                    tcPr.appendChild(ln);
-                                }
-                            });
-                            
-                            // 첫번째 행(rIdx === 0) 헤더 배경색(#0072BA) 적용
-                            if (useHeaderStyle && isFirstRow) {
-                                let existingFill = null;
-                                for (let k = 0; k < tcPr.childNodes.length; k++) {
-                                    const child = tcPr.childNodes[k];
-                                    const name = child.localName || child.tagName.split(':').pop();
-                                    if (child.nodeType === 1 && ['solidFill', 'gradFill', 'blipFill', 'pntFill', 'grpFill', 'noFill'].includes(name)) {
-                                        existingFill = child;
-                                        break;
-                                    }
-                                }
-                                
-                                if (existingFill) {
-                                    let srgbClr = existingFill.querySelector('srgbClr');
-                                    if (srgbClr) {
-                                        srgbClr.setAttribute('val', '0072BA');
-                                    } else {
-                                        tcPr.removeChild(existingFill);
-                                        const bgSolidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                                        const bgSrgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                                        bgSrgbClr.setAttribute('val', '0072BA');
-                                        bgSolidFill.appendChild(bgSrgbClr);
-                                        tcPr.appendChild(bgSolidFill);
-                                    }
-                                } else {
-                                    const bgSolidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                                    const bgSrgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                                    bgSrgbClr.setAttribute('val', '0072BA');
-                                    bgSolidFill.appendChild(bgSrgbClr);
-                                    tcPr.appendChild(bgSolidFill);
-                                }
-                            }
-                            
-                            // 💡 [핵심] tcPr 자식 노드 XSD 순서 정밀 자동 재배치 (span -> border -> fill -> other)
-                            const spanNodes = [];
-                            const borderNodes = [];
-                            const fillNodes = [];
-                            const otherTcPrNodes = [];
-                            
-                            Array.from(tcPr.childNodes).forEach(child => {
-                                if (child.nodeType === 1) {
-                                    const name = child.localName || child.tagName.split(':').pop();
-                                    if (['hMerge', 'vMerge', 'gridSpan', 'rowSpan'].includes(name)) {
-                                        spanNodes.push(child);
-                                    } else if (['lnL', 'lnR', 'lnT', 'lnB', 'lnTlToBr', 'lnBlToTr'].includes(name)) {
-                                        borderNodes.push(child);
-                                    } else if (['solidFill', 'gradFill', 'blipFill', 'pntFill', 'grpFill', 'noFill'].includes(name)) {
-                                        fillNodes.push(child);
-                                    } else {
-                                        otherTcPrNodes.push(child);
-                                    }
-                                }
-                            });
-                            
-                            while (tcPr.firstChild) {
-                                tcPr.removeChild(tcPr.firstChild);
-                            }
-                            spanNodes.forEach(n => tcPr.appendChild(n));
-                            borderNodes.forEach(n => tcPr.appendChild(n));
-                            fillNodes.forEach(n => tcPr.appendChild(n));
-                            otherTcPrNodes.forEach(n => tcPr.appendChild(n));
-                            
-                            // 텍스트 스타일링: 첫번째 행(rIdx === 0) 헤더 텍스트 포맷팅
-                            if (useHeaderStyle && isFirstRow) {
-                                const textRuns = [];
-                                const tcNodes = tc.getElementsByTagName('*');
-                                for (let k = 0; k < tcNodes.length; k++) {
-                                    const node = tcNodes[k];
-                                    if (node.nodeType === 1) {
-                                        const localName = node.localName || node.tagName.split(':').pop();
-                                        if (localName === 'r' || localName === 'endParaRPr' || localName === 'defRPr') {
-                                            textRuns.push(node);
-                                        }
-                                    }
-                                }
-                                
-                                for (let tR = 0; tR < textRuns.length; tR++) {
-                                    const run = textRuns[tR];
-                                    const localName = run.localName || run.tagName.split(':').pop();
-                                    
-                                    let rPr = null;
-                                    if (localName === 'endParaRPr' || localName === 'defRPr') {
-                                        rPr = run;
-                                    } else {
-                                        for (let k = 0; k < run.childNodes.length; k++) {
-                                            const child = run.childNodes[k];
-                                            if (child.nodeType === 1 && (child.localName === 'rPr' || child.tagName.split(':').pop() === 'rPr')) {
-                                                rPr = child;
-                                                break;
-                                            }
-                                        }
-                                        if (!rPr) {
-                                            rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
-                                            if (run.firstChild) {
-                                                run.insertBefore(rPr, run.firstChild);
-                                            } else {
-                                                run.appendChild(rPr);
-                                            }
-                                        }
-                                    }
-                                    
-                                    if (rPr) {
-                                        rPr.setAttribute('sz', '1100'); // 11pt
-                                        rPr.setAttribute('b', '1'); // Bold
-                                        
-                                        const isAttrOnlyNode = (localName === 'endParaRPr' || localName === 'defRPr');
-                                        if (!isAttrOnlyNode) {
-                                            let srgbClr = rPr.querySelector('srgbClr');
-                                            if (srgbClr) {
-                                                srgbClr.setAttribute('val', 'FFFFFF');
-                                            } else {
-                                                const textSolidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                                                const newSrgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                                                newSrgbClr.setAttribute('val', 'FFFFFF');
-                                                textSolidFill.appendChild(newSrgbClr);
-                                                rPr.appendChild(textSolidFill);
-                                            }
-                                            
-                                            // 폰트 설정 (latin, ea, cs)
-                                            const fontTypes = ['latin', 'ea', 'cs'];
-                                            fontTypes.forEach(fType => {
-                                                let fontEl = null;
-                                                for (let k = 0; k < rPr.childNodes.length; k++) {
-                                                    const child = rPr.childNodes[k];
-                                                    if (child.nodeType === 1 && (child.localName === fType || child.tagName.split(':').pop() === fType)) {
-                                                        fontEl = child;
-                                                        break;
-                                                    }
-                                                }
-                                                if (fontEl) {
-                                                    fontEl.setAttribute('typeface', 'KoPub돋움체 Bold');
-                                                } else {
-                                                    fontEl = xmlDoc.createElementNS(nsA, `a:${fType}`);
-                                                    fontEl.setAttribute('typeface', 'KoPub돋움체 Bold');
-                                                    rPr.appendChild(fontEl);
-                                                }
-                                            });
-
-                                            // 💡 a:rPr 자식 노드 XSD 순서 정밀 자동 정렬
-                                            const rLnNodes = [];
-                                            const rFillNodes = [];
-                                            const rEffectNodes = [];
-                                            const rFontNodes = [];
-                                            const rOtherNodes = [];
-
-                                            const fillNames = ['solidFill', 'gradFill', 'blipFill', 'pntFill', 'grpFill', 'noFill'];
-                                            const fontNames = ['latin', 'ea', 'cs', 'sym'];
-
-                                            Array.from(rPr.childNodes).forEach(c => {
-                                                if (c.nodeType === 1) {
-                                                    const name = c.localName || c.tagName.split(':').pop();
-                                                    if (name === 'ln') {
-                                                        rLnNodes.push(c);
-                                                    } else if (fillNames.includes(name)) {
-                                                        rFillNodes.push(c);
-                                                    } else if (['effectLst', 'effectDag', 'highlight'].includes(name)) {
-                                                        rEffectNodes.push(c);
-                                                    } else if (fontNames.includes(name)) {
-                                                        rFontNodes.push(c);
-                                                    } else {
-                                                        rOtherNodes.push(c);
-                                                    }
-                                                }
-                                            });
-
-                                            while (rPr.firstChild) {
-                                                rPr.removeChild(rPr.firstChild);
-                                            }
-                                            rLnNodes.forEach(n => rPr.appendChild(n));
-                                            rFillNodes.forEach(n => rPr.appendChild(n));
-                                            rEffectNodes.forEach(n => rPr.appendChild(n));
-                                            rFontNodes.forEach(n => rPr.appendChild(n));
-                                            rOtherNodes.forEach(n => rPr.appendChild(n));
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            // 첫 번째 행(rIdx === 0) 및 첫 번째 열(cIdx === 0) 텍스트 가운데 정렬
-                            if (isFirstRow || isFirstCol) {
-                                const paragraphs = [];
-                                const tcNodesForP = tc.getElementsByTagName('*');
-                                for (let k = 0; k < tcNodesForP.length; k++) {
-                                    const node = tcNodesForP[k];
-                                    if (node.nodeType === 1) {
-                                        const cName = node.localName || node.tagName.split(':').pop();
-                                        if (cName === 'p') {
-                                            paragraphs.push(node);
-                                        }
-                                    }
-                                }
-                                paragraphs.forEach(p => {
-                                    let pPr = null;
-                                    for (let k = 0; k < p.childNodes.length; k++) {
-                                        const child = p.childNodes[k];
-                                        if (child.nodeType === 1) {
-                                            const cName = child.localName || child.tagName.split(':').pop();
-                                            if (cName === 'pPr') {
-                                                pPr = child;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    if (!pPr) {
-                                        pPr = xmlDoc.createElementNS(nsA, 'a:pPr');
-                                        if (p.firstChild) {
-                                            p.insertBefore(pPr, p.firstChild);
-                                        } else {
-                                            p.appendChild(pPr);
-                                        }
-                                    }
-                                    pPr.setAttribute('algn', 'ctr');
-                                    if (isFirstCol) {
-                                        pPr.setAttribute('latinLnBrk', '0');
-                                        pPr.setAttribute('eaLnBrk', '0');
-                                    }
-                                });
-                            }
-                        } catch (cellErr) {
-                            console.error(`Cell (${rIdx}, ${cIdx}) formatting error:`, cellErr);
+                        if (lastSolidFillIdx !== -1) {
+                            const sfEnd = tcPrBody.indexOf('</a:solidFill>', lastSolidFillIdx) + 14;
+                            const newSolidFill = '<a:solidFill><a:srgbClr val="0072BA"/></a:solidFill>';
+                            tcPrBody = tcPrBody.substring(0, lastSolidFillIdx) + newSolidFill + tcPrBody.substring(sfEnd);
+                        } else {
+                            tcPrBody += '<a:solidFill><a:srgbClr val="0072BA"/></a:solidFill>';
                         }
+                    } else {
+                        tcPrBody += '<a:solidFill><a:srgbClr val="0072BA"/></a:solidFill>';
                     }
+
+                    result = result.replace(tcPrMatch[0], `<a:tcPr${tcPrAttrs}>${tcPrBody}</a:tcPr>`);
                 }
-                tableChanged = true;
-            }
-            if (tableChanged) {
-                slideXmlStr = serializer.serializeToString(xmlDoc);
+
+                // 텍스트 흰색(FFFFFF)으로 변경: a:r 내 a:rPr의 srgbClr val 교체
+                // 기존 solidFill의 srgbClr val만 교체 (구조 변경 없이)
+                result = result.replace(
+                    /(<a:rPr\b[^>]*>)([\s\S]*?)(<\/a:rPr>)/g,
+                    (match, open, body, close) => {
+                        // sz와 b 속성 설정
+                        let newOpen = open;
+                        if (!/ sz=/.test(newOpen)) {
+                            newOpen = newOpen.replace('<a:rPr', '<a:rPr sz="1100"');
+                        } else {
+                            newOpen = newOpen.replace(/ sz="[^"]*"/, ' sz="1100"');
+                        }
+                        if (!/ b=/.test(newOpen)) {
+                            newOpen = newOpen.replace('<a:rPr', '<a:rPr b="1"');
+                        } else {
+                            newOpen = newOpen.replace(/ b="[^"]*"/, ' b="1"');
+                        }
+
+                        // 글자색 변경: solidFill 내 srgbClr val을 FFFFFF로
+                        let newBody = body;
+                        if (/<a:solidFill>/.test(newBody)) {
+                            newBody = newBody.replace(
+                                /(<a:solidFill>[\s\S]*?<a:srgbClr val=")([^"]*)(")[\s\S]*?(<\/a:solidFill>)/g,
+                                (m, pre, oldVal, q, post) => `${pre}FFFFFF${q}/>${post}`
+                            );
+                        } else {
+                            newBody += '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>';
+                        }
+
+                        return `${newOpen}${newBody}${close}`;
+                    }
+                );
+
+                return result;
+            };
+
+            const { result: processedXml, tableCount } = processTables(xmlStr);
+            if (tableCount > 0) {
+                totalTablesCount += tableCount;
+                slideXmlStr = processedXml;
                 fileChanged = true;
                 hasChanges = true;
             }
