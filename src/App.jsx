@@ -11,6 +11,7 @@ import RagKnowledgeBase from './components/RagKnowledgeBase';
 import IsmpDaDashboard from './components/IsmpDaDashboard';
 import PptValidator from './components/PptValidator';
 import HwpxGenerator from './components/HwpxGenerator';
+import G2bSearch from './components/G2bSearch';
 import { 
   Shield, 
   ShieldAlert,
@@ -42,7 +43,8 @@ import {
   Moon,
   Sliders,
   Sparkles,
-  HelpCircle
+  HelpCircle,
+  Building2
 } from 'lucide-react';
 import { processFile } from './utils/fileExtractor';
 
@@ -65,6 +67,16 @@ const tab_guides = {
       '완성된 PPTX 파일을 다운로드할 위치를 지정하여 저장합니다.'
     ],
     tips: '다량의 데이터를 한번에 처리할 때는 배치 청크 사이즈를 조절해 속도를 높일 수 있습니다.'
+  },
+  g2b: {
+    title: '나라장터 정보조회',
+    desc: '조달청 나라장터(g2b.go.kr)의 발주계획(발주예정) 및 사전규격 공고 정보를 사업명 및 수요기관 조건으로 검색합니다.',
+    steps: [
+      '조회 구분 선택 (전체 / 발주계획 / 사전규격)',
+      '사업명 키워드 또는 특정 수요기관명 입력',
+      '조건별 실시간 검색 결과 확인 및 엑셀(.xlsx) 다운로드'
+    ],
+    tips: '추천 사업명 태그(#AI, #ISP, #클라우드)나 수요기관 태그(@국립중앙의료원, @보건복지부)를 누르면 빠르게 조회할 수 있습니다.'
   },
   'ppt-verify': {
     title: 'PPT 검증(표준산출물)',
@@ -325,6 +337,7 @@ function App() {
 
   const tabs = [
     { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316', useGemini: false },
+    { id: 'g2b', label: '나라장터 정보조회', icon: Building2, color: 'var(--accent-blue)', useGemini: false },
     { id: 'ppt-verify', label: 'PPT 검증(표준산출물)', icon: ShieldAlert, color: '#e11d48', useGemini: false },
     { id: 'main', label: 'AI 산출물 검증', icon: Shield, color: 'var(--accent-blue)', useGemini: true },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
@@ -857,6 +870,7 @@ function App() {
           { activeTab === 'erd' && <ErdGenerator apiKey={apiKey} /> }
           { activeTab === 'aippt' && <AiPptDesigner apiKey={apiKey} /> }
           { activeTab === 'ppt' && <PptGenerator apiKey={apiKey} /> }
+          { activeTab === 'g2b' && <G2bSearch /> }
           { activeTab === 'ppt-verify' && <PptValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
           {activeTab === 'meeting' && <MeetingMinutes apiKey={apiKey} />}
           {activeTab === 'library' && <ReferenceLibrary />}
