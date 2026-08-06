@@ -177,7 +177,7 @@ function mergeResults(res1, res2, isTypoMode, partNumber = 2) {
 async function analyze_with_omniroute(prompt, model = 'auto', onProgress, systemPrompt = '', userInputData = '', raw_artifact_text = '') {
     const candidate_models = (model && model !== 'auto') 
         ? [model] 
-        : ['gemini-2.0-flash', 'gemini-1.5-pro', 'gpt-4o-mini', 'auto'];
+        : ['gemini-2.0-flash', 'gemini-1.5-pro', 'gpt-4o-mini'];
 
     let last_error = null;
     let best_result = null;
@@ -236,6 +236,8 @@ async function analyze_with_omniroute(prompt, model = 'auto', onProgress, system
         if (!response) {
             console.warn(`OmniRoute connection failed to both 127.0.0.1 and localhost:`, fetch_err);
             last_error = fetch_err || new Error('OmniRoute 서버(localhost:20128)에 연결할 수 없습니다. 터미널에서 [omniroute] 명령어로 서버를 시작해 주세요.');
+            // 이미 성공한 결과가 있으면 추가 시도 없이 반환
+            if (best_result) return best_result;
             continue;
         }
 
@@ -251,6 +253,8 @@ async function analyze_with_omniroute(prompt, model = 'auto', onProgress, system
                 } catch (_) {}
 
                 last_error = new Error(err_msg || `HTTP Error ${response.status}`);
+                // 이미 성공한 결과가 있으면 추가 시도 없이 반환
+                if (best_result) return best_result;
                 continue;
             }
 
@@ -278,14 +282,18 @@ async function analyze_with_omniroute(prompt, model = 'auto', onProgress, system
 
             const parsed_res = parse_and_normalize_response(raw_text, raw_artifact_text);
             if (parsed_res) {
-                best_result = parsed_res;
+                // 파싱 성공 시 오탈자 유무와 관계없이 즉시 반환 (첫 번째 성공 모델 우선)
                 if (parsed_res.typos && parsed_res.typos.length > 0) {
                     if (onProgress) onProgress(`OmniRoute [${target_model}] 모델에서 오탈자 ${parsed_res.typos.length}건 검출 성공!`);
-                    return parsed_res;
+                } else {
+                    if (onProgress) onProgress(`OmniRoute [${target_model}] 분석 완료 (오탈자 없음)`);
                 }
+                return parsed_res;
             }
         } catch (err) {
             last_error = err;
+            // 이미 성공한 결과가 있으면 추가 시도 없이 반환
+            if (best_result) return best_result;
         }
     }
 

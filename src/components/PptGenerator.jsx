@@ -109,6 +109,15 @@ export default function PptGenerator() {
     const [is_dragging_pdf, set_is_dragging_pdf] = useState(false);
     const pdf_input_ref = useRef(null);
 
+    // PDF → PPT 변환 관련 State
+    const [pdf_to_ppt_file, set_pdf_to_ppt_file] = useState(null);
+    const [is_converting_pdf_to_ppt, set_is_converting_pdf_to_ppt] = useState(false);
+    const [pdf_to_ppt_progress, set_pdf_to_ppt_progress] = useState({ current: 0, total: 0 });
+    const [pdf_to_ppt_dpi_scale, set_pdf_to_ppt_dpi_scale] = useState(2);
+    const [pdf_to_ppt_mode, set_pdf_to_ppt_mode] = useState('text'); // 'text' (편집 가능한 텍스트 추출), 'hybrid', 'image' (통이미지)
+    const [is_dragging_pdf_to_ppt, set_is_dragging_pdf_to_ppt] = useState(false);
+    const pdf_to_ppt_input_ref = useRef(null);
+
     // 로컬 헬퍼 서버 상태 실시간 감지 (3초 주기 폴링)
     useEffect(() => {
         const check_server_status = async () => {
@@ -220,6 +229,343 @@ export default function PptGenerator() {
             setErrorMsg('로컬 서버와의 통신에 실패했습니다. 서버가 구동 중인지 확인해주세요.');
         } finally {
             set_is_converting(false);
+        }
+    };
+
+    // PDF → PPT 변환 핸들러 (편집 가능한 텍스트 상자 분리 지원)
+    const handle_pdf_to_ppt = async (file_input) => {
+        const file = file_input || pdf_to_ppt_file;
+        if (!file) {
+            setErrorMsg('PDF 파일을 선택하거나 드래그해 주세요.');
+            return;
+        }
+
+        setErrorMsg(null);
+        setSuccessMsg(null);
+        set_is_converting_pdf_to_ppt(true);
+        set_pdf_to_ppt_progress({ current: 0, total: 0 });
+
+        try {
+            // 1. pdfjs-dist 로드
+            const pdfjsLib = await import('pdfjs-dist');
+            pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+                'pdfjs-dist/build/pdf.worker.mjs',
+                import.meta.url
+            ).toString();
+
+            // 2. PDF 파일 로드
+            const array_buffer = await file.arrayBuffer();
+            const pdf_doc = await pdfjsLib.getDocument({ data: array_buffer }).promise;
+            const total_pages = pdf_doc.numPages;
+            set_pdf_to_ppt_progress({ current: 0, total: total_pages });
+
+            // 3. 첫 페이지로 슬라이드 크기 결정 (72 points = 1 inch)
+            const first_page = await pdf_doc.getPage(1);
+            const first_viewport = first_page.getViewport({ scale: 1 });
+            const page_width_inch = first_viewport.width / 72;
+            const page_height_inch = first_viewport.height / 72;
+
+            // 4. pptxgenjs 로 슬라이드 생성
+            const PptxGenJS = (await import('pptxgenjs')).default;
+            const pptx = new PptxGenJS();
+            pptx.defineLayout({
+                name: 'PDF_LAYOUT',
+                width: page_width_inch,
+                height: page_height_inch
+            });
+            pptx.layout = 'PDF_LAYOUT';
+
+            // 5. 각 페이지별 변환 작업
+            for (let page_num = 1; page_num <= total_pages; page_num++) {
+                const page = await pdf_doc.getPage(page_num);
+                const viewport = page.getViewport({ scale: 1 }); // 1.0 기본 스케일 좌표계
+                const slide = pptx.addSlide();
+
+                // 모드가 'image' 또는 'hybrid' 인 경우 배경 이미지 생성 및 추가
+                if (pdf_to_ppt_mode === 'image' || pdf_to_ppt_mode === 'hybrid') {
+                    const img_viewport = page.getViewport({ scale: pdf_to_ppt_dpi_scale });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img_viewport.width;
+                    canvas.height = img_viewport.height;
+                    const ctx = canvas.getContext('2d');
+
+                    await page.render({ canvasContext: ctx, viewport: img_viewport }).promise;
+                    const img_data = canvas.toDataURL('image/png');
+
+                    slide.addImage({
+                        data: img_data,
+                        x: 0,
+                        y: 0,
+                        w: page_width_inch,
+                        h: page_height_inch
+                    });
+                }
+
+                // 모드가 'text' 또는 'hybrid' 인 경우 텍스트 및 위치 추출 후 PPTX 텍스트 상자 추가
+                if (pdf_to_ppt_mode === 'text' || pdf_to_ppt_mode === 'hybrid') {
+                    const text_content = await page.getTextContent();
+                    const raw_items = text_content.items || [];
+
+                    // 텍스트 아이템 위치 및 폰트 계산 데이터 구성
+                    const parsed_items = [];
+                    for (const item of raw_items) {
+                        if (!item.str || item.str.trim() === '') continue;
+
+                        const tx = item.transform; // [scaleX, skewY, skewX, scaleY, translateX, translateY]
+                        const pdfX = tx[4];
+                        const pdfY = tx[5];
+
+                        // 폰트 크기 계산 (pt 단위)
+                        const font_height = Math.hypot(tx[0], tx[1]);
+                        const font_size = Math.max(7, Math.min(72, Math.round(font_height * 0.9)));
+
+                        // PDF 좌표(좌하단 원점) -> PPT 좌표(인치, 좌상단 원점)
+                        const x_inch = Math.max(0, pdfX / 72);
+                        const y_inch = Math.max(0, (first_viewport.height - pdfY - font_height) / 72);
+                        const item_w_inch = (item.width || (item.str.length * font_height * 0.5)) / 72;
+
+                        parsed_items.push({
+                            str: item.str,
+                            x: x_inch,
+                            y: y_inch,
+                            w: Math.max(0.2, item_w_inch),
+                            h: (font_height * 1.3) / 72,
+                            fontSize: font_size,
+                            yPt: first_viewport.height - pdfY
+                        });
+                    }
+
+                    // Y 좌표가 비슷한 항목들을 행(Line) 단위로 클러스터링 (tolerance: 4pt)
+                    const lines = [];
+                    parsed_items.sort((a, b) => a.yPt - b.yPt);
+
+                    for (const item of parsed_items) {
+                        let matched_line = lines.find(l => Math.abs(l.yPt - item.yPt) <= 4);
+                        if (matched_line) {
+                            matched_line.items.push(item);
+                        } else {
+                            lines.push({
+                                yPt: item.yPt,
+                                items: [item]
+                            });
+                        }
+                    }
+
+                    // 각 행 내의 아이템을 X좌표 오름차순 정렬 후 인접 셀/컬럼 그룹핑
+                    lines.forEach(line => {
+                        line.items.sort((a, b) => a.x - b.x);
+                        const cols = [];
+                        let curCol = null;
+                        for (const item of line.items) {
+                            if (!curCol) {
+                                curCol = { minX: item.x, maxX: item.x + item.w, items: [item] };
+                            } else {
+                                const gap = item.x - curCol.maxX;
+                                if (gap < 0.25) { // 0.25inch 미만 간격은 동일 셀 항목으로 결합
+                                    curCol.maxX = Math.max(curCol.maxX, item.x + item.w);
+                                    curCol.items.push(item);
+                                } else {
+                                    cols.push(curCol);
+                                    curCol = { minX: item.x, maxX: item.x + item.w, items: [item] };
+                                }
+                            }
+                        }
+                        if (curCol) cols.push(curCol);
+                        line.cols = cols;
+                    });
+
+                    // ----------------------------------------------------
+                    // 1. PDF 내 표(Table Grid) 구간 감지 (Table Detection)
+                    // ----------------------------------------------------
+                    const tableClusters = []; // [{ lines: [...], lineIndices: Set }]
+                    let curClusterLines = [];
+                    let curClusterLineIndices = [];
+
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+                        const isMultiColLine = line.cols.length >= 2; // 2개 이상의 수직 열을 보유한 라인
+
+                        if (isMultiColLine) {
+                            if (curClusterLines.length === 0) {
+                                curClusterLines.push(line);
+                                curClusterLineIndices.push(i);
+                            } else {
+                                const prevLine = curClusterLines[curClusterLines.length - 1];
+                                const yDiff = line.yPt - prevLine.yPt;
+                                // 연속된 Y축 라인 간격이 표 행 간격 범위 이내 (최대 35pt)
+                                if (yDiff <= 35) {
+                                    curClusterLines.push(line);
+                                    curClusterLineIndices.push(i);
+                                } else {
+                                    if (curClusterLines.length >= 2) {
+                                        tableClusters.push({ lines: [...curClusterLines], indices: new Set(curClusterLineIndices) });
+                                    }
+                                    curClusterLines = [line];
+                                    curClusterLineIndices = [i];
+                                }
+                            }
+                        } else {
+                            if (curClusterLines.length >= 2) {
+                                tableClusters.push({ lines: [...curClusterLines], indices: new Set(curClusterLineIndices) });
+                            }
+                            curClusterLines = [];
+                            curClusterLineIndices = [];
+                        }
+                    }
+                    if (curClusterLines.length >= 2) {
+                        tableClusters.push({ lines: [...curClusterLines], indices: new Set(curClusterLineIndices) });
+                    }
+
+                    // 표에 포함된 라인 인덱스 집합
+                    const tableLineIndices = new Set();
+                    tableClusters.forEach(cluster => {
+                        cluster.indices.forEach(idx => tableLineIndices.add(idx));
+                    });
+
+                    // ----------------------------------------------------
+                    // 2. 감지된 표(Table) 객체 생성 및 PPTX 슬라이드에 추가
+                    // ----------------------------------------------------
+                    for (const cluster of tableClusters) {
+                        // 대표 컬럼 X 좌표 집합 도출
+                        const allMinXs = [];
+                        cluster.lines.forEach(l => l.cols.forEach(c => allMinXs.push(c.minX)));
+                        allMinXs.sort((a, b) => a - b);
+
+                        const masterCols = [];
+                        for (const x of allMinXs) {
+                            let matched = masterCols.find(mc => Math.abs(mc - x) <= 0.4);
+                            if (!matched) masterCols.push(x);
+                        }
+                        masterCols.sort((a, b) => a - b);
+
+                        if (masterCols.length < 2) continue; // 2열 미만 스킵
+
+                        // 2D 표 데이터 배열 구성
+                        const tableData = [];
+                        for (let rIdx = 0; rIdx < cluster.lines.length; rIdx++) {
+                            const line = cluster.lines[rIdx];
+                            const rowCells = new Array(masterCols.length).fill('');
+                            
+                            for (const col of line.cols) {
+                                let bestColIdx = 0;
+                                let minDist = 999;
+                                masterCols.forEach((mcX, cIdx) => {
+                                    const dist = Math.abs(col.minX - mcX);
+                                    if (dist < minDist) {
+                                        minDist = dist;
+                                        bestColIdx = cIdx;
+                                    }
+                                });
+                                const cellStr = col.items.map(it => it.str).join(' ').trim();
+                                rowCells[bestColIdx] = rowCells[bestColIdx] ? (rowCells[bestColIdx] + ' ' + cellStr) : cellStr;
+                            }
+
+                            // pptxgenjs 표 셀 포맷팅
+                            const isHeader = rIdx === 0;
+                            tableData.push(rowCells.map(text => ({
+                                text: text || ' ',
+                                options: {
+                                    fill: isHeader ? { color: '1E293B' } : (rIdx % 2 === 1 ? { color: 'F8FAFC' } : { color: 'FFFFFF' }),
+                                    color: isHeader ? 'FFFFFF' : '0F172A',
+                                    fontFace: '맑은 고딕',
+                                    fontSize: isHeader ? 10.5 : 9.5,
+                                    bold: isHeader,
+                                    align: 'center',
+                                    valign: 'middle'
+                                }
+                            })));
+                        }
+
+                        // 표 바운딩 박스 계산 (PPTX 인치 단위)
+                        const tableX = Math.max(0.4, masterCols[0]);
+                        const tableY = Math.max(0.4, cluster.lines[0].items[0].y);
+                        const lastLine = cluster.lines[cluster.lines.length - 1];
+                        const lastY = lastLine.items[0].y + (lastLine.items[0].h || 0.3);
+                        const tableW = Math.min(page_width_inch - tableX - 0.4, masterCols.length * 1.8);
+                        const tableH = Math.max(0.6, lastY - tableY + 0.2);
+
+                        slide.addTable(tableData, {
+                            x: tableX,
+                            y: tableY,
+                            w: tableW,
+                            h: tableH,
+                            border: { pt: 1, color: 'CBD5E1' }
+                        });
+                    }
+
+                    // ----------------------------------------------------
+                    // 3. 표가 아닌 일반 텍스트는 텍스트 박스(Text Frame)로 추가
+                    // ----------------------------------------------------
+                    const nonTableLines = lines.filter((_, idx) => !tableLineIndices.has(idx));
+                    const text_blocks = [];
+
+                    for (const line of nonTableLines) {
+                        let current_block = null;
+                        for (const item of line.items) {
+                            if (!current_block) {
+                                current_block = {
+                                    str: item.str,
+                                    x: item.x,
+                                    y: item.y,
+                                    w: item.w,
+                                    h: item.h,
+                                    fontSize: item.fontSize
+                                };
+                            } else {
+                                const gap = item.x - (current_block.x + current_block.w);
+                                if (gap < 0.5) {
+                                    const space = gap > 0.05 ? ' ' : '';
+                                    current_block.str += space + item.str;
+                                    current_block.w = (item.x + item.w) - current_block.x;
+                                    current_block.fontSize = Math.max(current_block.fontSize, item.fontSize);
+                                } else {
+                                    text_blocks.push(current_block);
+                                    current_block = {
+                                        str: item.str,
+                                        x: item.x,
+                                        y: item.y,
+                                        w: item.w,
+                                        h: item.h,
+                                        fontSize: item.fontSize
+                                    };
+                                }
+                            }
+                        }
+                        if (current_block) text_blocks.push(current_block);
+                    }
+
+                    for (const block of text_blocks) {
+                        slide.addText(block.str, {
+                            x: block.x,
+                            y: block.y,
+                            w: Math.max(1.0, block.w + 0.3),
+                            h: Math.max(0.3, block.h + 0.1),
+                            fontSize: block.fontSize,
+                            fontFace: '맑은 고딕',
+                            color: pdf_to_ppt_mode === 'hybrid' ? '1E293B' : '0F172A',
+                            valign: 'top',
+                            align: 'left',
+                            margin: 1,
+                            wrap: true
+                        });
+                    }
+                }
+
+                set_pdf_to_ppt_progress({ current: page_num, total: total_pages });
+            }
+
+            // 6. PPTX 다운로드
+            const mode_suffix = pdf_to_ppt_mode === 'text' ? '_text_extracted' : (pdf_to_ppt_mode === 'hybrid' ? '_hybrid' : '_image');
+            const output_name = file.name.replace(/\.pdf$/i, '') + `${mode_suffix}.pptx`;
+            await pptx.writeFile({ fileName: output_name });
+
+            setSuccessMsg(`변환 완료! 편집 가능한 PPTX 파일이 다운로드되었습니다: '${output_name}' (전체 ${total_pages}페이지)`);
+            set_pdf_to_ppt_file(null);
+        } catch (err) {
+            console.error('[PDF→PPT]', err);
+            setErrorMsg(`변환 중 오류가 발생했습니다: ${err.message}`);
+        } finally {
+            set_is_converting_pdf_to_ppt(false);
         }
     };
 
@@ -899,7 +1245,7 @@ export default function PptGenerator() {
                 </div>
 
                 {/* 탭 메뉴 */}
-                <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px' }}>
                     <button 
                         id="tab-excel-mapping"
                         onClick={() => { setActiveTab('excel_mapping'); setErrorMsg(null); setSuccessMsg(null); }}
@@ -969,7 +1315,21 @@ export default function PptGenerator() {
                             fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
                         }}
                     >
-                        PPT ➜ PDF 변환 (추가 기능)
+                        PPT ➞ PDF 변환 (추가 기능)
+                    </button>
+                    <button 
+                        id="tab-pdf-to-ppt"
+                        onClick={() => { setActiveTab('pdf_to_ppt'); setErrorMsg(null); setSuccessMsg(null); set_pdf_to_ppt_file(null); set_pdf_to_ppt_progress({ current: 0, total: 0 }); }}
+                        className="interactive"
+                        style={{
+                            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
+                            background: activeTab === 'pdf_to_ppt' ? 'rgba(251, 146, 60, 0.1)' : 'transparent',
+                            border: '1px solid ' + (activeTab === 'pdf_to_ppt' ? '#f97316' : 'transparent'),
+                            color: activeTab === 'pdf_to_ppt' ? '#fb923c' : 'var(--text-secondary)',
+                            fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
+                        }}
+                    >
+                        PDF ➞ PPT 변환
                     </button>
                 </div>
 
@@ -2351,52 +2711,7 @@ export default function PptGenerator() {
                                     변환 헬퍼 서버 상태: {is_server_connected ? '온라인 (연결됨)' : '오프라인 (연결 해제)'}
                                 </span>
                             </div>
-                            {!is_server_connected && (
-                                <span style={{ fontSize: '12px', color: 'var(--danger-color)', background: 'rgba(239, 68, 68, 0.1)', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                                    로컬 서버가 꺼져 있습니다. 터미널 명령어를 실행해 주세요.
-                                </span>
-                            )}
                         </div>
-
-                        {/* 가이드 */}
-                        {!is_server_connected && (
-                            <div className="animate-slide-up" style={{ 
-                                padding: '20px', background: 'rgba(239, 68, 68, 0.05)', 
-                                border: '1px solid rgba(239, 68, 68, 0.15)', borderRadius: '12px',
-                                display: 'flex', flexDirection: 'column', gap: '10px'
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger-color)' }}>
-                                    <Info size={18} />
-                                    <span style={{ fontWeight: 700, fontSize: '14.5px' }}>로컬 PDF 변환 헬퍼 서버 구동 방법</span>
-                                </div>
-                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                                    파워포인트 ➜ 무손실 PDF 변환을 수행하려면 백그라운드 파이썬 헬퍼 서버 실행이 필요합니다.<br />
-                                    로컬 환경의 새 터미널 창을 열고 아래 명령어를 순서대로 실행해 주세요.
-                                </div>
-                                <div style={{ 
-                                    background: 'rgba(0,0,0,0.3)', padding: '12px 16px', borderRadius: '8px', 
-                                    fontFamily: 'monospace', fontSize: '12.5px', color: '#a855f7',
-                                    border: '1px solid var(--panel-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                                }}>
-                                    <code>python scratch/convert_server.py</code>
-                                    <button 
-                                        onClick={() => {
-                                            navigator.clipboard.writeText("python scratch/convert_server.py");
-                                            alert("서버 구동 명령어가 클립보드에 복사되었습니다!");
-                                        }}
-                                        style={{ 
-                                            background: 'rgba(255,255,255,0.05)', border: '1px solid var(--panel-border)', 
-                                            color: 'white', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' 
-                                        }}
-                                    >
-                                        복사
-                                    </button>
-                                </div>
-                                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                                    ※ 라이브러리가 없는 경우 <code>pip install flask pywin32</code>를 먼저 실행하세요.
-                                </div>
-                            </div>
-                        )}
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                             {/* 왼쪽: 동일 디렉토리에 PDF 생성 (절대 경로 모드) */}
@@ -2535,9 +2850,217 @@ export default function PptGenerator() {
                             </div>
                         </div>
                     </div>
+                ) : activeTab === 'pdf_to_ppt' ? (
+                    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                        {/* 안내 배너 */}
+                        <div style={{
+                            padding: '16px 20px',
+                            background: 'rgba(251, 146, 60, 0.05)',
+                            border: '1px solid rgba(251, 146, 60, 0.2)',
+                            borderRadius: '12px',
+                            display: 'flex', alignItems: 'flex-start', gap: '12px'
+                        }}>
+                            <Info size={18} color="#f97316" style={{ flexShrink: 0, marginTop: '2px' }} />
+                            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                                <strong style={{ color: '#fb923c' }}>PDF → PPT 스마트 변환기</strong><br />
+                                PDF 파일의 문장, 글자 위치, 폰트 크기를 파싱하여 <strong>파워포인트에서 직접 수정/편집할 수 있는 텍스트 상자(Text Frame)</strong>로 변환합니다.<br />
+                                슬라이드 통이미지 변환뿐만 아니라 <strong>실제 텍스트 분리 생성</strong>을 모두 지원합니다.
+                            </div>
+                        </div>
+
+                        {/* 변환 방식 선택 */}
+                        <div style={{
+                            padding: '20px', background: 'rgba(255,255,255,0.02)',
+                            border: '1px solid var(--panel-border)', borderRadius: '12px',
+                            display: 'flex', flexDirection: 'column', gap: '14px'
+                        }}>
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Layers size={16} color="#fb923c" /> 변환 모드 선택
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                                {[
+                                    { mode: 'text', title: '📝 텍스트 분리 추출 (권장)', desc: 'PDF 문장을 파워포인트 텍스트 상자로 전환 (자유로운 수정/편집 가능)' },
+                                    { mode: 'hybrid', title: '🔀 하이브리드 모드', desc: '배경 이미지 위에 편집 가능한 텍스트 상자를 겹쳐 생성' },
+                                    { mode: 'image', title: '🖼️ 고해상도 통이미지', desc: '페이지 전체를 이미지로 렌더링 (시각적 100% 보존)' }
+                                ].map(opt => (
+                                    <button
+                                        key={opt.mode}
+                                        onClick={() => set_pdf_to_ppt_mode(opt.mode)}
+                                        style={{
+                                            padding: '14px', borderRadius: '10px', cursor: 'pointer',
+                                            background: pdf_to_ppt_mode === opt.mode ? 'rgba(251, 146, 60, 0.12)' : 'rgba(255,255,255,0.03)',
+                                            border: `1px solid ${pdf_to_ppt_mode === opt.mode ? '#f97316' : 'var(--panel-border)'}`,
+                                            color: pdf_to_ppt_mode === opt.mode ? '#fb923c' : 'var(--text-secondary)',
+                                            transition: 'all 0.2s', textAlign: 'left'
+                                        }}
+                                    >
+                                        <div style={{ fontWeight: 700, fontSize: '13.5px', marginBottom: '4px' }}>{opt.title}</div>
+                                        <div style={{ fontSize: '11.5px', opacity: 0.75, lineHeight: '1.4' }}>{opt.desc}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 업로드 영역 */}
+                        <div
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); set_is_dragging_pdf_to_ppt(true); }}
+                            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); set_is_dragging_pdf_to_ppt(false); }}
+                            onDrop={(e) => {
+                                e.preventDefault(); e.stopPropagation(); set_is_dragging_pdf_to_ppt(false);
+                                const file = e.dataTransfer.files[0];
+                                if (file && file.name.toLowerCase().endsWith('.pdf')) {
+                                    set_pdf_to_ppt_file(file);
+                                } else {
+                                    setErrorMsg('PDF 파일(.pdf)만 지원합니다.');
+                                }
+                            }}
+                            onClick={() => pdf_to_ppt_input_ref.current?.click()}
+                            style={{
+                                border: `2px dashed ${is_dragging_pdf_to_ppt ? '#f97316' : 'rgba(251, 146, 60, 0.35)'}`,
+                                borderRadius: '14px',
+                                padding: '36px 20px',
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                background: is_dragging_pdf_to_ppt
+                                    ? 'rgba(251, 146, 60, 0.08)'
+                                    : pdf_to_ppt_file ? 'rgba(251, 146, 60, 0.04)' : 'rgba(0,0,0,0.1)',
+                                transition: 'all 0.2s',
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px'
+                            }}
+                        >
+                            <input
+                                type="file"
+                                ref={pdf_to_ppt_input_ref}
+                                onChange={(e) => {
+                                    const file = e.target.files[0];
+                                    if (file) set_pdf_to_ppt_file(file);
+                                }}
+                                accept=".pdf"
+                                style={{ display: 'none' }}
+                            />
+                            <div style={{
+                                width: '52px', height: '52px', borderRadius: '14px',
+                                background: pdf_to_ppt_file ? 'rgba(251, 146, 60, 0.15)' : 'rgba(255,255,255,0.04)',
+                                border: '1px solid rgba(251, 146, 60, 0.25)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <Upload size={24} color={pdf_to_ppt_file ? '#fb923c' : 'var(--text-muted)'} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: '15px', fontWeight: 700, color: pdf_to_ppt_file ? '#fb923c' : 'var(--text-primary)', wordBreak: 'break-all' }}>
+                                    {pdf_to_ppt_file ? pdf_to_ppt_file.name : '변환할 PDF 파일을 드래그하거나 클릭하여 선택'}
+                                </div>
+                                {pdf_to_ppt_file ? (
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                        {(pdf_to_ppt_file.size / 1024 / 1024).toFixed(2)} MB
+                                    </div>
+                                ) : (
+                                    <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '6px' }}>*.pdf 문서 지원</div>
+                                )}
+                            </div>
+                            {pdf_to_ppt_file && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); set_pdf_to_ppt_file(null); }}
+                                    style={{
+                                        background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                                        color: 'var(--danger-color)', borderRadius: '6px',
+                                        padding: '4px 10px', fontSize: '12px', cursor: 'pointer'
+                                    }}
+                                >
+                                    선택 취소
+                                </button>
+                            )}
+                        </div>
+
+                        {/* 렌더링 품질 선택 (이미지 또는 하이브리드 모드 시) */}
+                        {(pdf_to_ppt_mode === 'image' || pdf_to_ppt_mode === 'hybrid') && (
+                            <div style={{
+                                padding: '18px 20px', background: 'rgba(255,255,255,0.02)',
+                                border: '1px solid var(--panel-border)', borderRadius: '12px',
+                                display: 'flex', flexDirection: 'column', gap: '12px'
+                            }}>
+                                <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Sliders size={15} color="#fb923c" /> 이미지 렌더링 해상도
+                                </div>
+                                <div style={{ display: 'flex', gap: '12px' }}>
+                                    {[{ label: '표준 (1.5x)', value: 1.5, desc: '빠른 속도' }, { label: '고화질 (2x)', value: 2, desc: '권장 품질' }, { label: '최고화질 (3x)', value: 3, desc: '선명함' }].map(opt => (
+                                        <button
+                                            key={opt.value}
+                                            onClick={() => set_pdf_to_ppt_dpi_scale(opt.value)}
+                                            style={{
+                                                flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer',
+                                                background: pdf_to_ppt_dpi_scale === opt.value ? 'rgba(251, 146, 60, 0.12)' : 'rgba(255,255,255,0.03)',
+                                                border: `1px solid ${pdf_to_ppt_dpi_scale === opt.value ? '#f97316' : 'var(--panel-border)'}`,
+                                                color: pdf_to_ppt_dpi_scale === opt.value ? '#fb923c' : 'var(--text-secondary)',
+                                                transition: 'all 0.2s', textAlign: 'center'
+                                            }}
+                                        >
+                                            <span style={{ fontWeight: 700, fontSize: '13px' }}>{opt.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 진행률 표시 */}
+                        {is_converting_pdf_to_ppt && (
+                            <div className="animate-fade-in" style={{
+                                padding: '20px', background: 'rgba(251, 146, 60, 0.05)',
+                                border: '1px solid rgba(251, 146, 60, 0.2)', borderRadius: '12px',
+                                display: 'flex', flexDirection: 'column', gap: '12px'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fb923c', fontWeight: 600 }}>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        PDF 텍스트 및 레이아웃 파싱 중...
+                                    </div>
+                                    <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                                        {pdf_to_ppt_progress.total > 0
+                                            ? `${pdf_to_ppt_progress.current} / ${pdf_to_ppt_progress.total} 페이지`
+                                            : 'PDF 문맥 파싱 중...'}
+                                    </span>
+                                </div>
+                                {pdf_to_ppt_progress.total > 0 && (
+                                    <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                                        <div style={{
+                                            height: '100%',
+                                            width: `${(pdf_to_ppt_progress.current / pdf_to_ppt_progress.total) * 100}%`,
+                                            background: 'linear-gradient(90deg, #ea580c, #fb923c)',
+                                            borderRadius: '3px',
+                                            transition: 'width 0.3s ease'
+                                        }} />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* 변환 시작 버튼 */}
+                        <button
+                            id="btn-pdf-to-ppt-convert"
+                            onClick={() => handle_pdf_to_ppt(pdf_to_ppt_file)}
+                            disabled={!pdf_to_ppt_file || is_converting_pdf_to_ppt}
+                            style={{
+                                padding: '16px', borderRadius: '10px', border: 'none',
+                                background: (!pdf_to_ppt_file || is_converting_pdf_to_ppt)
+                                    ? 'rgba(255,255,255,0.05)'
+                                    : 'linear-gradient(135deg, #ea580c, #f97316)',
+                                color: 'white', fontWeight: 700, fontSize: '15px',
+                                cursor: (!pdf_to_ppt_file || is_converting_pdf_to_ppt) ? 'not-allowed' : 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                transition: 'all 0.2s',
+                                boxShadow: (!pdf_to_ppt_file || is_converting_pdf_to_ppt) ? 'none' : '0 4px 20px rgba(249, 115, 22, 0.3)'
+                            }}
+                        >
+                            {is_converting_pdf_to_ppt
+                                ? <><Loader2 size={18} className="animate-spin" /> 변환 처리 중... ({pdf_to_ppt_progress.current}/{pdf_to_ppt_progress.total} 페이지)</>
+                                : <><Download size={18} /> PDF → 편집 가능한 PPT 변환 시작</>}
+                        </button>
+                    </div>
                 ) : null}
             </div>
         </div>
     );
 }
+
 

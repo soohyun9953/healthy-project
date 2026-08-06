@@ -327,7 +327,8 @@ ${document_content}`;
       body: JSON.stringify({
         model: omniRouteModel || 'auto',
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
+        temperature: CALL_OPTIONS.temperature,
+        maxTokens: CALL_OPTIONS.maxTokens,
         response_format: { type: 'json_object' }
       })
     });
@@ -358,8 +359,7 @@ ${document_content}`;
   }
   
   try {
-    const parsed = JSON.parse(text_response.trim());
-    return parsed.map(item => ({
+    const parsed = JSON.parse(text_response.trim()).map(item => ({
       fileName: file_name,
       slideNum: parseInt(item.slideNum || '1', 10),
       sentence: item.originalText,
@@ -367,8 +367,19 @@ ${document_content}`;
       correction: item.correction,
       type: 'AI 맞춤법 (Gemini)',
       desc: item.desc,
-      isAi: true // AI 검출 항목 식별용
+      isAi: true,
+      analysis: item.analysis || null // ensure analysis field
     }));
+    // Fill missing analysis via fallback if needed
+    const needsAnalysis = parsed.some(p => p.analysis === null);
+    if (needsAnalysis) {
+      const fallback = await llmAnalyzer(prompt, SYSTEM_PROMPT);
+      // merge analyses (fallback returns array with analysis field)
+      fallback.forEach((f, i) => {
+        if (parsed[i]) parsed[i].analysis = f.analysis || null;
+      });
+    }
+    return parsed;
   } catch (err) {
     console.error('Gemini JSON 파싱 오류:', err, text_response);
     return [];
