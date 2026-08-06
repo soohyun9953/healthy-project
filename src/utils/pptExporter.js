@@ -1223,7 +1223,7 @@ export async function processPptBatch(pptFile, options) {
                 let rowIdx = 0;
 
                 while (true) {
-                    const trIdx = result.indexOf('<a:tr ', trStart);
+                    const trIdx = result.indexOf('<a:tr', trStart);
                     if (trIdx === -1) break;
 
                     const trEndIdx = result.indexOf('</a:tr>', trIdx);
@@ -1253,7 +1253,6 @@ export async function processPptBatch(pptFile, options) {
                     const tcIdx = result.indexOf('<a:tc>', tcStart);
                     const tcWithAttrIdx = result.indexOf('<a:tc ', tcStart);
 
-                    // <a:tc> 또는 <a:tc ...> 중 더 앞에 있는 것 선택
                     let actualTcIdx = -1;
                     if (tcIdx !== -1 && tcWithAttrIdx !== -1) {
                         actualTcIdx = Math.min(tcIdx, tcWithAttrIdx);
@@ -1285,61 +1284,47 @@ export async function processPptBatch(pptFile, options) {
                 return result;
             };
 
-            // 셀 배경색을 #0072BA로 변경 (srgbClr val 속성만 정규식으로 교체)
+            // 셀 배경색을 #0072BA, 텍스트 글자색을 #FFFFFF (흰색 Bold)로 변경
             const applyHeaderStyleToTc = (tcXml) => {
                 let result = tcXml;
 
-                // tcPr 블록 찾기
+                // 1. tcPr 블록 배경색(#0072BA) 교체 (schemeClr/srgbClr 모두 호환)
                 const tcPrMatch = result.match(/<a:tcPr([^>]*)>([\s\S]*?)<\/a:tcPr>/);
                 if (tcPrMatch) {
                     const tcPrAttrs = tcPrMatch[1];
                     let tcPrBody = tcPrMatch[2];
 
-                    // solidFill 내 srgbClr val 교체 (배경색)
-                    // tcPr 내의 마지막 solidFill의 srgbClr val을 0072BA로 교체
-                    // lnL/lnR/lnT/lnB 이후의 solidFill이 배경색
-                    const hasSolidFill = /<a:solidFill>[\s\S]*?<\/a:solidFill>/.test(tcPrBody);
-                    
-                    if (hasSolidFill) {
-                        // lnL, lnR, lnT, lnB, lnTlToBr, lnBlToTr 이후에 나오는 solidFill을 배경색으로 변경
-                        // 마지막 solidFill 블록을 교체
-                        let lastSolidFillIdx = -1;
-                        let searchFrom = 0;
-                        while (true) {
-                            const idx = tcPrBody.indexOf('<a:solidFill>', searchFrom);
-                            if (idx === -1) break;
-                            // 이 solidFill이 lnL/lnR/lnT/lnB 안에 있는지 확인
-                            // 앞 부분에 <a:ln 태그가 열려있고 아직 닫히지 않았으면 테두리용
-                            const beforeThis = tcPrBody.substring(0, idx);
-                            const lnOpenCount = (beforeThis.match(/<a:ln[LRTB]/g) || []).length;
-                            const lnCloseCount = (beforeThis.match(/<\/a:ln[LRTB]>/g) || []).length;
-                            if (lnOpenCount <= lnCloseCount) {
-                                // 테두리 안에 없는 solidFill = 배경색
-                                lastSolidFillIdx = idx;
-                            }
-                            searchFrom = idx + 1;
+                    // tcPr 내부의 배경 solidFill 노드를 파악하여 0072BA 색상으로 적용
+                    // lnL/lnR/lnT/lnB/lnTlToBr/lnBlToTr 외부에 위치한 solidFill을 탐색
+                    let lastSolidFillIdx = -1;
+                    let searchFrom = 0;
+                    while (true) {
+                        const idx = tcPrBody.indexOf('<a:solidFill>', searchFrom);
+                        if (idx === -1) break;
+                        const beforeThis = tcPrBody.substring(0, idx);
+                        const lnOpenCount = (beforeThis.match(/<a:ln[LRTB]|<a:lnTlToBr|<a:lnBlToTr/g) || []).length;
+                        const lnCloseCount = (beforeThis.match(/<\/a:ln[LRTB]>|<\/a:lnTlToBr>|<\/a:lnBlToTr>/g) || []).length;
+                        if (lnOpenCount <= lnCloseCount) {
+                            lastSolidFillIdx = idx;
                         }
+                        searchFrom = idx + 1;
+                    }
 
-                        if (lastSolidFillIdx !== -1) {
-                            const sfEnd = tcPrBody.indexOf('</a:solidFill>', lastSolidFillIdx) + 14;
-                            const newSolidFill = '<a:solidFill><a:srgbClr val="0072BA"/></a:solidFill>';
-                            tcPrBody = tcPrBody.substring(0, lastSolidFillIdx) + newSolidFill + tcPrBody.substring(sfEnd);
-                        } else {
-                            tcPrBody += '<a:solidFill><a:srgbClr val="0072BA"/></a:solidFill>';
-                        }
+                    const bgSolidFillXml = '<a:solidFill><a:srgbClr val="0072BA"/></a:solidFill>';
+                    if (lastSolidFillIdx !== -1) {
+                        const sfEnd = tcPrBody.indexOf('</a:solidFill>', lastSolidFillIdx) + 14;
+                        tcPrBody = tcPrBody.substring(0, lastSolidFillIdx) + bgSolidFillXml + tcPrBody.substring(sfEnd);
                     } else {
-                        tcPrBody += '<a:solidFill><a:srgbClr val="0072BA"/></a:solidFill>';
+                        tcPrBody += bgSolidFillXml;
                     }
 
                     result = result.replace(tcPrMatch[0], `<a:tcPr${tcPrAttrs}>${tcPrBody}</a:tcPr>`);
                 }
 
-                // 텍스트 흰색(FFFFFF)으로 변경: a:r 내 a:rPr의 srgbClr val 교체
-                // 기존 solidFill의 srgbClr val만 교체 (구조 변경 없이)
+                // 2. 텍스트 흰색(FFFFFF) 및 Bold 11pt 변경 (a:rPr 내 solidFill이 schemeClr이든 srgbClr이든 무조건 흰색으로 대치)
                 result = result.replace(
                     /(<a:rPr\b[^>]*>)([\s\S]*?)(<\/a:rPr>)/g,
                     (match, open, body, close) => {
-                        // sz와 b 속성 설정
                         let newOpen = open;
                         if (!/ sz=/.test(newOpen)) {
                             newOpen = newOpen.replace('<a:rPr', '<a:rPr sz="1100"');
@@ -1352,12 +1337,12 @@ export async function processPptBatch(pptFile, options) {
                             newOpen = newOpen.replace(/ b="[^"]*"/, ' b="1"');
                         }
 
-                        // 글자색 변경: solidFill 내 srgbClr val을 FFFFFF로
+                        // solidFill이 이미 존재하면 schemeClr/srgbClr 형태에 구애받지 않고 무조건 <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill> 로 통일 대치
                         let newBody = body;
-                        if (/<a:solidFill>/.test(newBody)) {
+                        if (/<a:solidFill>[\s\S]*?<\/a:solidFill>/.test(newBody)) {
                             newBody = newBody.replace(
-                                /(<a:solidFill>[\s\S]*?<a:srgbClr val=")([^"]*)(")[\s\S]*?(<\/a:solidFill>)/g,
-                                (m, pre, oldVal, q, post) => `${pre}FFFFFF${q}/>${post}`
+                                /<a:solidFill>[\s\S]*?<\/a:solidFill>/g,
+                                '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
                             );
                         } else {
                             newBody += '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>';
