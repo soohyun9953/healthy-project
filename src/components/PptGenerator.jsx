@@ -2874,211 +2874,37 @@ export default function PptGenerator() {
                         </div>
                     </div>
                 ) : activeTab === 'pdf_to_ppt' ? (
-                    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                        {/* 안내 배너 */}
-                        <div style={{
-                            padding: '16px 20px',
-                            background: 'rgba(251, 146, 60, 0.05)',
-                            border: '1px solid rgba(251, 146, 60, 0.2)',
-                            borderRadius: '12px',
-                            display: 'flex', alignItems: 'flex-start', gap: '12px'
+                    <div className="animate-fade-in" style={{
+                        padding: '60px 20px',
+                        background: 'rgba(251, 146, 60, 0.03)',
+                        border: '1px solid rgba(251, 146, 60, 0.15)',
+                        borderRadius: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '16px',
+                        textAlign: 'center'
+                    }}>
+                        <Info size={40} color="#f97316" />
+                        <h3 style={{
+                            margin: 0,
+                            fontSize: '22px',
+                            fontWeight: 700,
+                            color: '#fb923c',
+                            letterSpacing: '-0.5px'
                         }}>
-                            <Info size={18} color="#f97316" style={{ flexShrink: 0, marginTop: '2px' }} />
-                            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                                <strong style={{ color: '#fb923c' }}>PDF → PPT 스마트 변환기</strong><br />
-                                PDF 파일의 문장, 글자 위치, 폰트 크기를 파싱하여 <strong>파워포인트에서 직접 수정/편집할 수 있는 텍스트 상자(Text Frame)</strong>로 변환합니다.<br />
-                                슬라이드 통이미지 변환뿐만 아니라 <strong>실제 텍스트 분리 생성</strong>을 모두 지원합니다.
-                            </div>
-                        </div>
-
-                        {/* 변환 방식 선택 */}
-                        <div style={{
-                            padding: '20px', background: 'rgba(255,255,255,0.02)',
-                            border: '1px solid var(--panel-border)', borderRadius: '12px',
-                            display: 'flex', flexDirection: 'column', gap: '14px'
+                            알PDF를 사용하세요
+                        </h3>
+                        <p style={{
+                            margin: 0,
+                            fontSize: '14px',
+                            color: 'var(--text-secondary)',
+                            maxWidth: '480px',
+                            lineHeight: '1.6'
                         }}>
-                            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <Layers size={16} color="#fb923c" /> 변환 모드 선택
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                                {[
-                                    { mode: 'text', title: '📝 텍스트 분리 추출 (권장)', desc: 'PDF 문장을 파워포인트 텍스트 상자로 전환 (자유로운 수정/편집 가능)' },
-                                    { mode: 'hybrid', title: '🔀 하이브리드 모드', desc: '배경 이미지 위에 편집 가능한 텍스트 상자를 겹쳐 생성' },
-                                    { mode: 'image', title: '🖼️ 고해상도 통이미지', desc: '페이지 전체를 이미지로 렌더링 (시각적 100% 보존)' }
-                                ].map(opt => (
-                                    <button
-                                        key={opt.mode}
-                                        onClick={() => set_pdf_to_ppt_mode(opt.mode)}
-                                        style={{
-                                            padding: '14px', borderRadius: '10px', cursor: 'pointer',
-                                            background: pdf_to_ppt_mode === opt.mode ? 'rgba(251, 146, 60, 0.12)' : 'rgba(255,255,255,0.03)',
-                                            border: `1px solid ${pdf_to_ppt_mode === opt.mode ? '#f97316' : 'var(--panel-border)'}`,
-                                            color: pdf_to_ppt_mode === opt.mode ? '#fb923c' : 'var(--text-secondary)',
-                                            transition: 'all 0.2s', textAlign: 'left'
-                                        }}
-                                    >
-                                        <div style={{ fontWeight: 700, fontSize: '13.5px', marginBottom: '4px' }}>{opt.title}</div>
-                                        <div style={{ fontSize: '11.5px', opacity: 0.75, lineHeight: '1.4' }}>{opt.desc}</div>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* 업로드 영역 */}
-                        <div
-                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); set_is_dragging_pdf_to_ppt(true); }}
-                            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); set_is_dragging_pdf_to_ppt(false); }}
-                            onDrop={(e) => {
-                                e.preventDefault(); e.stopPropagation(); set_is_dragging_pdf_to_ppt(false);
-                                const file = e.dataTransfer.files[0];
-                                if (file && file.name.toLowerCase().endsWith('.pdf')) {
-                                    set_pdf_to_ppt_file(file);
-                                } else {
-                                    setErrorMsg('PDF 파일(.pdf)만 지원합니다.');
-                                }
-                            }}
-                            onClick={() => pdf_to_ppt_input_ref.current?.click()}
-                            style={{
-                                border: `2px dashed ${is_dragging_pdf_to_ppt ? '#f97316' : 'rgba(251, 146, 60, 0.35)'}`,
-                                borderRadius: '14px',
-                                padding: '36px 20px',
-                                textAlign: 'center',
-                                cursor: 'pointer',
-                                background: is_dragging_pdf_to_ppt
-                                    ? 'rgba(251, 146, 60, 0.08)'
-                                    : pdf_to_ppt_file ? 'rgba(251, 146, 60, 0.04)' : 'rgba(0,0,0,0.1)',
-                                transition: 'all 0.2s',
-                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px'
-                            }}
-                        >
-                            <input
-                                type="file"
-                                ref={pdf_to_ppt_input_ref}
-                                onChange={(e) => {
-                                    const file = e.target.files[0];
-                                    if (file) set_pdf_to_ppt_file(file);
-                                }}
-                                accept=".pdf"
-                                style={{ display: 'none' }}
-                            />
-                            <div style={{
-                                width: '52px', height: '52px', borderRadius: '14px',
-                                background: pdf_to_ppt_file ? 'rgba(251, 146, 60, 0.15)' : 'rgba(255,255,255,0.04)',
-                                border: '1px solid rgba(251, 146, 60, 0.25)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center'
-                            }}>
-                                <Upload size={24} color={pdf_to_ppt_file ? '#fb923c' : 'var(--text-muted)'} />
-                            </div>
-                            <div>
-                                <div style={{ fontSize: '15px', fontWeight: 700, color: pdf_to_ppt_file ? '#fb923c' : 'var(--text-primary)', wordBreak: 'break-all' }}>
-                                    {pdf_to_ppt_file ? pdf_to_ppt_file.name : '변환할 PDF 파일을 드래그하거나 클릭하여 선택'}
-                                </div>
-                                {pdf_to_ppt_file ? (
-                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                        {(pdf_to_ppt_file.size / 1024 / 1024).toFixed(2)} MB
-                                    </div>
-                                ) : (
-                                    <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '6px' }}>*.pdf 문서 지원</div>
-                                )}
-                            </div>
-                            {pdf_to_ppt_file && (
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); set_pdf_to_ppt_file(null); }}
-                                    style={{
-                                        background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-                                        color: 'var(--danger-color)', borderRadius: '6px',
-                                        padding: '4px 10px', fontSize: '12px', cursor: 'pointer'
-                                    }}
-                                >
-                                    선택 취소
-                                </button>
-                            )}
-                        </div>
-
-                        {/* 렌더링 품질 선택 (이미지 또는 하이브리드 모드 시) */}
-                        {(pdf_to_ppt_mode === 'image' || pdf_to_ppt_mode === 'hybrid') && (
-                            <div style={{
-                                padding: '18px 20px', background: 'rgba(255,255,255,0.02)',
-                                border: '1px solid var(--panel-border)', borderRadius: '12px',
-                                display: 'flex', flexDirection: 'column', gap: '12px'
-                            }}>
-                                <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <Sliders size={15} color="#fb923c" /> 이미지 렌더링 해상도
-                                </div>
-                                <div style={{ display: 'flex', gap: '12px' }}>
-                                    {[{ label: '표준 (1.5x)', value: 1.5, desc: '빠른 속도' }, { label: '고화질 (2x)', value: 2, desc: '권장 품질' }, { label: '최고화질 (3x)', value: 3, desc: '선명함' }].map(opt => (
-                                        <button
-                                            key={opt.value}
-                                            onClick={() => set_pdf_to_ppt_dpi_scale(opt.value)}
-                                            style={{
-                                                flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer',
-                                                background: pdf_to_ppt_dpi_scale === opt.value ? 'rgba(251, 146, 60, 0.12)' : 'rgba(255,255,255,0.03)',
-                                                border: `1px solid ${pdf_to_ppt_dpi_scale === opt.value ? '#f97316' : 'var(--panel-border)'}`,
-                                                color: pdf_to_ppt_dpi_scale === opt.value ? '#fb923c' : 'var(--text-secondary)',
-                                                transition: 'all 0.2s', textAlign: 'center'
-                                            }}
-                                        >
-                                            <span style={{ fontWeight: 700, fontSize: '13px' }}>{opt.label}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 진행률 표시 */}
-                        {is_converting_pdf_to_ppt && (
-                            <div className="animate-fade-in" style={{
-                                padding: '20px', background: 'rgba(251, 146, 60, 0.05)',
-                                border: '1px solid rgba(251, 146, 60, 0.2)', borderRadius: '12px',
-                                display: 'flex', flexDirection: 'column', gap: '12px'
-                            }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fb923c', fontWeight: 600 }}>
-                                        <Loader2 size={16} className="animate-spin" />
-                                        PDF 텍스트 및 레이아웃 파싱 중...
-                                    </div>
-                                    <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                                        {pdf_to_ppt_progress.total > 0
-                                            ? `${pdf_to_ppt_progress.current} / ${pdf_to_ppt_progress.total} 페이지`
-                                            : 'PDF 문맥 파싱 중...'}
-                                    </span>
-                                </div>
-                                {pdf_to_ppt_progress.total > 0 && (
-                                    <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-                                        <div style={{
-                                            height: '100%',
-                                            width: `${(pdf_to_ppt_progress.current / pdf_to_ppt_progress.total) * 100}%`,
-                                            background: 'linear-gradient(90deg, #ea580c, #fb923c)',
-                                            borderRadius: '3px',
-                                            transition: 'width 0.3s ease'
-                                        }} />
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* 변환 시작 버튼 */}
-                        <button
-                            id="btn-pdf-to-ppt-convert"
-                            onClick={() => handle_pdf_to_ppt(pdf_to_ppt_file)}
-                            disabled={!pdf_to_ppt_file || is_converting_pdf_to_ppt}
-                            style={{
-                                padding: '16px', borderRadius: '10px', border: 'none',
-                                background: (!pdf_to_ppt_file || is_converting_pdf_to_ppt)
-                                    ? 'rgba(255,255,255,0.05)'
-                                    : 'linear-gradient(135deg, #ea580c, #f97316)',
-                                color: 'white', fontWeight: 700, fontSize: '15px',
-                                cursor: (!pdf_to_ppt_file || is_converting_pdf_to_ppt) ? 'not-allowed' : 'pointer',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                                transition: 'all 0.2s',
-                                boxShadow: (!pdf_to_ppt_file || is_converting_pdf_to_ppt) ? 'none' : '0 4px 20px rgba(249, 115, 22, 0.3)'
-                            }}
-                        >
-                            {is_converting_pdf_to_ppt
-                                ? <><Loader2 size={18} className="animate-spin" /> 변환 처리 중... ({pdf_to_ppt_progress.current}/{pdf_to_ppt_progress.total} 페이지)</>
-                                : <><Download size={18} /> PDF → 편집 가능한 PPT 변환 시작</>}
-                        </button>
+                            PDF 문서를 편집 가능한 파워포인트(PPT) 파일로 변환하시려면 <strong>알PDF(ALPDF)</strong> 프로그램의 PDF ➔ PPT 변환 기능을 이용해 주세요.
+                        </p>
                     </div>
                 ) : null}
             </div>
