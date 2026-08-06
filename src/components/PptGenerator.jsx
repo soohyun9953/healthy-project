@@ -388,7 +388,6 @@ export default function PptGenerator() {
                     if (rawTableLineIndices.length >= 2) {
                         const minIdx = rawTableLineIndices[0];
                         const maxIdx = rawTableLineIndices[rawTableLineIndices.length - 1];
-                        // 첫 표 시작 라인부터 마지막 표 라인 사이의 영역을 단일 통합 표 영역으로 정의
                         for (let i = minIdx; i <= maxIdx; i++) {
                             tableLineIndices.add(i);
                         }
@@ -397,77 +396,100 @@ export default function PptGenerator() {
                     const tableLines = lines.filter((_, idx) => tableLineIndices.has(idx));
 
                     // ----------------------------------------------------
-                    // 2. 단 1개의 통합 표(Table) 객체 생성 및 PPTX 추가
+                    // 2. 2D Grid Matrix 기반 정밀 표(Table) 객체 구축
                     // ----------------------------------------------------
                     if (tableLines.length >= 2) {
-                        // 페이지 전체 전역 Master Columns X 좌표 도출 (오차범위 0.75inch 그룹핑으로 셀 분리 방지)
+                        // (1) 전역 수직 열 (Master Columns X 좌표) 구하기
                         const allMinXs = [];
                         tableLines.forEach(l => l.cols.forEach(c => allMinXs.push(c.minX)));
                         allMinXs.sort((a, b) => a - b);
 
                         const masterCols = [];
                         for (const x of allMinXs) {
-                            let matched = masterCols.find(mc => Math.abs(mc - x) <= 0.75);
+                            let matched = masterCols.find(mc => Math.abs(mc - x) <= 0.65);
                             if (!matched) masterCols.push(x);
                         }
                         masterCols.sort((a, b) => a - b);
 
                         if (masterCols.length >= 2) {
-                            // 스마트 행(Row) 병합: 첫 번째 컬럼(Col 0)의 X좌표 근처에 새로운 라벨이 나올 때만 새 행 추가
-                            const consolidatedRows = []; // Array of Array(masterCols.length)
-                            let curRow = null;
+                            // (2) 대표 행 (Master Rows Y 좌표) 경계 도출
+                            // 첫 컬럼(Col 0) 부근의 핵심 레이블 텍스트 위치를 바탕으로 Row 경계를 정의
+                            const rowBorders = []; // [{ yPt, label }]
+                            
+                            // 상단 2개 행은 헤더로 고정 (Row 0: 대분류, Row 1: 중분류)
+                            if (tableLines.length >= 1) rowBorders.push({ yPt: tableLines[0].yPt, isHeader: true });
+                            if (tableLines.length >= 2 && Math.abs(tableLines[1].yPt - tableLines[0].yPt) > 8) {
+                                rowBorders.push({ yPt: tableLines[1].yPt, isHeader: true });
+                            }
 
-                            for (let rIdx = 0; rIdx < tableLines.length; rIdx++) {
-                                const line = tableLines[rIdx];
-                                
-                                // 이 라인의 각 셀을 masterCols에 매핑
-                                const lineRow = new Array(masterCols.length).fill('');
-                                let hasCol0 = false;
+                            // 헤더 이후의 라인들 중 Col 0 근처에 새로운 의미 단위 항목이 시작되는 Y위치 수집
+                            const keyLabelRegex = /구분|도메인|주소|근거|오픈|일자|접속자|대상|시스템/i;
+                            
+                            for (let i = (rowBorders.length >= 2 ? 2 : 1); i < tableLines.length; i++) {
+                                const line = tableLines[i];
+                                const col0 = line.cols.find(c => Math.abs(c.minX - masterCols[0]) <= 0.5);
+                                const hasCol0Text = col0 && col0.items.some(it => it.str.trim());
+                                const isKeyLabel = col0 && col0.items.some(it => keyLabelRegex.test(it.str));
 
-                                for (const col of line.cols) {
+                                const lastBorderY = rowBorders[rowBorders.length - 1].yPt;
+                                const yGap = line.yPt - lastBorderY;
+
+                                // 핵심 키워드가 있거나, 이전 Row 경계로부터 25pt 이상 떨어졌을 때 새로운 행 경계 추가
+                                if ((hasCol0Text && isKeyLabel && yGap > 12) || yGap >= 28) {
+                                    rowBorders.push({ yPt: line.yPt, isHeader: false });
+                                }
+                            }
+
+                            // 2D 표 매트릭스 배열 초기화 [RowIdx][ColIdx]
+                            const numRows = rowBorders.length;
+                            const numCols = masterCols.length;
+                            const tableMatrix = Array.from({ length: numRows }, () => Array(numCols).fill(''));
+
+                            // (3) 모든 PDF 텍스트 아이템을 해당 2D (Row, Col) 셀 위치로 매핑
+                            tableLines.forEach(line => {
+                                // 이 라인이 속하는 가장 적절한 Master Row 찾기
+                                let bestRowIdx = 0;
+                                let minDistY = 999;
+                                rowBorders.forEach((rb, rIdx) => {
+                                    const distY = Math.abs(line.yPt - rb.yPt);
+                                    if (distY < minDistY) {
+                                        minDistY = distY;
+                                        bestRowIdx = rIdx;
+                                    }
+                                });
+
+                                // 라인 내 아이템들을 Col 위치에 매핑
+                                line.cols.forEach(col => {
                                     let bestColIdx = 0;
-                                    let minDist = 999;
+                                    let minDistX = 999;
                                     masterCols.forEach((mcX, cIdx) => {
-                                        const dist = Math.abs(col.minX - mcX);
-                                        if (dist < minDist) {
-                                            minDist = dist;
+                                        const distX = Math.abs(col.minX - mcX);
+                                        if (distX < minDistX) {
+                                            minDistX = distX;
                                             bestColIdx = cIdx;
                                         }
                                     });
 
-                                    if (bestColIdx === 0 && col.items.some(it => it.str.trim())) {
-                                        hasCol0 = true;
+                                    const textChunk = col.items.map(it => it.str).join(' ').trim();
+                                    if (textChunk) {
+                                        const prevVal = tableMatrix[bestRowIdx][bestColIdx];
+                                        tableMatrix[bestRowIdx][bestColIdx] = prevVal 
+                                            ? (prevVal + '\n' + textChunk) 
+                                            : textChunk;
                                     }
+                                });
+                            });
 
-                                    const cellStr = col.items.map(it => it.str).join(' ').trim();
-                                    lineRow[bestColIdx] = cellStr;
-                                }
-
-                                // 첫번째 컬럼(Col 0)에 텍스트가 있거나 헤더 라인이면 새로운 행(Row) 생성
-                                if (hasCol0 || !curRow || rIdx <= 1) {
-                                    if (curRow) consolidatedRows.push(curRow);
-                                    curRow = [...lineRow];
-                                } else {
-                                    // Col 0이 비어있고 Y축으로 계속 이어지는 텍스트는 이전 행의 해당 셀 내부로 \n 병합
-                                    for (let c = 0; c < masterCols.length; c++) {
-                                        if (lineRow[c]) {
-                                            curRow[c] = curRow[c] ? (curRow[c] + '\n' + lineRow[c]) : lineRow[c];
-                                        }
-                                    }
-                                }
-                            }
-                            if (curRow) consolidatedRows.push(curRow);
-
-                            // pptxgenjs용 2D tableData 구성
-                            const tableData = consolidatedRows.map((rowCells, rIdx) => {
-                                const isHeader = rIdx <= 1; // 상단 1~2개 행을 헤더 영역으로 지정
+                            // (4) pptxgenjs용 2D tableData 구성
+                            const tableData = tableMatrix.map((rowCells, rIdx) => {
+                                const isHeader = rowBorders[rIdx]?.isHeader || rIdx <= 1;
                                 return rowCells.map(text => ({
                                     text: text || ' ',
                                     options: {
                                         fill: isHeader ? { color: '1E293B' } : (rIdx % 2 === 1 ? { color: 'F8FAFC' } : { color: 'FFFFFF' }),
                                         color: isHeader ? 'FFFFFF' : '0F172A',
                                         fontFace: '맑은 고딕',
-                                        fontSize: isHeader ? 10 : 9,
+                                        fontSize: isHeader ? 10 : 8.5,
                                         bold: isHeader,
                                         align: 'center',
                                         valign: 'middle'
@@ -475,15 +497,15 @@ export default function PptGenerator() {
                                 }));
                             });
 
-                            // 표 크기 및 위치 계산 (슬라이드 중심 정렬)
+                            // (5) 표 위치 및 슬라이드 정렬
                             const tableX = Math.max(0.4, masterCols[0]);
                             const tableY = Math.max(0.4, tableLines[0].items[0].y);
                             const lastLine = tableLines[tableLines.length - 1];
                             const lastY = lastLine.items[0].y + (lastLine.items[0].h || 0.3);
-                            const tableW = Math.min(page_width_inch - tableX - 0.4, masterCols.length * 1.5);
-                            const tableH = Math.max(1.2, lastY - tableY + 0.3);
+                            const tableW = Math.min(page_width_inch - tableX - 0.4, masterCols.length * 1.45);
+                            const tableH = Math.max(1.5, lastY - tableY + 0.4);
 
-                            // 단 1개의 완벽하게 통합된 표 생성
+                            // 단 1개의 완벽하게 정돈된 표 생성
                             slide.addTable(tableData, {
                                 x: tableX,
                                 y: tableY,
