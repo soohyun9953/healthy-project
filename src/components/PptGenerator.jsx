@@ -400,26 +400,30 @@ export default function PptGenerator() {
                     // 2. 단 1개의 통합 표(Table) 객체 생성 및 PPTX 추가
                     // ----------------------------------------------------
                     if (tableLines.length >= 2) {
-                        // 페이지 전체 전역 Master Columns X 좌표 도출 (오차범위 0.35inch 그룹핑)
+                        // 페이지 전체 전역 Master Columns X 좌표 도출 (오차범위 0.75inch 그룹핑으로 셀 분리 방지)
                         const allMinXs = [];
                         tableLines.forEach(l => l.cols.forEach(c => allMinXs.push(c.minX)));
                         allMinXs.sort((a, b) => a - b);
 
                         const masterCols = [];
                         for (const x of allMinXs) {
-                            let matched = masterCols.find(mc => Math.abs(mc - x) <= 0.35);
+                            let matched = masterCols.find(mc => Math.abs(mc - x) <= 0.75);
                             if (!matched) masterCols.push(x);
                         }
                         masterCols.sort((a, b) => a - b);
 
                         if (masterCols.length >= 2) {
-                            // 단 1개의 통일된 2D 표 데이터 구축
-                            const tableData = [];
-                            
+                            // 스마트 행(Row) 병합: 첫 번째 컬럼(Col 0)의 X좌표 근처에 새로운 라벨이 나올 때만 새 행 추가
+                            const consolidatedRows = []; // Array of Array(masterCols.length)
+                            let curRow = null;
+
                             for (let rIdx = 0; rIdx < tableLines.length; rIdx++) {
                                 const line = tableLines[rIdx];
-                                const rowCells = new Array(masterCols.length).fill('');
                                 
+                                // 이 라인의 각 셀을 masterCols에 매핑
+                                const lineRow = new Array(masterCols.length).fill('');
+                                let hasCol0 = false;
+
                                 for (const col of line.cols) {
                                     let bestColIdx = 0;
                                     let minDist = 999;
@@ -430,12 +434,34 @@ export default function PptGenerator() {
                                             bestColIdx = cIdx;
                                         }
                                     });
+
+                                    if (bestColIdx === 0 && col.items.some(it => it.str.trim())) {
+                                        hasCol0 = true;
+                                    }
+
                                     const cellStr = col.items.map(it => it.str).join(' ').trim();
-                                    rowCells[bestColIdx] = rowCells[bestColIdx] ? (rowCells[bestColIdx] + ' ' + cellStr) : cellStr;
+                                    lineRow[bestColIdx] = cellStr;
                                 }
 
-                                const isHeader = rIdx <= 1; // 상단 1~2개 행을 헤더로 강조
-                                tableData.push(rowCells.map(text => ({
+                                // 첫번째 컬럼(Col 0)에 텍스트가 있거나 헤더 라인이면 새로운 행(Row) 생성
+                                if (hasCol0 || !curRow || rIdx <= 1) {
+                                    if (curRow) consolidatedRows.push(curRow);
+                                    curRow = [...lineRow];
+                                } else {
+                                    // Col 0이 비어있고 Y축으로 계속 이어지는 텍스트는 이전 행의 해당 셀 내부로 \n 병합
+                                    for (let c = 0; c < masterCols.length; c++) {
+                                        if (lineRow[c]) {
+                                            curRow[c] = curRow[c] ? (curRow[c] + '\n' + lineRow[c]) : lineRow[c];
+                                        }
+                                    }
+                                }
+                            }
+                            if (curRow) consolidatedRows.push(curRow);
+
+                            // pptxgenjs용 2D tableData 구성
+                            const tableData = consolidatedRows.map((rowCells, rIdx) => {
+                                const isHeader = rIdx <= 1; // 상단 1~2개 행을 헤더 영역으로 지정
+                                return rowCells.map(text => ({
                                     text: text || ' ',
                                     options: {
                                         fill: isHeader ? { color: '1E293B' } : (rIdx % 2 === 1 ? { color: 'F8FAFC' } : { color: 'FFFFFF' }),
@@ -446,18 +472,18 @@ export default function PptGenerator() {
                                         align: 'center',
                                         valign: 'middle'
                                     }
-                                })));
-                            }
+                                }));
+                            });
 
-                            // 표 크기 및 배치 바운딩 박스
+                            // 표 크기 및 위치 계산 (슬라이드 중심 정렬)
                             const tableX = Math.max(0.4, masterCols[0]);
                             const tableY = Math.max(0.4, tableLines[0].items[0].y);
                             const lastLine = tableLines[tableLines.length - 1];
                             const lastY = lastLine.items[0].y + (lastLine.items[0].h || 0.3);
                             const tableW = Math.min(page_width_inch - tableX - 0.4, masterCols.length * 1.5);
-                            const tableH = Math.max(1.0, lastY - tableY + 0.3);
+                            const tableH = Math.max(1.2, lastY - tableY + 0.3);
 
-                            // 단 1개의 표로 추가
+                            // 단 1개의 완벽하게 통합된 표 생성
                             slide.addTable(tableData, {
                                 x: tableX,
                                 y: tableY,
