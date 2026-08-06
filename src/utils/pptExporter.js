@@ -1284,18 +1284,30 @@ export async function processPptBatch(pptFile, options) {
                 return result;
             };
 
-            // 셀 배경색을 #0072BA, 텍스트 글자색을 #FFFFFF (흰색 Bold)로 변경
+            // 셀 배경색을 #0072BA, 텍스트 글자색을 #FFFFFF (흰색 Bold), 헤더 내부 테두리를 순백색(#FFFFFF)으로 변경
             const applyHeaderStyleToTc = (tcXml) => {
                 let result = tcXml;
 
-                // 1. tcPr 블록 배경색(#0072BA) 교체 (schemeClr/srgbClr 모두 호환)
+                // 1. tcPr 블록 처리
                 const tcPrMatch = result.match(/<a:tcPr([^>]*)>([\s\S]*?)<\/a:tcPr>/);
                 if (tcPrMatch) {
                     const tcPrAttrs = tcPrMatch[1];
                     let tcPrBody = tcPrMatch[2];
 
-                    // tcPr 내부의 배경 solidFill 노드를 파악하여 0072BA 색상으로 적용
-                    // lnL/lnR/lnT/lnB/lnTlToBr/lnBlToTr 외부에 위치한 solidFill을 탐색
+                    // 1-1. 테두리(lnL, lnR, lnB, lnT) 내부의 lumMod/lumOff 명암 효과 제거 및 테두리 색상을 순백색(#FFFFFF)으로 대치
+                    tcPrBody = tcPrBody.replace(
+                        /(<a:ln[LRTB]\b[^>]*>)([\s\S]*?)(<\/a:ln[LRTB]>)/g,
+                        (match, open, body, close) => {
+                            // ln 내부의 solidFill을 lumMod 없는 순백색 srgbClr 로 교체
+                            let newBody = body.replace(
+                                /<a:solidFill>[\s\S]*?<\/a:solidFill>/g,
+                                '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
+                            );
+                            return `${open}${newBody}${close}`;
+                        }
+                    );
+
+                    // 1-2. tcPr 내부의 배경 solidFill 노드를 파악하여 0072BA 배경색으로 적용
                     let lastSolidFillIdx = -1;
                     let searchFrom = 0;
                     while (true) {
