@@ -1695,10 +1695,6 @@ export async function processPptBatch(pptFile, options) {
                     solidFill.appendChild(srgbClr);
                     ln.appendChild(solidFill);
                     
-                    const prstDash = xmlDoc.createElementNS(nsA, 'a:prstDash');
-                    prstDash.setAttribute('val', 'solid');
-                    ln.appendChild(prstDash);
-                    
                     if (rPr.firstChild) {
                         rPr.insertBefore(ln, rPr.firstChild);
                     } else {
@@ -1905,21 +1901,6 @@ export async function processPptBatch(pptFile, options) {
             if (fileChanged) {
                 slideXmlStr = serializer.serializeToString(xmlDoc);
             }
-
-        // 💡 3단계: 슬라이드 전체의 모든 a:rPr 내부에 잔존하는 불법 a:ln 노드를 안전 정제 (옵션 D가 비활성화된 경우에만 소거)
-        if (!applyDesign) {
-            const cleanedXml = slideXmlStr.replace(/(<a:(?:rPr|defRPr|endParaRPr)\b[^>]*>)([\s\S]*?)(<\/a:(?:rPr|defRPr|endParaRPr)>)/g, (match, open, body, close) => {
-                const cleanBody = body
-                    .replace(/<a:ln\b[^>]*>[\s\S]*?<\/a:ln>/g, '')
-                    .replace(/<a:ln\b[^>]*\/>/g, '');
-                return `${open}${cleanBody}${close}`;
-            });
-            if (cleanedXml !== slideXmlStr) {
-                slideXmlStr = cleanedXml;
-                fileChanged = true;
-                hasChanges = true;
-            }
-        }
 
         // 💡 4단계: 최후에 fileChanged 가 true 일 때 zip.file 갱신!
         if (fileChanged) {
