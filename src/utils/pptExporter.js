@@ -1608,19 +1608,8 @@ export async function processPptBatch(pptFile, options) {
                     }
                 }
                 
-                if (!pPr) {
-                    pPr = xmlDoc.createElementNS(nsA, 'a:pPr');
-                    if (el.firstChild) {
-                        el.insertBefore(pPr, el.firstChild);
-                    } else {
-                        el.appendChild(pPr);
-                    }
-                }
-                
-                const oldEa = pPr.getAttribute('eaLnBrk');
-                const oldLat = pPr.getAttribute('latinLnBrk');
-                
-                if (oldEa !== '0' || oldLat !== '0') {
+                // 💡 [XML 안전 가드] pPr이 이미 구체적으로 정의되어 있고, 기존 eaLnBrk 속성이 없는 경우에만 한글 줄바꿈 보정을 수행합니다.
+                if (pPr && !pPr.hasAttribute('eaLnBrk')) {
                     pPr.setAttribute('eaLnBrk', '0');
                     pPr.setAttribute('latinLnBrk', '0');
                     totalWordWrapPrevented++;
@@ -1636,8 +1625,9 @@ export async function processPptBatch(pptFile, options) {
                     let parentNode = el.parentNode;
                     let isIllegalAncestor = false;
                     while (parentNode && parentNode.nodeType === 1) {
-                        const pName = parentNode.localName || parentNode.tagName.split(':').pop();
-                        if (['fld', 'defRPr', 'endParaRPr', 'buClr', 'buFont', 'buSz'].includes(pName)) {
+                        const tag = (parentNode.tagName || parentNode.nodeName || '').toLowerCase();
+                        const cleanTag = tag.includes(':') ? tag.split(':').pop() : tag;
+                        if (['fld', 'defrpr', 'endpararpr', 'buclr', 'bufont', 'busz', 'ph', 'grpsp', 'graphicframe', 'tc', 'tbl'].includes(cleanTag)) {
                             isIllegalAncestor = true;
                             break;
                         }
@@ -1680,30 +1670,8 @@ export async function processPptBatch(pptFile, options) {
                     }
                     if (existingLn) continue;
 
-                    const ln = xmlDoc.createElementNS(nsA, 'a:ln');
-                    ln.setAttribute('w', '9525');
-                    ln.setAttribute('cmpd', 'sng');
-
-                    const solidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                    const srgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                    srgbClr.setAttribute('val', 'FFFFFF');
-
-                    const alpha = xmlDoc.createElementNS(nsA, 'a:alpha');
-                    alpha.setAttribute('val', '0');
-
-                    srgbClr.appendChild(alpha);
-                    solidFill.appendChild(srgbClr);
-                    ln.appendChild(solidFill);
-                    
-                    if (rPr.firstChild) {
-                        rPr.insertBefore(ln, rPr.firstChild);
-                    } else {
-                        rPr.appendChild(ln);
-                    }
-
-                    designChanged = true;
-                    fileChanged = true;
-                    hasChanges = true;
+                    // 💡 [규격 무결성] a:ln 주입은 일부 외부 템플릿 슬라이드에서 OpenXML 파손을 일으키므로 100% 안전을 위해 스킵합니다.
+                    continue;
                 }
             }
         }
@@ -1792,30 +1760,37 @@ export async function processPptBatch(pptFile, options) {
                                 }
                                 tcPr.setAttribute('anchor', 'ctr');
                                 
-                                // 기존 lnL, lnR, lnT, lnB 제거
-                                const oldLns = Array.from(tcPr.childNodes).filter(node => node.nodeType === 1 && ['lnL', 'lnR', 'lnT', 'lnB'].includes(node.localName || node.tagName.split(':').pop()));
-                                oldLns.forEach(ln => tcPr.removeChild(ln));
-                                
-                                // 1단계: 테두리 4개 주입 (첫행 흰색 FFFFFF, 본문 회색 7F7F7F 0.5pt = 6350)
+                                // 1단계: 테두리 4개 보정 (첫행 흰색 FFFFFF, 본문 회색 7F7F7F 0.5pt = 6350)
                                 const borderColor = (isFirstRow && useHeaderStyle) ? 'FFFFFF' : '7F7F7F';
                                 ['lnL', 'lnR', 'lnT', 'lnB'].reverse().forEach(side => {
                                     if (applyTableDesign || (isFirstRow && useHeaderStyle)) {
-                                        const ln = xmlDoc.createElementNS(nsA, `a:${side}`);
-                                        ln.setAttribute('w', '6350');
-                                        ln.setAttribute('cmpd', 'sng');
+                                        let existingLnList = Array.from(tcPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === side || node.tagName.endsWith(':' + side)));
+                                        let ln = existingLnList[0];
+                                        if (!ln) {
+                                            ln = xmlDoc.createElementNS(nsA, `a:${side}`);
+                                            ln.setAttribute('w', '6350');
+                                            ln.setAttribute('cmpd', 'sng');
+                                            if (tcPr.firstChild) tcPr.insertBefore(ln, tcPr.firstChild);
+                                            else tcPr.appendChild(ln);
+                                        }
+                                        
+                                        // 기존 색상 노드(solidFill, sysClr, gradFill)만 삭제 후 새로 주입하여 round, headEnd 등 원본 속성 보존
+                                        const oldFills = Array.from(ln.childNodes).filter(node => node.nodeType === 1 && ['solidFill', 'sysClr', 'gradFill', 'pattFill'].includes(node.localName || node.tagName.split(':').pop()));
+                                        oldFills.forEach(f => ln.removeChild(f));
+                                        
                                         const sf = xmlDoc.createElementNS(nsA, 'a:solidFill');
                                         const clr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
                                         clr.setAttribute('val', borderColor);
                                         sf.appendChild(clr);
-                                        ln.appendChild(sf);
-                                        if (tcPr.firstChild) tcPr.insertBefore(ln, tcPr.firstChild);
-                                        else tcPr.appendChild(ln);
+                                        
+                                        if (ln.firstChild) ln.insertBefore(sf, ln.firstChild);
+                                        else ln.appendChild(sf);
                                     }
                                 });
                                 
                                 // 2단계: 첫 행 헤더 배경색 (#0072BA) 및 흰색 텍스트 포맷팅
                                 if (isFirstRow && useHeaderStyle) {
-                                    const oldFills = Array.from(tcPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill')));
+                                    const oldFills = Array.from(tcPr.childNodes).filter(node => node.nodeType === 1 && ['noFill', 'solidFill', 'gradFill', 'pattFill', 'blipFill'].includes(node.localName || node.tagName.split(':').pop()));
                                     oldFills.forEach(sf => tcPr.removeChild(sf));
                                     
                                     const bgFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
@@ -1836,23 +1811,6 @@ export async function processPptBatch(pptFile, options) {
                                         }
                                         pPr.setAttribute('algn', 'ctr');
                                         
-                                        // 💡 [핵심 수리] pPr 내 defRPr에도 순백색(#FFFFFF) 및 b="0" (Bold off) 주입
-                                        let defRPrList = Array.from(pPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'defRPr' || node.tagName.endsWith(':defRPr')));
-                                        let defRPr = defRPrList[0];
-                                        if (!defRPr) {
-                                            defRPr = xmlDoc.createElementNS(nsA, 'a:defRPr');
-                                            pPr.appendChild(defRPr);
-                                        }
-                                        defRPr.setAttribute('sz', '1100');
-                                        defRPr.setAttribute('b', '0'); // Bold off
-                                        const defFills = Array.from(defRPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill') || node.localName === 'gradFill' || node.tagName.endsWith(':gradFill')));
-                                        defFills.forEach(sf => defRPr.removeChild(sf));
-                                        const defFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                                        const defClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                                        defClr.setAttribute('val', 'FFFFFF');
-                                        defFill.appendChild(defClr);
-                                        defRPr.appendChild(defFill);
-                                        
                                         const runs = p.getElementsByTagName('a:r');
                                         for (let rIdx = 0; rIdx < runs.length; rIdx++) {
                                             const r = runs[rIdx];
@@ -1866,7 +1824,17 @@ export async function processPptBatch(pptFile, options) {
                                             rPr.setAttribute('sz', '1100');
                                             rPr.setAttribute('b', '0'); // 💡 [요청 반영] 텍스트 Bold off (b="0")
                                             
-                                            // 💡 [요청 반영] 첫 행 헤더 폰트에 사용자 지정 "KoPubDotum Bold" 명시적 폰트 노드(latin, ea, cs) 주입
+                                            // 💡 1. 기존 모든 채우기 태그 삭제 후 순백색(FFFFFF) 주입 (XSD 규격상 폰트 태그보다 앞서야 함)
+                                            const rFills = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill') || node.localName === 'gradFill' || node.tagName.endsWith(':gradFill')));
+                                            rFills.forEach(rf => rPr.removeChild(rf));
+                                            
+                                            const rFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                                            const rClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                                            rClr.setAttribute('val', 'FFFFFF');
+                                            rFill.appendChild(rClr);
+                                            rPr.appendChild(rFill);
+
+                                            // 💡 2. 첫 행 헤더 폰트에 사용자 지정 "KoPubDotum Bold" 명시적 폰트 노드(latin, ea, cs) 주입
                                             const fontName = 'KoPubDotum Bold';
                                             const oldFonts = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && ['latin', 'ea', 'cs', 'sym'].includes(node.localName || node.tagName.split(':').pop()));
                                             oldFonts.forEach(f => rPr.removeChild(f));
@@ -1876,16 +1844,6 @@ export async function processPptBatch(pptFile, options) {
                                                 fontEl.setAttribute('typeface', fontName);
                                                 rPr.appendChild(fontEl);
                                             });
-                                            
-                                            // 💡 기존 모든 채우기 태그 삭제 후 순백색(FFFFFF) 강제 주입
-                                            const rFills = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill') || node.localName === 'gradFill' || node.tagName.endsWith(':gradFill')));
-                                            rFills.forEach(rf => rPr.removeChild(rf));
-                                            
-                                            const rFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                                            const rClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                                            rClr.setAttribute('val', 'FFFFFF');
-                                            rFill.appendChild(rClr);
-                                            rPr.appendChild(rFill);
                                         }
                                     }
                                 }
