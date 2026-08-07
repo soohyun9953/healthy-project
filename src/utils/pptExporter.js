@@ -1103,10 +1103,17 @@ export async function processPptBatch(pptFile, options) {
         });
     }
     
-    // 타겟 슬라이드 XML 파일 목록
-    const targetFiles = allFiles.filter(p => p.endsWith('.xml') && 
-        (p.startsWith('ppt/slides/slide') || p.startsWith('ppt/slideLayouts/') || p.startsWith('ppt/slideMasters/') || p.startsWith('ppt/theme/'))
-    );
+    // 타겟 슬라이드 XML 파일 목록 (마스터, 레이아웃, 테마 파일의 OpenXML 오염 방지를 위해 실제 슬라이드로 엄격 한정)
+    const targetFiles = allFiles.filter(p => p.endsWith('.xml') && p.startsWith('ppt/slides/slide'));
+    
+    // 💡 폰트 교체 및 단어 치환 대상 파일 목록 (슬라이드 + 마스터 + 레이아웃 텍스트 박스 폰트 일괄 적용)
+    const textAndFontTargetFiles = allFiles.filter(p => p.endsWith('.xml') && (
+        p.startsWith('ppt/slides/slide') ||
+        p.startsWith('ppt/slideMasters/slideMaster') ||
+        p.startsWith('ppt/slideLayouts/slideLayout')
+    ));
+
+
 
     // 텍스트 디자인 대상 탐색 로직 (적용 시에만)
     const designTargetFilesSet = new Set();
@@ -1165,10 +1172,13 @@ export async function processPptBatch(pptFile, options) {
         }
     }
 
-    targetFiles.forEach(slidePath => {
+    textAndFontTargetFiles.forEach(slidePath => {
         let slideXmlStr = zip.file(slidePath).asText();
         let fileChanged = false;
         let designChanged = false;
+        const isActualSlide = slidePath.startsWith('ppt/slides/slide');
+        
+
         
         // [선제 조치] XML 파싱 에러를 유발하는 수직 탭(\x0b, \u000b) 제어문자를 일반 개행(\n)으로 먼저 문자열 치환
         if (clean_vertical_tab) {
@@ -1618,81 +1628,92 @@ export async function processPptBatch(pptFile, options) {
                     hasChanges = true;
                 }
             }
-        }
 
-        // 2. 텍스트 디자인 일괄 변경
-        if (applyDesign && designTargetFilesSet.has(slidePath)) {
-            let textDesignAppliedCount = 0;
-            // xmlDoc을 대상으로 직접 작업하도록 수정하여 기존에 수행한 변경사항(테이블, 단어 등)이 소실되지 않도록 보장
-            function applyLnToRPr(rPr) {
-                let existingLn = null;
-                for (let j = 0; j < rPr.childNodes.length; j++) {
-                    const child = rPr.childNodes[j];
-                    if (child.nodeType === 1 && (child.localName === 'ln' || child.tagName.split(':').pop() === 'ln')) {
-                        existingLn = child;
-                        break;
-                    }
-                }
-                if (existingLn) rPr.removeChild(existingLn);
-
-                const ln = xmlDoc.createElementNS(nsA, 'a:ln');
-                ln.setAttribute('w', '9525'); // 0.75pt
-                ln.setAttribute('cmpd', 'sng');
-
-                const solidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
-                const srgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
-                srgbClr.setAttribute('val', 'FFFFFF'); // 흰색
-
-                // 💡 PowerPoint UI 기준 [투명도 100%] 설정 (OpenXML val="0")
-                const alpha = xmlDoc.createElementNS(nsA, 'a:alpha');
-                alpha.setAttribute('val', '0');
-                srgbClr.appendChild(alpha);
-
-                solidFill.appendChild(srgbClr);
-                ln.appendChild(solidFill);
-                
-                const prstDash = xmlDoc.createElementNS(nsA, 'a:prstDash');
-                prstDash.setAttribute('val', 'solid');
-                ln.appendChild(prstDash);
-                
-                rPr.insertBefore(ln, rPr.firstChild);
-                textDesignAppliedCount++;
-            }
-
-            let designChangedLocal = false;
-            const allElementsInner = Array.from(xmlDoc.getElementsByTagName('*'));
-            for (let i = 0; i < allElementsInner.length; i++) {
-                const el = allElementsInner[i];
-                if (el.nodeType !== 1) continue;
-                const localName = el.localName || el.tagName.split(':').pop();
-                
-                if (localName === 'r' || localName === 'fld' || localName === 'br') {
-                    let rPr = null;
-                    for (let j = 0; j < el.childNodes.length; j++) {
-                        const child = el.childNodes[j];
-                        if (child.nodeType === 1 && (child.localName === 'rPr' || child.tagName.split(':').pop() === 'rPr')) {
-                            rPr = child;
+            // 5. 텍스트 디자인 일괄 변경 (초심 복원: 100% 안전한 오리지널 DOM 가공 엔진)
+            if (applyDesign && slidePath.startsWith('ppt/slides/slide') && designTargetFilesSet.has(slidePath)) {
+                if (localName === 'r') {
+                    // 💡 [규격 무결성 가드] 조상 노드에 fld(슬라이드 번호/날짜 필드), defRPr, endParaRPr 등이 있으면 a:ln 주입 시 OpenXML 파손이 발생하므로 안전하게 건너뜁니다.
+                    let parentNode = el.parentNode;
+                    let isIllegalAncestor = false;
+                    while (parentNode && parentNode.nodeType === 1) {
+                        const pName = parentNode.localName || parentNode.tagName.split(':').pop();
+                        if (['fld', 'defRPr', 'endParaRPr', 'buClr', 'buFont', 'buSz'].includes(pName)) {
+                            isIllegalAncestor = true;
                             break;
+                        }
+                        parentNode = parentNode.parentNode;
+                    }
+                    if (isIllegalAncestor) continue;
+
+                    let rPr = null;
+                    const childNodes = el.childNodes;
+                    for (let j = 0; j < childNodes.length; j++) {
+                        const child = childNodes[j];
+                        if (child.nodeType === 1) {
+                            const childLocalName = child.localName || child.tagName.split(':').pop();
+                            if (childLocalName === 'rPr') {
+                                rPr = child;
+                                break;
+                            }
                         }
                     }
                     if (!rPr) {
                         rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
-                        el.insertBefore(rPr, el.firstChild);
+                        if (el.firstChild) {
+                            el.insertBefore(rPr, el.firstChild);
+                        } else {
+                            el.appendChild(rPr);
+                        }
                     }
-                    applyLnToRPr(rPr);
-                    designChangedLocal = true;
-                    hasChanges = true;
-                } else if (localName === 'endParaRPr' || localName === 'defRPr') {
-                    applyLnToRPr(el);
-                    designChangedLocal = true;
+                    
+                    // 💡 [원본 테두리 보존 가드] 기존 a:ln 이 이미 존재하는 경우, 텍스트 박스/도형 테두리 선 디자인이 들어있는 것이므로 원본 선을 100% 보존합니다.
+                    let existingLn = null;
+                    for (let j = 0; j < rPr.childNodes.length; j++) {
+                        const child = rPr.childNodes[j];
+                        if (child.nodeType === 1) {
+                            const childLocalName = child.localName || child.tagName.split(':').pop();
+                            if (childLocalName === 'ln') {
+                                existingLn = child;
+                                break;
+                            }
+                        }
+                    }
+                    if (existingLn) continue;
+
+                    const ln = xmlDoc.createElementNS(nsA, 'a:ln');
+                    ln.setAttribute('w', '9525');
+                    ln.setAttribute('cmpd', 'sng');
+
+                    const solidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                    const srgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                    srgbClr.setAttribute('val', 'FFFFFF');
+
+                    const alpha = xmlDoc.createElementNS(nsA, 'a:alpha');
+                    alpha.setAttribute('val', '0');
+
+                    srgbClr.appendChild(alpha);
+                    solidFill.appendChild(srgbClr);
+                    ln.appendChild(solidFill);
+                    
+                    const prstDash = xmlDoc.createElementNS(nsA, 'a:prstDash');
+                    prstDash.setAttribute('val', 'solid');
+                    ln.appendChild(prstDash);
+                    
+                    if (rPr.firstChild) {
+                        rPr.insertBefore(ln, rPr.firstChild);
+                    } else {
+                        rPr.appendChild(ln);
+                    }
+
+                    designChanged = true;
+                    fileChanged = true;
                     hasChanges = true;
                 }
             }
-            
-            if (designChangedLocal) {
-                fileChanged = true;
-                totalReplacedTextDesigns += textDesignAppliedCount;
-            }
+        }
+
+        if (designChanged) {
+            totalReplacedTextDesigns++;
         }
         
         // [신규] 대체 텍스트 일괄 제거 로직
@@ -1742,96 +1763,148 @@ export async function processPptBatch(pptFile, options) {
         // 💡 1단계: DOM 수정사항이 있을 때만 문자열로 직렬화
         if (fileChanged) {
             slideXmlStr = serializer.serializeToString(xmlDoc);
-            slideXmlStr = slideXmlStr.replace(/(<a:[a-zA-Z0-9]+)\s+xmlns:a="http:\/\/schemas\.openxmlformats\.org\/drawingml\/2006\/main"/g, '$1');
         }
 
-        // 💡 2단계: 테이블 디자인 및 첫 행(헤더) 특별 포맷팅 적용 (순수 XML 문자열 기반 원자적 비파괴 안전 가공)
-        if ((applyTableDesign || applyFirstRowHeaderStyle) && slidePath.startsWith('ppt/slides/slide') && slideXmlStr.includes('<a:tbl>')) {
-            const useHeaderStyle = applyFirstRowHeaderStyle !== false;
-            
-            const processTc = (tcMatch) => {
-                let tcStr = tcMatch;
-                if (/hMerge\s*=\s*["']1["']/.test(tcStr) || /vMerge\s*=\s*["']1["']/.test(tcStr)) return tcStr;
-                
-                // 1. 단일 셀 내부 고유 <a:tcPr> 정밀 대치 (수직 중앙 맞춤 anchor="ctr" 적용)
-                const tcPrMatch = tcStr.match(/<a:tcPr\b[^>]*\/>|<a:tcPr\b[^>]*>(?:(?!<\/a:tcPr>)[\s\S])*?<\/a:tcPr>/);
-                if (tcPrMatch) {
-                    const oldTcPr = tcPrMatch[0];
-                    let borders = '';
-                    const lnMatches = oldTcPr.match(/<a:ln[LRTB]\b[^>]*>(?:(?!<\/a:ln[LRTB]>)[\s\S])*?<\/a:ln[LRTB]>/g) || [];
-                    lnMatches.forEach(ln => {
-                        let cleanLn = ln.replace(/<a:lumMod\b[^>]*\/>/g, '').replace(/<a:lumOff\b[^>]*\/>/g, '');
-                        if (/<a:solidFill>/.test(cleanLn)) {
-                            cleanLn = cleanLn.replace(/<a:solidFill>[\s\S]*?<\/a:solidFill>/g, '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>');
-                        } else {
-                            cleanLn = cleanLn.replace(/(<\/a:ln[LRTB]>)/, '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>$1');
+            // 💡 [옵션 E: 테이블 디자인 및 헤더 가공] DOM 기반 규격 100% 준수 안전 파이프라인
+            if ((applyTableDesign || applyFirstRowHeaderStyle) && slidePath.startsWith('ppt/slides/slide')) {
+                const tables = xmlDoc.getElementsByTagName('a:tbl');
+                if (tables.length > 0) {
+                    const useHeaderStyle = applyFirstRowHeaderStyle !== false;
+                    
+                    for (let t = 0; t < tables.length; t++) {
+                        totalTablesCount++;
+                        if (useHeaderStyle) totalHeaderRowsApplied++;
+                        
+                        const tbl = tables[t];
+                        const rows = tbl.getElementsByTagName('a:tr');
+                        
+                        for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+                            const tr = rows[rowIdx];
+                            const isFirstRow = (rowIdx === 0);
+                            const cells = tr.getElementsByTagName('a:tc');
+                            
+                            for (let c = 0; c < cells.length; c++) {
+                                const tc = cells[c];
+                                if (tc.getAttribute('hMerge') === '1' || tc.getAttribute('vMerge') === '1') continue;
+                                
+                                let tcPrList = Array.from(tc.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'tcPr' || node.tagName.endsWith(':tcPr')));
+                                let tcPr = tcPrList[0];
+                                if (!tcPr) {
+                                    tcPr = xmlDoc.createElementNS(nsA, 'a:tcPr');
+                                    if (tc.firstChild) tc.insertBefore(tcPr, tc.firstChild);
+                                    else tc.appendChild(tcPr);
+                                }
+                                tcPr.setAttribute('anchor', 'ctr');
+                                
+                                // 기존 lnL, lnR, lnT, lnB 제거
+                                const oldLns = Array.from(tcPr.childNodes).filter(node => node.nodeType === 1 && ['lnL', 'lnR', 'lnT', 'lnB'].includes(node.localName || node.tagName.split(':').pop()));
+                                oldLns.forEach(ln => tcPr.removeChild(ln));
+                                
+                                // 1단계: 테두리 4개 주입 (첫행 흰색 FFFFFF, 본문 회색 7F7F7F 0.5pt = 6350)
+                                const borderColor = (isFirstRow && useHeaderStyle) ? 'FFFFFF' : '7F7F7F';
+                                ['lnL', 'lnR', 'lnT', 'lnB'].reverse().forEach(side => {
+                                    if (applyTableDesign || (isFirstRow && useHeaderStyle)) {
+                                        const ln = xmlDoc.createElementNS(nsA, `a:${side}`);
+                                        ln.setAttribute('w', '6350');
+                                        ln.setAttribute('cmpd', 'sng');
+                                        const sf = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                                        const clr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                                        clr.setAttribute('val', borderColor);
+                                        sf.appendChild(clr);
+                                        ln.appendChild(sf);
+                                        if (tcPr.firstChild) tcPr.insertBefore(ln, tcPr.firstChild);
+                                        else tcPr.appendChild(ln);
+                                    }
+                                });
+                                
+                                // 2단계: 첫 행 헤더 배경색 (#0072BA) 및 흰색 텍스트 포맷팅
+                                if (isFirstRow && useHeaderStyle) {
+                                    const oldFills = Array.from(tcPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill')));
+                                    oldFills.forEach(sf => tcPr.removeChild(sf));
+                                    
+                                    const bgFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                                    const bgClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                                    bgClr.setAttribute('val', '0072BA');
+                                    bgFill.appendChild(bgClr);
+                                    tcPr.appendChild(bgFill);
+                                    
+                                    const paragraphs = tc.getElementsByTagName('a:p');
+                                    for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+                                        const p = paragraphs[pIdx];
+                                        let pPrList = Array.from(p.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'pPr' || node.tagName.endsWith(':pPr')));
+                                        let pPr = pPrList[0];
+                                        if (!pPr) {
+                                            pPr = xmlDoc.createElementNS(nsA, 'a:pPr');
+                                            if (p.firstChild) p.insertBefore(pPr, p.firstChild);
+                                            else p.appendChild(pPr);
+                                        }
+                                        pPr.setAttribute('algn', 'ctr');
+                                        
+                                        // 💡 [핵심 수리] pPr 내 defRPr에도 순백색(#FFFFFF) 및 b="0" (Bold off) 주입
+                                        let defRPrList = Array.from(pPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'defRPr' || node.tagName.endsWith(':defRPr')));
+                                        let defRPr = defRPrList[0];
+                                        if (!defRPr) {
+                                            defRPr = xmlDoc.createElementNS(nsA, 'a:defRPr');
+                                            pPr.appendChild(defRPr);
+                                        }
+                                        defRPr.setAttribute('sz', '1100');
+                                        defRPr.setAttribute('b', '0'); // Bold off
+                                        const defFills = Array.from(defRPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill') || node.localName === 'gradFill' || node.tagName.endsWith(':gradFill')));
+                                        defFills.forEach(sf => defRPr.removeChild(sf));
+                                        const defFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                                        const defClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                                        defClr.setAttribute('val', 'FFFFFF');
+                                        defFill.appendChild(defClr);
+                                        defRPr.appendChild(defFill);
+                                        
+                                        const runs = p.getElementsByTagName('a:r');
+                                        for (let rIdx = 0; rIdx < runs.length; rIdx++) {
+                                            const r = runs[rIdx];
+                                            let rPrList = Array.from(r.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'rPr' || node.tagName.endsWith(':rPr')));
+                                            let rPr = rPrList[0];
+                                            if (!rPr) {
+                                                rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
+                                                if (r.firstChild) r.insertBefore(rPr, r.firstChild);
+                                                else r.appendChild(rPr);
+                                            }
+                                            rPr.setAttribute('sz', '1100');
+                                            rPr.setAttribute('b', '0'); // 💡 [요청 반영] 텍스트 Bold off (b="0")
+                                            
+                                            // 💡 [요청 반영] 첫 행 헤더 폰트에 사용자 지정 "KoPubDotum Bold" 명시적 폰트 노드(latin, ea, cs) 주입
+                                            const fontName = 'KoPubDotum Bold';
+                                            const oldFonts = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && ['latin', 'ea', 'cs', 'sym'].includes(node.localName || node.tagName.split(':').pop()));
+                                            oldFonts.forEach(f => rPr.removeChild(f));
+                                            
+                                            ['latin', 'ea', 'cs'].forEach(fontType => {
+                                                const fontEl = xmlDoc.createElementNS(nsA, `a:${fontType}`);
+                                                fontEl.setAttribute('typeface', fontName);
+                                                rPr.appendChild(fontEl);
+                                            });
+                                            
+                                            // 💡 기존 모든 채우기 태그 삭제 후 순백색(FFFFFF) 강제 주입
+                                            const rFills = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill') || node.localName === 'gradFill' || node.tagName.endsWith(':gradFill')));
+                                            rFills.forEach(rf => rPr.removeChild(rf));
+                                            
+                                            const rFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                                            const rClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                                            rClr.setAttribute('val', 'FFFFFF');
+                                            rFill.appendChild(rClr);
+                                            rPr.appendChild(rFill);
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        borders += cleanLn;
-                    });
-                    const newTcPr = `<a:tcPr anchor="ctr">${borders}<a:solidFill><a:srgbClr val="0072BA"/></a:solidFill></a:tcPr>`;
-                    tcStr = tcStr.replace(oldTcPr, newTcPr);
-                } else {
-                    const newTcPr = `<a:tcPr anchor="ctr"><a:solidFill><a:srgbClr val="0072BA"/></a:solidFill></a:tcPr>`;
-                    tcStr = tcStr.replace(/(<a:tc\b[^>]*>)/, `$1${newTcPr}`);
-                }
-                
-                // 2. 단락 수평 중앙 맞춤 (algn="ctr") 적용
-                tcStr = tcStr.replace(/(<a:pPr\b)([^>]*>)/g, (m, pOpen, attrClose) => {
-                    let attr = attrClose;
-                    if (!/ algn=/.test(pOpen + attr)) attr = ' algn="ctr"' + attr;
-                    else attr = attr.replace(/ algn="[^"]*"/, ' algn="ctr"');
-                    return `${pOpen}${attr}`;
-                });
-                
-                // <a:pPr> 이 없는 단락에는 <a:pPr algn="ctr"/> 삽입
-                tcStr = tcStr.replace(/(<a:p\b[^>]*>)(?!\s*<a:pPr)/g, '$1<a:pPr algn="ctr"/>');
-
-                // 3. 단일 셀 내부 텍스트 글자속성 (sz="1100", b="0" 굵게 해제, solidFill FFFFFF)
-                tcStr = tcStr.replace(/(<a:(?:rPr|defRPr|endParaRPr)\b)([^>]*>)([\s\S]*?)(<\/a:(?:rPr|defRPr|endParaRPr)>)/g, (m, tagOpen, attrClose, body, close) => {
-                    let attr = attrClose;
-                    if (!/ sz=/.test(tagOpen + attr)) attr = ' sz="1100"' + attr;
-                    else attr = attr.replace(/ sz="[^"]*"/, ' sz="1100"');
-                    
-                    // 💡 [요청사항] 텍스트 굵게 옵션 해제 (b="0")
-                    if (!/ b=/.test(tagOpen + attr)) attr = ' b="0"' + attr;
-                    else attr = attr.replace(/ b="[^"]*"/, ' b="0"');
-                    
-                    let cleanB = body.replace(/<a:ln\b[^>]*>[\s\S]*?<\/a:ln>/g, '').replace(/<a:lumMod\b[^>]*\/>/g, '').replace(/<a:lumOff\b[^>]*\/>/g, '');
-                    if (/<a:solidFill>/.test(cleanB)) {
-                        cleanB = cleanB.replace(/<a:solidFill>[\s\S]*?<\/a:solidFill>/g, '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>');
-                    } else if (cleanB.trim() !== '') {
-                        cleanB += '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>';
                     }
-                    return `${tagOpen}${attr}${cleanB}${close}`;
-                });
-                
-                return tcStr;
-            };
-
-            const processTr = (trMatch) => {
-                return trMatch.replace(/<a:tc\b[^>]*>(?:(?!<\/a:tc>)[\s\S])*?<\/a:tc>/g, processTc);
-            };
-
-            const processTbl = (tblMatch) => {
-                totalTablesCount++;
-                if (useHeaderStyle) totalHeaderRowsApplied++;
-                
-                let rowIdx = 0;
-                return tblMatch.replace(/<a:tr\b[^>]*>(?:(?!<\/a:tr>)[\s\S])*?<\/a:tr>/g, (trMatch) => {
-                    const isFirstRow = (rowIdx === 0);
-                    rowIdx++;
-                    if (!isFirstRow || !useHeaderStyle) return trMatch;
-                    return processTr(trMatch);
-                });
-            };
-
-            const formattedSlideXml = slideXmlStr.replace(/<a:tbl\b[^>]*>(?:(?!<\/a:tbl>)[\s\S])*?<\/a:tbl>/g, processTbl);
-            if (formattedSlideXml !== slideXmlStr) {
-                slideXmlStr = formattedSlideXml;
-                fileChanged = true;
-                hasChanges = true;
+                    fileChanged = true;
+                    hasChanges = true;
+                }
             }
-        }
+
+            // 💡 [핵심 수리] DOM 수정사항(테이블 및 헤더 디자인)을 최종 slideXmlStr에 재직렬화하여 100% 반영!
+            if (fileChanged) {
+                slideXmlStr = serializer.serializeToString(xmlDoc);
+            }
 
         // 💡 3단계: 슬라이드 전체의 모든 a:rPr 내부에 잔존하는 불법 a:ln 노드를 안전 정제 (옵션 D가 비활성화된 경우에만 소거)
         if (!applyDesign) {

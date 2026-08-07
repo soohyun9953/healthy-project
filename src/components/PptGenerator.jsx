@@ -39,9 +39,9 @@ export default function PptGenerator() {
     });
     const [fontRules, setFontRules] = useState('');
     const [fontSize, setFontSize] = useState('');
-    const [applyDesignChecked, setApplyDesignChecked] = useState(false);
+    const [applyDesignChecked, setApplyDesignChecked] = useState(true);
     const [applyTableDesignChecked, setApplyTableDesignChecked] = useState(false);
-    const [applyFirstRowHeaderStyle, setApplyFirstRowHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 행 특별 포맷팅 적용 여부
+    const [applyFirstRowHeaderStyle, setApplyFirstRowHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 행 특별 포맷팅 적용 여부 (기본 true)
     const [designTargetText, setDesignTargetText] = useState('');
     const [applySpecialCharClean, setApplySpecialCharClean] = useState(false); // 옵션 F 활성화 여부
     const [replaceNbs, setReplaceNbs] = useState(true); // 하위 옵션 1: NBS 일반 공백 변환
@@ -1074,8 +1074,8 @@ export default function PptGenerator() {
             // showDirectoryPicker는 다운로드 폴더를 시스템 보호 폴더로 분류하여 브라우저가 차단합니다.
             // 대신 각 파일을 showSaveFilePicker로 개별 저장하거나, 다중 파일은 ZIP으로 묶어 다운로드합니다.
 
-            if (batchPptFiles.length === 1 && 'showSaveFilePicker' in window) {
-                // 단일 파일: showSaveFilePicker로 다운로드 폴더에서 저장 다이얼로그 열기
+            if (batchPptFiles.length === 1) {
+                // 단일 파일: showSaveFilePicker 혹은 file-saver 폴백으로 순수 PPTX 다운로드
                 const file = batchPptFiles[0];
                 try {
                     const options = { 
@@ -1100,24 +1100,29 @@ export default function PptGenerator() {
                     const fileName = `수정_${file.name}`;
 
                     let saved = false;
-                    try {
-                        const handle = await window.showSaveFilePicker({
-                            suggestedName: fileName,
-                            startIn: 'downloads',
-                            types: [{
-                                description: 'PowerPoint Presentation',
-                                accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
-                            }],
-                        });
-                        const writable = await handle.createWritable();
-                        await writable.write(modifiedBlob);
-                        await writable.close();
-                        saved = true;
-                    } catch (pickerErr) {
-                        if (pickerErr.name === 'AbortError') {
-                            setIsProcessingBatch(false);
-                            return;
+                    if ('showSaveFilePicker' in window) {
+                        try {
+                            const handle = await window.showSaveFilePicker({
+                                suggestedName: fileName,
+                                startIn: 'downloads',
+                                types: [{
+                                    description: 'PowerPoint Presentation',
+                                    accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
+                                }],
+                            });
+                            const writable = await handle.createWritable();
+                            await writable.write(modifiedBlob);
+                            await writable.close();
+                            saved = true;
+                        } catch (pickerErr) {
+                            if (pickerErr.name === 'AbortError') {
+                                setIsProcessingBatch(false);
+                                return;
+                            }
                         }
+                    }
+                    
+                    if (!saved) {
                         // 폴백: file-saver
                         const { saveAs } = await import('file-saver');
                         saveAs(modifiedBlob, fileName);
@@ -1651,7 +1656,7 @@ export default function PptGenerator() {
                                 </div>
                                 <input
                                     type="text"
-                                    placeholder="예: Arial(나눔고딕), Calibri(Pretendard)"
+                                    placeholder="예: Arial(KoPubDotum Bold), Calibri(Pretendard)"
                                     value={fontRules}
                                     onChange={(e) => setFontRules(e.target.value)}
                                     style={{
@@ -1721,7 +1726,11 @@ export default function PptGenerator() {
                                     <input 
                                         type="checkbox" 
                                         checked={applyTableDesignChecked}
-                                        onChange={(e) => setApplyTableDesignChecked(e.target.checked)}
+                                        onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            setApplyTableDesignChecked(checked);
+                                            if (checked) setApplyFirstRowHeaderStyle(true);
+                                        }}
                                         style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
                                     />
                                     옵션 E: 테이블(표) 표준 디자인 일괄 변경 적용
@@ -1765,7 +1774,7 @@ export default function PptGenerator() {
                                         첫 번째 행(헤더) 특별 포맷팅 적용
                                     </label>
                                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
-                                        (첫 행 배경 RGB(0,114,186), 글자 흰색 11pt KoPub돋움체 Bold, 첫 행 내부 실선만 흰색 적용)
+                                        (첫 행 배경 RGB(0,114,186), 글자 흰색 11pt KoPubDotum Bold, 첫 행 내부 실선만 흰색 적용)
                                     </div>
                                 </div>
                             </div>

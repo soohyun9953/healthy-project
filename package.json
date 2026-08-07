@@ -1,7 +1,7 @@
 {
   "name": "건강한-프로젝트",
   "private": true,
-  "version": "2.9.0",
+  "version": "2.9.17",
   "type": "module",
   "scripts": {
     "dev": "vite",
