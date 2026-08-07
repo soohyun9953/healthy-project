@@ -1201,15 +1201,22 @@ export async function processPptBatch(pptFile, options) {
             let xmlStr = slideXmlStr; // 현재 슬라이드 XML 문자열
             let strChanged = false;
 
-            // 테이블을 하나씩 찾아 처리 (문자열 내 모든 <a:tbl> 블록)
+            // 테이블을 하나씩 찾아 처리 (그룹 도형 내 표 및 속성 포함 <a:tbl ...> 블록까지 100% 포착)
             const processTables = (xml) => {
                 let result = xml;
                 let tblStart = 0;
                 let tableCount = 0;
 
                 while (true) {
-                    const tblIdx = result.indexOf('<a:tbl>', tblStart);
+                    const tblIdx = result.indexOf('<a:tbl', tblStart);
                     if (tblIdx === -1) break;
+
+                    // <a:tbl> 또는 <a:tbl ...> 시작 확인 (단, <a:tblStyle 등 타 태그 제외)
+                    const nextChar = result.charAt(tblIdx + 6);
+                    if (nextChar !== '>' && nextChar !== ' ' && nextChar !== '\t' && nextChar !== '\r' && nextChar !== '\n') {
+                        tblStart = tblIdx + 6;
+                        continue;
+                    }
 
                     const tblEndIdx = result.indexOf('</a:tbl>', tblIdx);
                     if (tblEndIdx === -1) break;
@@ -1237,6 +1244,12 @@ export async function processPptBatch(pptFile, options) {
                     const trIdx = result.indexOf('<a:tr', trStart);
                     if (trIdx === -1) break;
 
+                    const nextChar = result.charAt(trIdx + 5);
+                    if (nextChar !== '>' && nextChar !== ' ' && nextChar !== '\t' && nextChar !== '\r' && nextChar !== '\n') {
+                        trStart = trIdx + 5;
+                        continue;
+                    }
+
                     const trEndIdx = result.indexOf('</a:tr>', trIdx);
                     if (trEndIdx === -1) break;
 
@@ -1261,24 +1274,19 @@ export async function processPptBatch(pptFile, options) {
                 let tcStart = 0;
 
                 while (true) {
-                    const tcIdx = result.indexOf('<a:tc>', tcStart);
-                    const tcWithAttrIdx = result.indexOf('<a:tc ', tcStart);
+                    const tcIdx = result.indexOf('<a:tc', tcStart);
+                    if (tcIdx === -1) break;
 
-                    let actualTcIdx = -1;
-                    if (tcIdx !== -1 && tcWithAttrIdx !== -1) {
-                        actualTcIdx = Math.min(tcIdx, tcWithAttrIdx);
-                    } else if (tcIdx !== -1) {
-                        actualTcIdx = tcIdx;
-                    } else if (tcWithAttrIdx !== -1) {
-                        actualTcIdx = tcWithAttrIdx;
+                    const nextChar = result.charAt(tcIdx + 5);
+                    if (nextChar !== '>' && nextChar !== ' ' && nextChar !== '\t' && nextChar !== '\r' && nextChar !== '\n') {
+                        tcStart = tcIdx + 5;
+                        continue;
                     }
 
-                    if (actualTcIdx === -1) break;
-
-                    const tcEndIdx = result.indexOf('</a:tc>', actualTcIdx);
+                    const tcEndIdx = result.indexOf('</a:tc>', tcIdx);
                     if (tcEndIdx === -1) break;
 
-                    const tcContent = result.substring(actualTcIdx, tcEndIdx + 7);
+                    const tcContent = result.substring(tcIdx, tcEndIdx + 7);
 
                     // hMerge/vMerge 피병합 셀은 스킵
                     const isMergedPassenger = /hMerge\s*=\s*["']1["']/.test(tcContent) || /vMerge\s*=\s*["']1["']/.test(tcContent);
@@ -1288,14 +1296,14 @@ export async function processPptBatch(pptFile, options) {
                         processedTc = applyHeaderStyleToTc(tcContent);
                     }
 
-                    result = result.substring(0, actualTcIdx) + processedTc + result.substring(tcEndIdx + 7);
-                    tcStart = actualTcIdx + processedTc.length;
+                    result = result.substring(0, tcIdx) + processedTc + result.substring(tcEndIdx + 7);
+                    tcStart = tcIdx + processedTc.length;
                 }
 
                 return result;
             };
 
-            // 셀 배경색을 #0072BA, 텍스트 글자색을 #FFFFFF (흰색 Bold), 헤더 내부 테두리를 순백색(#FFFFFF)으로 변경
+            // 셀 배경색을 #0072BA, 텍스트 글자색을 #FFFFFF (순백색 100% 보장), 헤더 내부 테두리를 순백색(#FFFFFF)으로 변경
             const applyHeaderStyleToTc = (tcXml) => {
                 let result = tcXml;
 
@@ -1343,35 +1351,48 @@ export async function processPptBatch(pptFile, options) {
                     result = result.replace(tcPrMatch[0], `<a:tcPr${tcPrAttrs}>${tcPrBody}</a:tcPr>`);
                 }
 
-                // 2. 텍스트 흰색(FFFFFF) 및 Bold 11pt 변경 (a:rPr 내 solidFill이 schemeClr이든 srgbClr이든 무조건 흰색으로 대치)
+                // 2. 단락(a:p)의 a:pPr 및 a:defRPr에 순백색(FFFFFF) 텍스트 스타일 주입
+                result = result.replace(/(<a:pPr\b[^>]*>)([\s\S]*?)(<\/a:pPr>)/g, (match, open, body, close) => {
+                    let newBody = body;
+                    if (/<a:defRPr\b[^>]*>/.test(newBody)) {
+                        newBody = newBody.replace(/(<a:defRPr\b[^>]*>)([\s\S]*?)(<\/a:defRPr>)/g, (m, dOpen, dBody, dClose) => {
+                            let cleanDBody = dBody.replace(/<a:(?:solidFill|schemeClr|srgbClr|sysClr|gradFill|pattFill)[\s\S]*?<\/a:(?:solidFill|schemeClr|srgbClr|sysClr|gradFill|pattFill)>/gi, '');
+                            cleanDBody = cleanDBody.replace(/<a:solidFill[\s\S]*?\/>/gi, '');
+                            return `${dOpen}<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>${cleanDBody}${dClose}`;
+                        });
+                    } else {
+                        newBody = `<a:defRPr sz="1100" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:defRPr>${newBody}`;
+                    }
+                    return `${open}${newBody}${close}`;
+                });
+
+                // 3. 텍스트 run (a:r 및 a:fld) 내부의 a:rPr 보정 및 rPr이 없는 경우 강제 생성하여 텍스트 순백색(#FFFFFF) 100% 적용
+                // 3-1. 기존 a:rPr을 가진 a:r / a:fld 처리
                 result = result.replace(
                     /(<a:rPr\b[^>]*>)([\s\S]*?)(<\/a:rPr>)/g,
                     (match, open, body, close) => {
                         let newOpen = open;
                         if (!/ sz=/.test(newOpen)) {
                             newOpen = newOpen.replace('<a:rPr', '<a:rPr sz="1100"');
-                        } else {
-                            newOpen = newOpen.replace(/ sz="[^"]*"/, ' sz="1100"');
                         }
                         if (!/ b=/.test(newOpen)) {
                             newOpen = newOpen.replace('<a:rPr', '<a:rPr b="1"');
-                        } else {
-                            newOpen = newOpen.replace(/ b="[^"]*"/, ' b="1"');
                         }
 
-                        let newBody = body;
-                        if (/<a:solidFill>[\s\S]*?<\/a:solidFill>/.test(newBody)) {
-                            newBody = newBody.replace(
-                                /<a:solidFill>[\s\S]*?<\/a:solidFill>/g,
-                                '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
-                            );
-                        } else {
-                            newBody += '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>';
-                        }
+                        // 기존 채우기(solidFill/schemeClr 등) 완전 제거 후 순백색(FFFFFF) 주입
+                        let newBody = body.replace(/<a:(?:solidFill|schemeClr|srgbClr|sysClr|gradFill|pattFill)[\s\S]*?<\/a:(?:solidFill|schemeClr|srgbClr|sysClr|gradFill|pattFill)>/gi, '');
+                        newBody = newBody.replace(/<a:solidFill[\s\S]*?\/>/gi, '');
+                        newBody = `<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>${newBody}`;
 
                         return `${newOpen}${newBody}${close}`;
                     }
                 );
+
+                // 3-2. a:rPr이 아예 없는 <a:r> 및 <a:fld> 태그에 rPr 흰색 설정 주입
+                result = result.replace(/<a:(r|fld)\b((?:(?!<a:rPr)[\s\S])*?)>/g, (match, tag, rest) => {
+                    if (match.includes('<a:rPr')) return match;
+                    return `<a:${tag}${rest}><a:rPr sz="1100" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr>`;
+                });
 
                 return result;
             };
@@ -1731,7 +1752,11 @@ export async function processPptBatch(pptFile, options) {
 
             // 💡 [옵션 E: 테이블 디자인 및 헤더 가공] DOM 기반 규격 100% 준수 안전 파이프라인
             if ((applyTableDesign || applyFirstRowHeaderStyle) && slidePath.startsWith('ppt/slides/slide')) {
-                const tables = xmlDoc.getElementsByTagName('a:tbl');
+                const allTbls = Array.from(xmlDoc.getElementsByTagNameNS('*', 'tbl'))
+                    .concat(Array.from(xmlDoc.getElementsByTagName('a:tbl')))
+                    .concat(Array.from(xmlDoc.getElementsByTagName('tbl')));
+                const tables = Array.from(new Set(allTbls));
+
                 if (tables.length > 0) {
                     const useHeaderStyle = applyFirstRowHeaderStyle !== false;
                     
@@ -1740,12 +1765,12 @@ export async function processPptBatch(pptFile, options) {
                         if (useHeaderStyle) totalHeaderRowsApplied++;
                         
                         const tbl = tables[t];
-                        const rows = tbl.getElementsByTagName('a:tr');
+                        const rows = Array.from(tbl.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'tr' || node.tagName.endsWith(':tr')));
                         
                         for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
                             const tr = rows[rowIdx];
                             const isFirstRow = (rowIdx === 0);
-                            const cells = tr.getElementsByTagName('a:tc');
+                            const cells = Array.from(tr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'tc' || node.tagName.endsWith(':tc')));
                             
                             for (let c = 0; c < cells.length; c++) {
                                 const tc = cells[c];
@@ -1774,7 +1799,7 @@ export async function processPptBatch(pptFile, options) {
                                             else tcPr.appendChild(ln);
                                         }
                                         
-                                        // 기존 색상 노드(solidFill, sysClr, gradFill)만 삭제 후 새로 주입하여 round, headEnd 등 원본 속성 보존
+                                        // 기존 색상 노드(solidFill, sysClr, gradFill)만 삭제 후 새로 주입
                                         const oldFills = Array.from(ln.childNodes).filter(node => node.nodeType === 1 && ['solidFill', 'sysClr', 'gradFill', 'pattFill'].includes(node.localName || node.tagName.split(':').pop()));
                                         oldFills.forEach(f => ln.removeChild(f));
                                         
@@ -1799,9 +1824,11 @@ export async function processPptBatch(pptFile, options) {
                                     bgFill.appendChild(bgClr);
                                     tcPr.appendChild(bgFill);
                                     
-                                    const paragraphs = tc.getElementsByTagName('a:p');
-                                    for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
-                                        const p = paragraphs[pIdx];
+                                    const paragraphs = Array.from(tc.getElementsByTagName('a:p')).concat(Array.from(tc.getElementsByTagName('p')));
+                                    const uniqueParagraphs = Array.from(new Set(paragraphs));
+
+                                    for (let pIdx = 0; pIdx < uniqueParagraphs.length; pIdx++) {
+                                        const p = uniqueParagraphs[pIdx];
                                         let pPrList = Array.from(p.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'pPr' || node.tagName.endsWith(':pPr')));
                                         let pPr = pPrList[0];
                                         if (!pPr) {
@@ -1811,9 +1838,33 @@ export async function processPptBatch(pptFile, options) {
                                         }
                                         pPr.setAttribute('algn', 'ctr');
                                         
-                                        const runs = p.getElementsByTagName('a:r');
-                                        for (let rIdx = 0; rIdx < runs.length; rIdx++) {
-                                            const r = runs[rIdx];
+                                        // defRPr에도 순백색(FFFFFF) 주입
+                                        let defRPrList = Array.from(pPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'defRPr' || node.tagName.endsWith(':defRPr')));
+                                        let defRPr = defRPrList[0];
+                                        if (!defRPr) {
+                                            defRPr = xmlDoc.createElementNS(nsA, 'a:defRPr');
+                                            pPr.appendChild(defRPr);
+                                        }
+                                        defRPr.setAttribute('sz', '1100');
+                                        defRPr.setAttribute('b', '1');
+                                        const oldDefFills = Array.from(defRPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill')));
+                                        oldDefFills.forEach(f => defRPr.removeChild(f));
+                                        const defFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                                        const defClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                                        defClr.setAttribute('val', 'FFFFFF');
+                                        defFill.appendChild(defClr);
+                                        if (defRPr.firstChild) defRPr.insertBefore(defFill, defRPr.firstChild);
+                                        else defRPr.appendChild(defFill);
+
+                                        // a:r 및 a:fld 순회
+                                        const runs = Array.from(p.getElementsByTagName('a:r'))
+                                            .concat(Array.from(p.getElementsByTagName('r')))
+                                            .concat(Array.from(p.getElementsByTagName('a:fld')))
+                                            .concat(Array.from(p.getElementsByTagName('fld')));
+                                        const uniqueRuns = Array.from(new Set(runs));
+
+                                        for (let rIdx = 0; rIdx < uniqueRuns.length; rIdx++) {
+                                            const r = uniqueRuns[rIdx];
                                             let rPrList = Array.from(r.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'rPr' || node.tagName.endsWith(':rPr')));
                                             let rPr = rPrList[0];
                                             if (!rPr) {
@@ -1822,19 +1873,21 @@ export async function processPptBatch(pptFile, options) {
                                                 else r.appendChild(rPr);
                                             }
                                             rPr.setAttribute('sz', '1100');
-                                            rPr.setAttribute('b', '0'); // 💡 [요청 반영] 텍스트 Bold off (b="0")
+                                            rPr.setAttribute('b', '1');
                                             
-                                            // 💡 1. 기존 모든 채우기 태그 삭제 후 순백색(FFFFFF) 주입 (XSD 규격상 폰트 태그보다 앞서야 함)
-                                            const rFills = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill') || node.localName === 'gradFill' || node.tagName.endsWith(':gradFill')));
+                                            // 💡 1. 기존 모든 채우기 태그 삭제 후 순백색(FFFFFF)을 rPr 최상단 자식으로 삽입 (XSD 스키마 순서 엄수)
+                                            const rFills = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && ['solidFill', 'schemeClr', 'sysClr', 'gradFill', 'pattFill'].includes(node.localName || node.tagName.split(':').pop()));
                                             rFills.forEach(rf => rPr.removeChild(rf));
                                             
                                             const rFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
                                             const rClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
                                             rClr.setAttribute('val', 'FFFFFF');
                                             rFill.appendChild(rClr);
-                                            rPr.appendChild(rFill);
+                                            
+                                            if (rPr.firstChild) rPr.insertBefore(rFill, rPr.firstChild);
+                                            else rPr.appendChild(rFill);
 
-                                            // 💡 2. 첫 행 헤더 폰트에 사용자 지정 "KoPubDotum Bold" 명시적 폰트 노드(latin, ea, cs) 주입
+                                            // 💡 2. 첫 행 헤더 폰트에 사용자 지정 "KoPubDotum Bold" 명시적 폰트 노드 주입
                                             const fontName = 'KoPubDotum Bold';
                                             const oldFonts = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && ['latin', 'ea', 'cs', 'sym'].includes(node.localName || node.tagName.split(':').pop()));
                                             oldFonts.forEach(f => rPr.removeChild(f));
