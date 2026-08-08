@@ -799,7 +799,7 @@ ${ragContext ? `\n${ragContext}` : ''}
         let content = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
         if (content.includes("```")) {
-            const match = content.match(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/i);
+            const match = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
             if (match && match[1]) {
                 content = match[1];
             } else {
@@ -873,85 +873,71 @@ ${ragContext ? `\n${ragContext}` : ''}
 }
 
 export async function askRagQuestion(docTitle, docContent, question, apiKey, onProgress, llmProvider = 'gemini', omniRouteModel = 'auto') {
-    let key = '';
-    if (llmProvider === 'gemini') {
-        const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-        if (keys.length === 0) throw new Error("유효한 Gemini API Key가 없습니다.");
-        key = keys[0];
+    const keys = String(apiKey || '').split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+    if (llmProvider !== 'omniroute' && keys.length === 0) {
+        throw new Error("유효한 Gemini API Key가 없습니다.");
     }
 
     const systemPrompt = `당신은 ISMP 산출물 전문 Q&A 어시스턴트입니다. 
 제공된 문서 [${docTitle}]의 내용을 바탕으로 사용자의 질문에 전문적이고 친절하게 답변하십시오.`;
 
-    const userInput = `
-[문서 제목]: ${docTitle}
+    const userInput = `[문서 제목]: ${docTitle}
 [사용자 질문]: ${question}
-`;
+--- [문서 내용 요약] ---
+${String(docContent || '').substring(0, 15000)}`;
 
-    let response;
     if (llmProvider === 'omniroute') {
-        const omni_key = localStorage.getItem('omniroute_api_key') || '';
-        const gemini_key = (localStorage.getItem('gemini_api_key') || '').split(',')[0]?.trim();
-        const auth_bearer = omni_key || gemini_key || 'omniroute';
+        return await analyze_with_omniroute(userInput, omniRouteModel, onProgress, systemPrompt, userInput);
+    }
 
-        const headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${auth_bearer}`
-        };
-        if (gemini_key) {
-            headers['x-goog-api-key'] = gemini_key;
-            headers['x-api-key'] = gemini_key;
+    // Gemini 다중 모델 및 다중 키 폴백 시도 (gemini-2.0-flash -> gemini-1.5-flash -> gemini-1.5-pro)
+    const candidate_models = ['models/gemini-2.0-flash', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro'];
+    let last_err = null;
+
+    for (let kIdx = 0; kIdx < keys.length; kIdx++) {
+        const key = keys[kIdx];
+        for (let mIdx = 0; mIdx < candidate_models.length; mIdx++) {
+            const target_model = candidate_models[mIdx];
+            try {
+                if (onProgress) onProgress(`AI 답변 생성 중... (${target_model})`);
+                const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/${target_model}:generateContent?key=${key}`;
+                const response = await fetch(fetchUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + userInput }] }]
+                    })
+                });
+
+                if (response.ok) {
+                    const res_json = await response.json();
+                    const text = res_json.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) return text;
+                } else {
+                    const err_text = await response.text().catch(() => '');
+                    console.warn(`[${target_model}] HTTP ${response.status}: ${err_text.substring(0, 100)}`);
+                }
+            } catch (e) {
+                last_err = e;
+                console.warn(`[${target_model}] fetch error:`, e);
+            }
         }
-
-        response = await fetch(`http://localhost:20128/v1/chat/completions`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: omniRouteModel || 'auto',
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userInput }
-                ],
-                temperature: 0.7
-            })
-        });
-    } else {
-        const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/gemini-1.5-flash:generateContent?key=${key}`;
-        response = await fetch(fetchUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: [{ role: "user", parts: [{ text: systemPrompt + "\n" + userInput }] }]
-            })
-        });
     }
 
-    if (!response.ok) {
-        const err_text = await response.text();
-        throw new Error(`AI API 호출 실패: ${err_text}`);
-    }
-
-    const res_json = await response.json();
-    if (llmProvider === 'omniroute') {
-        return res_json.choices[0].message.content;
-    } else {
-        return res_json.candidates?.[0]?.content?.parts?.[0]?.text;
-    }
+    throw last_err || new Error("모든 AI 모델 및 API 키 호출 시도 실패 (Failed to fetch). 네트워크 상태나 API 키를 점검해 주세요.");
 }
 
 export async function askTotalRagQuestion(question, contextDocs, apiKey, onProgress, llmProvider = 'gemini', omniRouteModel = 'auto') {
-    let key = '';
-    if (llmProvider === 'gemini') {
-        const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-        if (keys.length === 0) throw new Error("유효한 Gemini API Key가 없습니다.");
-        key = keys[0];
+    const keys = String(apiKey || '').split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+    if (llmProvider !== 'omniroute' && keys.length === 0) {
+        throw new Error("유효한 Gemini API Key가 없습니다.");
     }
 
     let contextText = "";
     if (contextDocs && contextDocs.length > 0) {
         contextDocs.forEach((doc, idx) => {
             contextText += `\n[참고자료 ${idx + 1}: ${doc.title}]\n`;
-            contextText += doc.content.substring(0, 1500) + (doc.content.length > 1500 ? "..." : "") + "\n";
+            contextText += String(doc.content || doc.text || '').substring(0, 4000) + "\n";
         });
     } else {
         contextText = "관련된 참고 자료를 찾지 못했습니다.";
@@ -961,61 +947,49 @@ export async function askTotalRagQuestion(question, contextDocs, apiKey, onProgr
 제공되는 [참고 지식베이스 내용]을 기반으로 사용자의 질문에 정확하고 풍부한 내용으로 친절하게 답변해 주십시오. 
 만약 참고 자료에 핵심 답변이 부재한 경우, 본인이 가지고 있는 IT 상식을 동원하여 구체적인 로드맵이나 대응 방안을 제시하고 출처를 밝혀주십시오.`;
 
-    const userInput = `
---- [참고 지식베이스 내용] ---
+    const userInput = `--- [참고 지식베이스 내용] ---
 ${contextText}
 
 --- [사용자 질문] ---
-${question}
-`;
+${question}`;
 
-    let response;
     if (llmProvider === 'omniroute') {
-        const omni_key = localStorage.getItem('omniroute_api_key') || '';
-        const gemini_key = (localStorage.getItem('gemini_api_key') || '').split(',')[0]?.trim();
-        const auth_bearer = omni_key || gemini_key || 'omniroute';
+        return await analyze_with_omniroute(userInput, omniRouteModel, onProgress, systemPrompt, userInput);
+    }
 
-        const headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${auth_bearer}`
-        };
-        if (gemini_key) {
-            headers['x-goog-api-key'] = gemini_key;
-            headers['x-api-key'] = gemini_key;
+    // Gemini 다중 모델 및 다중 키 폴백 시도 (gemini-2.0-flash -> gemini-1.5-flash -> gemini-1.5-pro)
+    const candidate_models = ['models/gemini-2.0-flash', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro'];
+    let last_err = null;
+
+    for (let kIdx = 0; kIdx < keys.length; kIdx++) {
+        const key = keys[kIdx];
+        for (let mIdx = 0; mIdx < candidate_models.length; mIdx++) {
+            const target_model = candidate_models[mIdx];
+            try {
+                if (onProgress) onProgress(`전체 지식베이스 AI 답변 생성 중... (${target_model})`);
+                const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/${target_model}:generateContent?key=${key}`;
+                const response = await fetch(fetchUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + userInput }] }]
+                    })
+                });
+
+                if (response.ok) {
+                    const res_json = await response.json();
+                    const text = res_json.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) return text;
+                } else {
+                    const err_text = await response.text().catch(() => '');
+                    console.warn(`[${target_model}] HTTP ${response.status}: ${err_text.substring(0, 100)}`);
+                }
+            } catch (e) {
+                last_err = e;
+                console.warn(`[${target_model}] fetch error:`, e);
+            }
         }
-
-        response = await fetch(`http://localhost:20128/v1/chat/completions`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: omniRouteModel || 'auto',
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userInput }
-                ],
-                temperature: 0.7
-            })
-        });
-    } else {
-        const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/gemini-1.5-flash:generateContent?key=${key}`;
-        response = await fetch(fetchUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: [{ role: "user", parts: [{ text: systemPrompt + "\n" + userInput }] }]
-            })
-        });
     }
 
-    if (!response.ok) {
-        const err_text = await response.text();
-        throw new Error("AI API 호출 실패: " + err_text);
-    }
-
-    const res_json = await response.json();
-    if (llmProvider === 'omniroute') {
-        return res_json.choices[0].message.content;
-    } else {
-        return res_json.candidates?.[0]?.content?.parts?.[0]?.text;
-    }
+    throw last_err || new Error("모든 AI 모델 및 API 키 호출 시도 실패 (Failed to fetch). 네트워크 상태나 API 키를 점검해 주세요.");
 }
