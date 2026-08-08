@@ -12,6 +12,7 @@ import IsmpDaDashboard from './components/IsmpDaDashboard';
 import PptValidator from './components/PptValidator';
 import HwpxGenerator from './components/HwpxGenerator';
 import G2bSearch from './components/G2bSearch';
+import { get_random_quote } from './data/projectQuotes';
 import { 
   Shield, 
   ShieldAlert,
@@ -44,7 +45,9 @@ import {
   Sliders,
   Sparkles,
   HelpCircle,
-  Building2
+  Building2,
+  Quote,
+  RefreshCw
 } from 'lucide-react';
 import { processFile } from './utils/fileExtractor';
 
@@ -240,6 +243,26 @@ function App() {
   const [omniRouteModel, setOmniRouteModel] = useState(() => localStorage.getItem('omniroute_model') || 'auto');
   const [omniRouteApiKey, setOmniRouteApiKey] = useState(() => localStorage.getItem('omniroute_api_key') || '');
 
+  // ── 프로젝트 명언/유머 팝업 모달 상태 (스네이크 케이스 준수) ──
+  const [show_quote_modal, set_show_quote_modal] = useState(false);
+  const [current_quote, set_current_quote] = useState(null);
+
+  const handle_open_quote_modal = useCallback(() => {
+    const next_quote = get_random_quote(current_quote?.id);
+    set_current_quote(next_quote);
+    set_show_quote_modal(true);
+    gaEvent('quote_modal_open', { quote_id: next_quote.id });
+  }, [current_quote]);
+
+  const handle_refresh_quote = useCallback(() => {
+    const next_quote = get_random_quote(current_quote?.id);
+    set_current_quote(next_quote);
+  }, [current_quote]);
+
+  const handle_close_quote_modal = useCallback(() => {
+    set_show_quote_modal(false);
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('llm_provider', llmProvider);
   }, [llmProvider]);
@@ -361,7 +384,12 @@ function App() {
       {/* Sidebar */}
       <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
-          <div className="logo-container">
+          <div 
+            className="logo-container"
+            onClick={handle_open_quote_modal}
+            title="프로젝트 응원 명언/유머 보기 (클릭)"
+            style={{ cursor: 'pointer' }}
+          >
             <div className="logo-icon">
               <Shield size={24} color="white" />
             </div>
@@ -981,6 +1009,53 @@ function App() {
                 }}
               >
                 닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 프로젝트 비타민 명언/유머 팝업 모달 (한글어 클래스 적용) ── */}
+      {show_quote_modal && current_quote && (
+        <div className="명언-팝업-모달-오버레이" onClick={handle_close_quote_modal}>
+          <div className="명언-팝업-모달-컨테이너" onClick={(e) => e.stopPropagation()}>
+            <div className="명언-팝업-헤더">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Quote size={20} style={{ color: '#38bdf8' }} />
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  프로젝트 비타민 명언 & 유머
+                </h3>
+              </div>
+              <button className="명언-닫기-아이콘-버튼" onClick={handle_close_quote_modal}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="명언-본문-카드">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                <span className="명언-카테고리-배지">
+                  {current_quote.icon} {current_quote.category}
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  #건강한프로젝트 #파이팅
+                </span>
+              </div>
+
+              <blockquote className="명언-인용문-텍스트">
+                "{current_quote.quote}"
+              </blockquote>
+
+              <div className="명언-출처-텍스트">
+                - {current_quote.author}
+              </div>
+            </div>
+
+            <div className="명언-하단-버튼그룹">
+              <button className="명언-새로고침-버튼" onClick={handle_refresh_quote}>
+                <RefreshCw size={14} /> 다른 명언 뽑기
+              </button>
+              <button className="명언-닫기-버튼" onClick={handle_close_quote_modal}>
+                확인 (화이팅!)
               </button>
             </div>
           </div>

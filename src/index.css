@@ -582,3 +582,159 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+/* ── 프로젝트 비타민 명언/유머 팝업 모달 스타일 (한글어 클래스명) ── */
+.명언-팝업-모달-오버레이 {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(4, 6, 12, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeInModal 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  padding: 20px;
+}
+
+.명언-팝업-모달-컨테이너 {
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.5),
+              0 0 32px rgba(56, 189, 248, 0.15);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: scaleUpModal 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.명언-팝업-헤더 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.명언-닫기-아이콘-버튼 {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.명언-닫기-아이콘-버튼:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.명언-본문-카드 {
+  padding: 24px;
+  background: radial-gradient(circle at 90% 10%, rgba(56, 189, 248, 0.08), transparent 60%),
+              radial-gradient(circle at 10% 90%, rgba(168, 85, 247, 0.06), transparent 60%),
+              rgba(0, 0, 0, 0.2);
+}
+
+.명언-카테고리-배지 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.명언-인용문-텍스트 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  line-height: 1.6;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: keep-all;
+  letter-spacing: -0.01em;
+}
+
+.명언-출처-텍스트 {
+  text-align: right;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.명언-하단-버튼그룹 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--glass-border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.명언-새로고침-버튼 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.명언-새로고침-버튼:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.명언-닫기-버튼 {
+  padding: 9px 20px;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  transition: all 0.2s;
+}
+
+.명언-닫기-버튼:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUpModal {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
