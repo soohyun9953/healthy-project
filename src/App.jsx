@@ -72,7 +72,7 @@ const tab_guides = {
     tips: '다량의 데이터를 한번에 처리할 때는 배치 청크 사이즈를 조절해 속도를 높일 수 있습니다.'
   },
   g2b: {
-    title: '나라장터 정보조회',
+    title: '(작업중)나라장터 정보조회',
     desc: '조달청 나라장터(g2b.go.kr)의 발주계획(발주예정) 및 사전규격 공고 정보를 사업명 및 수요기관 조건으로 검색합니다.',
     steps: [
       '조회 구분 선택 (전체 / 발주계획 / 사전규격)',
@@ -82,7 +82,7 @@ const tab_guides = {
     tips: '추천 사업명 태그(#AI, #ISP, #클라우드)나 수요기관 태그(@국립중앙의료원, @보건복지부)를 누르면 빠르게 조회할 수 있습니다.'
   },
   'ppt-verify': {
-    title: 'PPT 검증(표준산출물)',
+    title: '표준산출물 검증',
     desc: '생성된 파워포인트 문서 내에 동일 단어가 중복으로 표시되거나, 포맷 서식이 틀어지는 등의 품질 이슈를 검증합니다.',
     steps: [
       '검증할 PPTX 파일 또는 HWPX 파일을 업로드 영역에 드롭합니다.',
@@ -93,7 +93,7 @@ const tab_guides = {
     tips: '의미상 스페이스를 포함하지 않는 단어들의 중복(예: xxse sexx 등)은 자동으로 필터링됩니다.'
   },
   main: {
-    title: 'AI 산출물 검증',
+    title: 'AI 기준문서 대비 산출물 검증',
     desc: '프로젝트 산출물(사업 제안서, 보고서 등)을 제미나이 AI가 심층 분석하여 보완점 및 논리적 오류를 검토합니다.',
     steps: [
       '분석 대상 문서 파일을 업로드합니다.',
@@ -287,16 +287,18 @@ function App() {
   // 탭 변경 시 GA 페이지뷰 전송
   useEffect(() => {
     const tabLabels = {
-      main: 'AI 산출물 검증',
+      main: 'AI 기준문서 대비 산출물 검증',
       typo: 'AI 교정교열',
       law: 'AI 법률 자문(제미나이)',
       'law-mcp': 'AI 법률 자문(로컬 RAG)',
       erd: 'AI ERD 설계',
       ppt: 'PPT 생성(표준산출물)',
+      'ppt-verify': '표준산출물 검증',
       'hwpx-report': '(작업중)HWPX생성(표준보고서)',
       library: '참고자료 라이브러리',
       meeting: 'AI 회의록 생성',
       aippt: '(작업중)AI PPT 디자이너',
+      g2b: '(작업중)나라장터 정보조회',
     };
     gaEvent('page_view', {
       page_title: tabLabels[activeTab] || activeTab,
@@ -360,19 +362,19 @@ function App() {
 
   const tabs = [
     { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316', useGemini: false },
-    { id: 'g2b', label: '나라장터 정보조회', icon: Building2, color: 'var(--accent-blue)', useGemini: false },
-    { id: 'ppt-verify', label: 'PPT 검증(표준산출물)', icon: ShieldAlert, color: '#e11d48', useGemini: false },
-    { id: 'main', label: 'AI 산출물 검증', icon: Shield, color: 'var(--accent-blue)', useGemini: true },
+    { id: 'ppt-verify', label: '표준산출물 검증', icon: ShieldAlert, color: '#e11d48', useGemini: false },
+    { id: 'main', label: 'AI 기준문서 대비 산출물 검증', icon: Shield, color: 'var(--accent-blue)', useGemini: true },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
+    { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6', useGemini: true },
     { id: 'law', label: 'AI 법률 자문(제미나이)', icon: MessageSquare, color: 'var(--success-color)', useGemini: true },
     { id: 'law-mcp', label: 'AI 법률 자문(로컬 RAG)', icon: MessageSquare, color: 'var(--accent-purple)', useGemini: true },
     { id: 'erd', label: 'AI ERD 설계', icon: Database, color: 'var(--warning-color)', useGemini: true },
-    { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6', useGemini: true },
     { id: 'library', label: '참고자료 라이브러리', icon: Activity, color: '#64748b', useGemini: false },
-    { id: 'aippt', label: '(작업중)AI PPT 디자이너', icon: Presentation, color: '#ec4899', useGemini: true },
     { id: 'rag', label: '프로젝트 RAG 지식베이스', icon: Database, color: 'var(--accent-blue)', useGemini: true },
     { id: 'ismpda', label: '(작업중)ISMP DA 검증 대시보드', icon: Sliders, color: 'var(--accent-purple)', useGemini: false },
     { id: 'hwpx-report', label: '(작업중)HWPX생성(표준보고서)', icon: FileText, color: '#10b981', useGemini: true },
+    { id: 'aippt', label: '(작업중)AI PPT 디자이너', icon: Presentation, color: '#ec4899', useGemini: true },
+    { id: 'g2b', label: '(작업중)나라장터 정보조회', icon: Building2, color: 'var(--accent-blue)', useGemini: false },
   ];
 
   const activeTabData = tabs.find(t => t.id === activeTab);
