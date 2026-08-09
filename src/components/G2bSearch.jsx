@@ -120,47 +120,66 @@ export default function G2bSearch() {
         setApiSuccessCount(null);
 
         try {
-            // 스마트 인코딩 분기: 인코딩 키(%포함) vs 디코딩 키
-            const serviceKeyParam = rawKey.includes('%') ? rawKey : encodeURIComponent(rawKey);
             const { inqryBgnDt, inqryEndDt } = getFormattedDates();
 
-            let baseUrl = `https://apis.data.go.kr/1230000/HrcspSgntrPrcureDetailInfoService02/getHrcspSgntrPrcureDetailInfoList02?serviceKey=${serviceKeyParam}&type=json&numOfRows=100&pageNo=1&inqryBgnDt=${inqryBgnDt}&inqryEndDt=${inqryEndDt}`;
-
-            if (searchTitle.trim()) {
-                baseUrl += `&prcurRqstPrdNm=${encodeURIComponent(searchTitle.trim())}`;
+            // 인코딩 키 및 디코딩 키 2가지 버전 준비
+            let encodedKey = rawKey;
+            let decodedKey = rawKey;
+            try {
+                if (rawKey.includes('%')) {
+                    decodedKey = decodeURIComponent(rawKey);
+                } else {
+                    encodedKey = encodeURIComponent(rawKey);
+                }
+            } catch (e) {
+                console.warn('Key transcode fail:', e);
             }
-            if (searchAgency.trim()) {
-                baseUrl += `&rlDmdOrganNm=${encodeURIComponent(searchAgency.trim())}`;
-            }
 
-            // 프록시 체인 시도 목록
-            const proxyAttempts = [
-                { name: '직접 호출', url: baseUrl },
-                { name: 'CORS Proxy 1', url: `https://corsproxy.io/?${encodeURIComponent(baseUrl)}` },
-                { name: 'CORS Proxy 2', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl)}` }
-            ];
+            const keyVariants = [encodedKey, decodedKey, rawKey];
+            const uniqueKeys = [...new Set(keyVariants)];
 
             let fetchSuccess = false;
             let lastErrorText = '';
             let parsedResult = null;
 
-            for (const attempt of proxyAttempts) {
-                try {
-                    console.log(`[나라장터 API] ${attempt.name} 시도 중...`);
-                    const res = await fetch(attempt.url, { method: 'GET' });
-                    if (res.ok) {
-                        const text = await res.text();
-                        parsedResult = parseApiResponse(text);
-                        if (parsedResult.resultCode === '00' || parsedResult.items.length > 0) {
-                            fetchSuccess = true;
-                            break;
-                        } else {
-                            lastErrorText = `API 코드 [${parsedResult.resultCode}]: ${parsedResult.resultMsg}`;
-                        }
-                    }
-                } catch (e) {
-                    console.warn(`${attempt.name} 실패:`, e);
+            for (const keyToUse of uniqueKeys) {
+                let baseUrl = `https://apis.data.go.kr/1230000/HrcspSgntrPrcureDetailInfoService02/getHrcspSgntrPrcureDetailInfoList02?serviceKey=${keyToUse}&type=json&numOfRows=100&pageNo=1&inqryBgnDt=${inqryBgnDt}&inqryEndDt=${inqryEndDt}`;
+
+                if (searchTitle.trim()) {
+                    baseUrl += `&prcurRqstPrdNm=${encodeURIComponent(searchTitle.trim())}`;
                 }
+                if (searchAgency.trim()) {
+                    baseUrl += `&rlDmdOrganNm=${encodeURIComponent(searchAgency.trim())}`;
+                }
+
+                // 프록시 체인 시도 목록
+                const proxyAttempts = [
+                    { name: '직접 호출', url: baseUrl },
+                    { name: 'CORS Proxy 1', url: `https://corsproxy.io/?${encodeURIComponent(baseUrl)}` },
+                    { name: 'CORS Proxy 2', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl)}` },
+                    { name: 'CORS Proxy 3', url: `https://thingproxy.freeboard.io/fetch/${baseUrl}` }
+                ];
+
+                for (const attempt of proxyAttempts) {
+                    try {
+                        console.log(`[나라장터 API] ${attempt.name} (Key: ${keyToUse.substring(0, 10)}...) 시도 중...`);
+                        const res = await fetch(attempt.url, { method: 'GET' });
+                        if (res.ok) {
+                            const text = await res.text();
+                            parsedResult = parseApiResponse(text);
+                            if (parsedResult.resultCode === '00' || parsedResult.items.length > 0) {
+                                fetchSuccess = true;
+                                break;
+                            } else {
+                                lastErrorText = `API 코드 [${parsedResult.resultCode}]: ${parsedResult.resultMsg}`;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn(`${attempt.name} 실패:`, e);
+                    }
+                }
+
+                if (fetchSuccess) break;
             }
 
             if (fetchSuccess && parsedResult) {
@@ -192,11 +211,11 @@ export default function G2bSearch() {
                 setApiSuccessCount(formattedList.length);
             } else {
                 if (lastErrorText.includes('SERVICE_KEY_IS_NOT_REGISTERED')) {
-                    setApiError('서비스키 등록 오류: 공공데이터포털(data.go.kr)에서 [Encoding 키] 대신 [Decoding 키]를 등록해 보시거나, 활용신청 승인 후 약 1~2시간의 시스템 반영 시간이 필요할 수 있습니다.');
+                    setApiError('서비스키 미등록: 공공데이터포털(data.go.kr)에서 조달청 사전규격/입찰공고 서비스 활용신청 승인 상태(약 1~2시간 승인 지연 가능)를 확인해 주십시오.');
                 } else if (lastErrorText) {
                     setApiError(`조달청 응답: ${lastErrorText}`);
                 } else {
-                    setApiError('조달청 API 통신 중 CORS 차단 또는 Key 승인 지연이 발생했습니다. 공공데이터포털 승인 상태 및 [Decoding/Encoding 키] 전환을 시도해 주세요.');
+                    setApiError('브라우저 보안(CORS) 제한으로 조달청 API 직접 수신이 차단되었습니다. 하단의 [나라장터 공식 검색] 버튼을 누르시면 해당 검색어로 즉시 조회하실 수 있습니다.');
                 }
             }
         } catch (err) {
