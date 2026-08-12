@@ -1543,7 +1543,7 @@ export async function processPptBatch(pptFile, options) {
                         }
                     }
                 }
-                
+
                 // 2. 단락 기본 및 종료 스타일 처리 (defRPr, endParaRPr)
                 if (localName === 'defRPr' || localName === 'endParaRPr') {
                     const effectiveSz = getEffectiveFontSize(el, xmlDoc);
@@ -1648,7 +1648,7 @@ export async function processPptBatch(pptFile, options) {
                     while (parentNode && parentNode.nodeType === 1) {
                         const tag = (parentNode.tagName || parentNode.nodeName || '').toLowerCase();
                         const cleanTag = tag.includes(':') ? tag.split(':').pop() : tag;
-                        if (['fld', 'defrpr', 'endpararpr', 'buclr', 'bufont', 'busz', 'ph', 'grpsp', 'graphicframe', 'tc', 'tbl'].includes(cleanTag)) {
+                        if (['fld', 'defrpr', 'endpararpr', 'buclr', 'bufont', 'busz', 'ph'].includes(cleanTag)) {
                             isIllegalAncestor = true;
                             break;
                         }
@@ -1691,8 +1691,36 @@ export async function processPptBatch(pptFile, options) {
                     }
                     if (existingLn) continue;
 
-                    // 💡 [규격 무결성] a:ln 주입은 일부 외부 템플릿 슬라이드에서 OpenXML 파손을 일으키므로 100% 안전을 위해 스킵합니다.
-                    continue;
+                    // 💡 그룹 도형 및 표 내부 텍스트 포함 옵션 D 윤곽선 디자인 주입 (흰색 실선, 0.75pt, 투명도 100%)
+                    // 💡 [XSD 규격 완전 준수] a:prstDash 포함 - 미포함 시 표 셀 내부에서 OpenXML 복구 팝업 유발
+                    const ln = xmlDoc.createElementNS(nsA, 'a:ln');
+                    ln.setAttribute('w', '9525');
+                    ln.setAttribute('cmpd', 'sng');
+
+                    const solidFill = xmlDoc.createElementNS(nsA, 'a:solidFill');
+                    const srgbClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
+                    srgbClr.setAttribute('val', 'FFFFFF');
+
+                    const alpha = xmlDoc.createElementNS(nsA, 'a:alpha');
+                    alpha.setAttribute('val', '0');
+
+                    const prstDash = xmlDoc.createElementNS(nsA, 'a:prstDash');
+                    prstDash.setAttribute('val', 'solid');
+
+                    srgbClr.appendChild(alpha);
+                    solidFill.appendChild(srgbClr);
+                    ln.appendChild(solidFill);
+                    ln.appendChild(prstDash);
+                    
+                    if (rPr.firstChild) {
+                        rPr.insertBefore(ln, rPr.firstChild);
+                    } else {
+                        rPr.appendChild(ln);
+                    }
+
+                    designChanged = true;
+                    fileChanged = true;
+                    hasChanges = true;
                 }
             }
         }
