@@ -1536,8 +1536,10 @@ export default function PptValidator({ apiKey }) {
               // 대주제 텍스트 자체는 아래의 세부 넘버링(숫자) 검증에서는 제외
               if (roman_regex.test(text)) continue;
 
-              // "목차 명칭 (1/4)" 정규식 파싱
-              const altPageMatch = text.match(/\((\d+)\/(\d+)\)\s*$/);
+              // "제목 (1/3)" 또는 "제목 (1 / 3)" 또는 "제목 [1/3]" 정규식 파싱
+              // 좌측상단 2번째 줄 등 동일 제목의 연속 페이지 (순서번호/전체페이지수) 패턴 감지
+              const alt_page_regex = /\s*[(\[]\s*(\d+)\s*[\/]\s*(\d+)\s*[)\]]\s*$/;
+              const altPageMatch = text.match(alt_page_regex);
               let hasAltPages = false;
               let currentAltPage = null;
               let totalAltPage = null;
@@ -1547,11 +1549,11 @@ export default function PptValidator({ apiKey }) {
                 hasAltPages = true;
                 currentAltPage = parseInt(altPageMatch[1], 10);
                 totalAltPage = parseInt(altPageMatch[2], 10);
-                pureTitle = text.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
+                pureTitle = text.replace(alt_page_regex, '').trim();
               }
 
               // 순수 제목 추출: 넘버링 숫자 접두사(1., 1.1 등) 제거 후 실제 제목 텍스트만 추출
-              // 예: "1.1 재무구조 및 대외신용평가 현황" → "재무구조 및 대외신용평가 현황"
+              // 예: "1.1 재무구조 및 대외신용평가 현황 (1/3)" → "재무구조 및 대외신용평가 현황"
               const pureTitleWithoutNum = pureTitle.replace(/^\s*[0-9]+(\.[0-9]+)*[\s\.]+/, '').trim();
 
               // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
@@ -1565,10 +1567,10 @@ export default function PptValidator({ apiKey }) {
                   const current_val = parts[parts.length - 1];
 
                   // 1. 동일 넘버링이 다른 슬라이드에서 쓰였는데, 제목 텍스트가 다르면 오류 검출
-                  // pureTitleWithoutNum: 넘버링 숫자를 제거한 순수 제목만으로 비교
+                  // (단, (순서번호/전체페이지수) 형태는 동일 제목으로 간주)
                   const existingTitle = numbering_title_map[rawNumStr];
                   if (existingTitle !== undefined) {
-                    if (existingTitle !== pureTitleWithoutNum) {
+                    if (existingTitle !== pureTitleWithoutNum && !hasAltPages) {
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
@@ -1589,7 +1591,7 @@ export default function PptValidator({ apiKey }) {
 
                   if (last_sibling_val !== undefined) {
                     if (current_val === last_sibling_val) {
-                      // 동일 번호 반복: 1단 넘버링(중분류 등, 예: "1", "2")이 아니고, 연속 페이지(1/2 등) 표기가 없으면 중복 오류
+                      // 동일 번호 반복: (순서번호/전체페이지수) 표기가 포함되어 있거나 1단 넘버링일 때는 순번대로 기재된 정상 패턴이므로 중복 오류 처리 안 함!
                       if (!hasAltPages && parts.length > 1) {
                         allNumberings.push({
                           fileName: file.name,
@@ -1597,26 +1599,28 @@ export default function PptValidator({ apiKey }) {
                           area: '좌측 타이틀',
                           text,
                           error: `넘버링 중복 사용 오류 (${rawNumStr})`,
-                          guide: `이전 슬라이드에서 이미 "${rawNumStr}" 번호가 사용되었습니다. 넘버링이 동일한데 제목이 다르다면 오류입니다. 순차적으로 다음 번호로 증가시켜야 합니다.`
+                          guide: `이전 슬라이드에서 이미 "${rawNumStr}" 번호가 사용되었습니다. 동일한 제목이 이어질 때는 "제목 (1/3)", "제목 (2/3)" 형태로 순번을 표기해야 합니다.`
                         });
                         fileNumErrorsCount++;
                       }
                     } else if (current_val !== last_sibling_val + 1) {
-                      // 순서 건너뜀 (시퀀스 단절)
-                      allNumberings.push({
-                        fileName: file.name,
-                        slideNum: slide.slideNum,
-                        area: '좌측 타이틀',
-                        text,
-                        error: `넘버링 시퀀스 단절 (${rawNumStr})`,
-                        guide: `동일 계층 수준 내에서 일련번호는 순차적으로 1씩 증가해야 합니다. (이전 형제 값: ${last_sibling_val} ➜ 현재 표기: ${current_val})`
-                      });
-                      fileNumErrorsCount++;
+                      // 순서 건너뜀 (시퀀스 단절) - (순서번호/전체페이지수) 연속 장은 제외
+                      if (!hasAltPages) {
+                        allNumberings.push({
+                          fileName: file.name,
+                          slideNum: slide.slideNum,
+                          area: '좌측 타이틀',
+                          text,
+                          error: `넘버링 시퀀스 단절 (${rawNumStr})`,
+                          guide: `동일 계층 수준 내에서 일련번호는 순차적으로 1씩 증가해야 합니다. (이전 형제 값: ${last_sibling_val} ➜ 현재 표기: ${current_val})`
+                        });
+                        fileNumErrorsCount++;
+                      }
                     }
                   } else {
                     // 부모 계층 아래 최초의 자식 노드 진입 시에는 반드시 1이어야 함 (로마자 대주제 제외)
                     const isRoman = roman_regex.test(text);
-                    if (!isRoman && current_val !== 1) {
+                    if (!isRoman && current_val !== 1 && !hasAltPages) {
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
@@ -1635,10 +1639,12 @@ export default function PptValidator({ apiKey }) {
                 }
               }
 
-              // 3. 연속 페이지 (1/4) 형식의 연속성 세부 검사 (alt_page_tracker 기반 독립 검사)
+              // 3. 연속 페이지 "제목 (순서번호/전체페이지수)" 형식의 순번 연속성 검사
               if (hasAltPages) {
-                const prevPageInfo = alt_page_tracker[pureTitle];
-                if (prevPageInfo && prevPageInfo.slideNum === slide.slideNum - 1) {
+                const prevPageInfo = alt_page_tracker[pureTitleWithoutNum] || alt_page_tracker[pureTitle];
+                
+                if (prevPageInfo) {
+                  // 전체 페이지 수(분모) 변경 점검
                   if (totalAltPage !== prevPageInfo.totalAltPage) {
                     allNumberings.push({
                       fileName: file.name,
@@ -1646,19 +1652,33 @@ export default function PptValidator({ apiKey }) {
                       area: '좌측 타이틀',
                       text,
                       error: '목차 전체 페이지 수 불일치',
-                      guide: `연속 목차의 전체 페이지 수(분모)가 이전 슬라이드(${prevPageInfo.totalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
+                      guide: `동일 제목("${pureTitleWithoutNum}")의 전체 페이지 수(분모)가 이전 슬라이드(${prevPageInfo.totalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
                     });
                     fileNumErrorsCount++;
                   }
                   
-                  if (currentAltPage !== prevPageInfo.currentAltPage + 1) {
+                  // 순번(순서번호) 연속성 점검: 1, 2, 3... 순번대로 정직하게 올라가면 오류가 아님!
+                  if (currentAltPage === prevPageInfo.currentAltPage + 1) {
+                    // ✅ 순번대로 정상 증가함 ➜ 오류 아님 (정상)
+                  } else if (currentAltPage === prevPageInfo.currentAltPage) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀',
+                      text,
+                      error: '동일 순서번호 중복 표기',
+                      guide: `동일 제목("${pureTitleWithoutNum}")의 순서번호가 이전 슬라이드와 동일하게 (${currentAltPage}/${totalAltPage})로 중복 표기되었습니다. 순번대로 증가시켜 주세요.`
+                    });
+                    fileNumErrorsCount++;
+                  } else if (currentAltPage !== 1) {
+                    // 순번이 1부터 새로 시작하지 않고 1, 3... 처럼 건너뛴 경우
                     allNumberings.push({
                       fileName: file.name,
                       slideNum: slide.slideNum,
                       area: '좌측 타이틀',
                       text,
                       error: '목차 연속 페이지 번호 단절',
-                      guide: `연속된 목차 페이지 번호가 순차적으로 증가하지 않았습니다. (이전: ${prevPageInfo.currentAltPage}/${prevPageInfo.totalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
+                      guide: `동일 제목("${pureTitleWithoutNum}")의 순서번호가 순차적으로 증가하지 않고 단절되었습니다. (이전: ${prevPageInfo.currentAltPage}/${prevPageInfo.totalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
                     });
                     fileNumErrorsCount++;
                   }
@@ -1670,12 +1690,12 @@ export default function PptValidator({ apiKey }) {
                       area: '좌측 타이틀',
                       text,
                       error: '목차 페이지 범위 초과',
-                      guide: `목차 페이지 번호(${currentAltPage})가 전체 페이지 수(${totalAltPage})를 초과하였습니다.`
+                      guide: `순서번호(${currentAltPage})가 지정된 전체 페이지 수(${totalAltPage})를 초과하였습니다.`
                     });
                     fileNumErrorsCount++;
                   }
                 } else {
-                  // 직전 슬라이드에 연속되는 목차가 없었던 경우 시작 번호는 무조건 1이어야 함
+                  // 동일 제목의 첫 시작 슬라이드에서는 순서번호가 1이면 정상!
                   if (currentAltPage !== 1) {
                     allNumberings.push({
                       fileName: file.name,
@@ -1683,14 +1703,15 @@ export default function PptValidator({ apiKey }) {
                       area: '좌측 타이틀',
                       text,
                       error: '목차 페이지 시작 번호 오류',
-                      guide: `연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${currentAltPage}/${totalAltPage})`
+                      guide: `동일 제목("${pureTitleWithoutNum}")의 연속 작업이 시작될 때는 (1/${totalAltPage})부터 순번대로 시작해야 합니다. (현재 표기: ${currentAltPage}/${totalAltPage})`
                     });
                     fileNumErrorsCount++;
                   }
                 }
 
-                // 현재 슬라이드의 연속 목차 상태 등록
-                alt_page_tracker[pureTitle] = {
+                // 현재 슬라이드의 동일 제목 순번 상태 등록
+                const tracker_key = pureTitleWithoutNum || pureTitle;
+                alt_page_tracker[tracker_key] = {
                   slideNum: slide.slideNum,
                   currentAltPage,
                   totalAltPage
