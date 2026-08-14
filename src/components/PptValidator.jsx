@@ -1594,8 +1594,9 @@ export default function PptValidator({ apiKey }) {
               // 대주제 텍스트 자체는 아래의 세부 넘버링(숫자) 검증에서는 제외
               if (roman_regex.test(text)) continue;
 
-              // "제목 (1/3)" 또는 "x.x.x 3단계 제목 > 4단계 제목 (1/3)" 정규식 파싱
-              const alt_page_regex = /\s*[(\[]\s*(\d+)\s*[\/]\s*(\d+)\s*[)\]]\s*$/;
+              // "제목 (1/3)" 또는 "x.x.x 3단계 제목 (1/3)" 또는 "x.x.x 3단계 제목 > 4단계 제목 (1/3)" 정규식 파싱
+              // 다양 형태 지원: (1/3), (1 / 3), (1페이지/3페이지), [1/3], (1p/3p) 등
+              const alt_page_regex = /\s*[(\[]\s*(\d+)\s*(?:페이지|p|page)?\s*[\/]\s*(\d+)\s*(?:페이지|p|page)?\s*[)\]]\s*$/i;
               const altPageMatch = text.match(alt_page_regex);
               let hasAltPages = false;
               let currentAltPage = null;
@@ -1612,7 +1613,7 @@ export default function PptValidator({ apiKey }) {
               // 4단계 표현("x.x.x > 4단계 제목" 또는 "x.x.x 3단계 제목 > 4단계 제목")이 포함되어 있는지 점검
               const is_4th_level_format = text.includes('>') || pureTitle.includes('>');
 
-              // 순수 제목 추출: 넘버링 숫자 접두사(1., 1.1 등) 및 4단계 구분 기호 앞단 제거 후 실제 제목 텍스트만 추출
+              // 순수 제목 추출: 넘버링 숫자 접두사(1., 1.1, 1.1.1 등) 및 4단계 구분 기호 앞단 제거 후 실제 제목 텍스트만 추출
               const pureTitleWithoutNum = pureTitle
                 .replace(/^\s*[0-9]+(\.[0-9]+)*[\s\.]+/, '')
                 .replace(/^.*>\s*/, '')
@@ -1625,14 +1626,17 @@ export default function PptValidator({ apiKey }) {
                 const rawNumStr = numMatch[1];
                 const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
                 
+                // 3단계 넘버링 (x.x.x) 여부 감지 (점 2개 이상)
+                const is_3rd_level_numbering = parts.length >= 3;
+                
                 if (parts.length > 0) {
                   const current_val = parts[parts.length - 1];
 
                   // 1. 동일 넘버링이 다른 슬라이드에서 쓰였는데, 제목 텍스트가 다르면 오류 검출
-                  // (단, (순서번호/전체페이지수) 형태나 4단계 구분 표현은 정상 패턴으로 무시)
+                  // (단, (페이지수/총페이지수) 형태나 3단계(x.x.x) 연속 표기, 4단계 구분 표현은 정상 패턴으로 완벽 무시)
                   const existingTitle = numbering_title_map[rawNumStr];
                   if (existingTitle !== undefined) {
-                    if (existingTitle !== pureTitleWithoutNum && !hasAltPages && !is_4th_level_format) {
+                    if (existingTitle !== pureTitleWithoutNum && !hasAltPages && !is_4th_level_format && !is_3rd_level_numbering) {
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
@@ -1653,21 +1657,21 @@ export default function PptValidator({ apiKey }) {
 
                   if (last_sibling_val !== undefined) {
                     if (current_val === last_sibling_val) {
-                      // 동일 번호 반복: (순서번호/전체페이지수) 표기나 4단계(x.x.x > 4단계) 형식이 포함되어 있을 때는 정상 패턴이므로 중복 오류 처리 안 함!
-                      if (!hasAltPages && !is_4th_level_format && parts.length > 1) {
+                      // 동일 번호 반복: 3단계(x.x.x) 표기나 (페이지수/총페이지수) 또는 4단계 형식이 포함되어 있을 때는 연속 장의 정상 표기이므로 중복 오류 처리 안 함!
+                      if (!hasAltPages && !is_4th_level_format && !is_3rd_level_numbering && parts.length > 1) {
                         allNumberings.push({
                           fileName: file.name,
                           slideNum: slide.slideNum,
                           area: '좌측 타이틀',
                           text,
                           error: `넘버링 중복 사용 오류 (${rawNumStr})`,
-                          guide: `이전 슬라이드에서 이미 "${rawNumStr}" 번호가 사용되었습니다. 동일한 제목이 이어질 때는 "x.x.x 3단계 제목 > 4단계 제목 (1/3)" 형태로 순번을 표기해야 합니다.`
+                          guide: `이전 슬라이드에서 이미 "${rawNumStr}" 번호가 사용되었습니다. 동일한 제목이 이어질 때는 "x.x.x 제목 (1/3)" 형태로 순번을 표기해야 합니다.`
                         });
                         fileNumErrorsCount++;
                       }
                     } else if (current_val !== last_sibling_val + 1) {
-                      // 순서 건너뜀 (시퀀스 단절) - (순서번호/전체페이지수) 및 4단계 연속 장은 제외
-                      if (!hasAltPages && !is_4th_level_format) {
+                      // 순서 건너뜀 (시퀀스 단절) - (페이지수/총페이지수) 및 3/4단계 연속 장은 제외
+                      if (!hasAltPages && !is_4th_level_format && !is_3rd_level_numbering) {
                         allNumberings.push({
                           fileName: file.name,
                           slideNum: slide.slideNum,
@@ -1682,7 +1686,7 @@ export default function PptValidator({ apiKey }) {
                   } else {
                     // 부모 계층 아래 최초의 자식 노드 진입 시에는 반드시 1이어야 함 (로마자 대주제 제외)
                     const isRoman = roman_regex.test(text);
-                    if (!isRoman && current_val !== 1 && !hasAltPages && !is_4th_level_format) {
+                    if (!isRoman && current_val !== 1 && !hasAltPages && !is_4th_level_format && !is_3rd_level_numbering) {
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
@@ -1695,7 +1699,7 @@ export default function PptValidator({ apiKey }) {
                     }
                   }
                   // 트래커 기록 갱신 (연속 페이지인 경우에도 번호를 유지하여 다음 연속 장에서 비교 가능하도록)
-                  if ((!hasAltPages && !is_4th_level_format) || current_val !== last_sibling_val) {
+                  if ((!hasAltPages && !is_4th_level_format && !is_3rd_level_numbering) || current_val !== last_sibling_val) {
                     sibling_tracker[parent_path] = current_val;
                   }
                 }
