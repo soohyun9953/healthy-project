@@ -42,6 +42,7 @@ export default function PptGenerator() {
     const [applyDesignChecked, setApplyDesignChecked] = useState(true);
     const [applyTableDesignChecked, setApplyTableDesignChecked] = useState(false);
     const [applyFirstRowHeaderStyle, setApplyFirstRowHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 행 특별 포맷팅 적용 여부 (기본 true)
+    const [applyFirstColHeaderStyle, setApplyFirstColHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 열(2행부터) 특별 포맷팅 적용 여부 (기본 true)
     const [designTargetText, setDesignTargetText] = useState('');
     const [applySpecialCharClean, setApplySpecialCharClean] = useState(false); // 옵션 F 활성화 여부
     const [replaceNbs, setReplaceNbs] = useState(true); // 하위 옵션 1: NBS 일반 공백 변환
@@ -1084,7 +1085,8 @@ export default function PptGenerator() {
                         fontSizeRules: parsedFontSizeRules,
                         applyDesign: applyDesignChecked, 
                         applyTableDesign: applyTableDesignChecked, 
-                        applyFirstRowHeaderStyle: applyFirstRowHeaderStyle,
+                        applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
+                        applyFirstColHeaderStyle: applyTableDesignChecked && applyFirstColHeaderStyle,
                         targetText: designTargetText,
                         applySpecialCharClean: applySpecialCharClean,
                         replaceNbs: replaceNbs,
@@ -1162,7 +1164,8 @@ export default function PptGenerator() {
                             fontSizeRules: parsedFontSizeRules,
                             applyDesign: applyDesignChecked, 
                             applyTableDesign: applyTableDesignChecked, 
-                            applyFirstRowHeaderStyle: applyFirstRowHeaderStyle,
+                            applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
+                            applyFirstColHeaderStyle: applyTableDesignChecked && applyFirstColHeaderStyle,
                             targetText: designTargetText,
                             applySpecialCharClean: applySpecialCharClean,
                             replaceNbs: replaceNbs,
@@ -1728,52 +1731,88 @@ export default function PptGenerator() {
                                         onChange={(e) => {
                                             const checked = e.target.checked;
                                             setApplyTableDesignChecked(checked);
-                                            if (checked) setApplyFirstRowHeaderStyle(true);
+                                            if (checked) {
+                                                setApplyFirstRowHeaderStyle(true);
+                                                setApplyFirstColHeaderStyle(true);
+                                            }
                                         }}
                                         style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
                                     />
                                     옵션 E: 테이블(표) 표준 디자인 일괄 변경 적용
                                 </label>
                                 <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                                    💡 모든 표 테두리 실선 0.5pt (#7F7F7F)가 기본 적용되며, 첫 행의 특별 포맷팅을 하위 옵션으로 선택 제어할 수 있습니다.
+                                    💡 모든 표 테두리 실선 0.5pt (#7F7F7F)가 기본 적용되며, 첫 행 및 첫 열의 특별 포맷팅을 하위 옵션으로 선택 제어할 수 있습니다.
                                 </div>
                                 
                                 <div style={{ 
                                     paddingLeft: '28px', 
                                     display: 'flex', 
                                     flexDirection: 'column', 
-                                    gap: '8px', 
+                                    gap: '12px', 
                                     borderLeft: '2px solid ' + (applyTableDesignChecked ? 'rgba(168, 85, 247, 0.5)' : 'rgba(255, 255, 255, 0.1)'), 
                                     marginTop: '4px',
                                     opacity: applyTableDesignChecked ? 1 : 0.45,
                                     pointerEvents: applyTableDesignChecked ? 'auto' : 'none',
                                     transition: 'all 0.3s ease'
                                 }}>
-                                    <label style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        gap: '8px', 
-                                        cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed', 
-                                        fontSize: '13px', 
-                                        color: applyTableDesignChecked ? 'var(--text-primary)' : 'var(--text-muted)', 
-                                        fontWeight: 600 
-                                    }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={applyFirstRowHeaderStyle}
-                                            disabled={!applyTableDesignChecked}
-                                            onChange={(e) => setApplyFirstRowHeaderStyle(e.target.checked)}
-                                            style={{ 
-                                                width: '16px', 
-                                                height: '16px', 
-                                                cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed', 
-                                                accentColor: '#a855f7' 
-                                            }}
-                                        />
-                                        첫 번째 행(헤더) 특별 포맷팅 적용
-                                    </label>
-                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
-                                        (첫 행 배경 RGB(0,114,186), 글자 흰색 11pt KoPubDotum Bold, 첫 행 내부 실선만 흰색 적용)
+                                    {/* 하위 1: 첫 번째 행(헤더) 특별 포맷팅 */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <label style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '8px', 
+                                            cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed', 
+                                            fontSize: '13px', 
+                                            color: applyTableDesignChecked ? 'var(--text-primary)' : 'var(--text-muted)', 
+                                            fontWeight: 600 
+                                        }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={applyFirstRowHeaderStyle}
+                                                disabled={!applyTableDesignChecked}
+                                                onChange={(e) => setApplyFirstRowHeaderStyle(e.target.checked)}
+                                                style={{ 
+                                                    width: '16px', 
+                                                    height: '16px', 
+                                                    cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed', 
+                                                    accentColor: '#a855f7' 
+                                                }}
+                                            />
+                                            첫 번째 행(헤더) 특별 포맷팅 적용
+                                        </label>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
+                                            (첫 행 배경 RGB(0,114,186), 글자 흰색 11pt KoPubDotum Bold, 가운데 정렬, 첫 행 내부 실선 흰색 적용)
+                                        </div>
+                                    </div>
+
+                                    {/* 하위 2: 첫 번째 열(구분열) 특별 포맷팅 */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <label style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '8px', 
+                                            cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed', 
+                                            fontSize: '13px', 
+                                            color: applyTableDesignChecked ? 'var(--text-primary)' : 'var(--text-muted)', 
+                                            fontWeight: 600 
+                                        }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={applyFirstColHeaderStyle}
+                                                disabled={!applyTableDesignChecked}
+                                                onChange={(e) => setApplyFirstColHeaderStyle(e.target.checked)}
+                                                style={{ 
+                                                    width: '16px', 
+                                                    height: '16px', 
+                                                    cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed', 
+                                                    accentColor: '#a855f7' 
+                                                }}
+                                            />
+                                            첫 번째 열(구분열) 특별 포맷팅 적용 (2번째 행부터 적용)
+                                        </label>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
+                                            (첫 열 2번째 행부터 배경 #F2F2F2, 글자 검은색 11pt KoPubDotum Bold, 가운데 정렬)
+                                        </div>
                                     </div>
                                 </div>
                             </div>
