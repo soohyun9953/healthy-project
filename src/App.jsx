@@ -60,17 +60,7 @@ const gaEvent = (eventName, params = {}) => {
 
 // ── 탭별 상세 가이드 데이터 ─────────────────────────
 const tab_guides = {
-  ppt: {
-    title: 'PPT 생성(표준산출물)',
-    desc: '엑셀 데이터 매핑을 통해 파워포인트 슬라이드를 자동으로 생성하거나, 디자인 서식을 일괄 적용합니다.',
-    steps: [
-      '좌측 탭에서 [엑셀 매핑] 또는 [일괄 편집] 모드를 선택합니다.',
-      '매핑 템플릿(PPTX) 파일과 치환할 데이터가 담긴 엑셀(XLSX) 파일을 드래그하여 업로드합니다.',
-      '치환할 데이터 매핑 규칙을 설정하고 [자동 매핑 및 파일 변환 시작] 버튼을 누릅니다.',
-      '완성된 PPTX 파일을 다운로드할 위치를 지정하여 저장합니다.'
-    ],
-    tips: '다량의 데이터를 한번에 처리할 때는 배치 청크 사이즈를 조절해 속도를 높일 수 있습니다.'
-  },
+  ppt: null,
   g2b: {
     title: '(작업중)나라장터 정보조회',
     desc: '조달청 나라장터(g2b.go.kr)의 발주계획(발주예정) 및 사전규격 공고 정보를 사업명 및 수요기관 조건으로 검색합니다.',
@@ -398,7 +388,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.9.19</span>
+                <span>AI 산출물 검수 v2.10.0</span>
               </div>
             )}
           </div>
@@ -519,7 +509,7 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginRight: '8px' }}>
               <span className="mobile-hide-text" style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Last Update</span>
-              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.08.12 v2.9.19</span>
+              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.08.14 v2.10.0</span>
             </div>
             
             <button 
@@ -933,7 +923,7 @@ function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <HelpCircle size={24} color="var(--accent-blue)" />
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  건강한 프로젝트 통합 매뉴얼 (v2.9.19)
+                  건강한 프로젝트 통합 매뉴얼 (v2.10.0)
                 </h3>
               </div>
               <button 

@@ -12,7 +12,7 @@ import { convertPptxToHwpx, fusePptToHwpxTemplate, fusePptToHwpxListTemplate } f
 import JSZip from 'jszip';
 
 export default function PptGenerator() {
-    const [activeTab, setActiveTab] = useState('excel_mapping'); // 'excel_mapping' or 'batch_edit'
+    const [activeTab, setActiveTab] = useState('batch_edit'); // 'batch_edit' as default
     
     // 엑셀 매핑 관련 State
     const [excelFile, setExcelFile] = useState(null);
@@ -1276,9 +1276,8 @@ export default function PptGenerator() {
                         <Presentation size={24} color="var(--accent-blue)" />
                     </div>
                     <div>
-                        <h2 style={{ margin: 0, fontSize: '20px', color: 'var(--text-primary)', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            PPT 스마트 편집기
-                            <Sparkles size={18} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))' }} />
+                        <h2 style={{ margin: 0, fontSize: '20px', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
+                            스마트 편집기
                         </h2>
                         <p style={{ margin: '4px 0 0', fontSize: '13.5px', color: 'var(--text-secondary)' }}>
                             데이터 매핑을 통한 PPT 생성 또는 텍스트 서식 일괄 변경 기능을 제공합니다.
@@ -1288,20 +1287,6 @@ export default function PptGenerator() {
 
                 {/* 탭 메뉴 */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px' }}>
-                    <button 
-                        id="tab-excel-mapping"
-                        onClick={() => { setActiveTab('excel_mapping'); setErrorMsg(null); setSuccessMsg(null); }}
-                        className="interactive"
-                        style={{
-                            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
-                            background: activeTab === 'excel_mapping' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                            border: '1px solid ' + (activeTab === 'excel_mapping' ? 'var(--accent-blue)' : 'transparent'),
-                            color: activeTab === 'excel_mapping' ? 'var(--accent-blue)' : 'var(--text-secondary)',
-                            fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
-                        }}
-                    >
-                        엑셀 데이터 매핑 생성
-                    </button>
                     <button 
                         id="tab-batch-edit"
                         onClick={() => { setActiveTab('batch_edit'); setErrorMsg(null); setSuccessMsg(null); }}
@@ -1314,7 +1299,21 @@ export default function PptGenerator() {
                             fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
                         }}
                     >
-                        PPT 텍스트/디자인 일괄 편집
+                        PPT 일괄편집
+                    </button>
+                    <button 
+                        id="tab-excel-mapping"
+                        onClick={() => { setActiveTab('excel_mapping'); setErrorMsg(null); setSuccessMsg(null); }}
+                        className="interactive"
+                        style={{
+                            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
+                            background: activeTab === 'excel_mapping' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                            border: '1px solid ' + (activeTab === 'excel_mapping' ? 'var(--accent-blue)' : 'transparent'),
+                            color: activeTab === 'excel_mapping' ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                            fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
+                        }}
+                    >
+                        엑셀 ➜ PPT
                     </button>
                     <button 
                         id="tab-smart-animation"
@@ -1357,7 +1356,7 @@ export default function PptGenerator() {
                             fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
                         }}
                     >
-                        PPT ➞ PDF 변환 (추가 기능)
+                        PPT ➜ PDF 변환
                     </button>
                     <button 
                         id="tab-pdf-to-ppt"
