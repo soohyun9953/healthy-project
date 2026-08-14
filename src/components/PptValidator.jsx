@@ -1334,7 +1334,7 @@ export default function PptValidator({ apiKey }) {
             });
             
             let leftTitles = [];
-            let rightTitle = '';
+            let rightShapes = [];
             
             headerShapes.forEach(hs => {
               // x=null(레이아웃 상속)이거나 x<6000000이면 좌측 타이틀
@@ -1344,13 +1344,20 @@ export default function PptValidator({ apiKey }) {
                   leftTitles.push(hs);
                 }
               } else if (hs.x !== null && hs.x >= 6000000) {
-                if (!rightTitle || hs.y < (rightTitle.y || 99999999)) {
-                  rightTitle = hs;
-                }
+                rightShapes.push(hs);
               }
             });
 
             leftTitles.sort((a, b) => a.y - b.y);
+            rightShapes.sort((a, b) => a.y - b.y);
+
+            // 상단우측 세번째 줄이 1단계, 없으면 상단 우측 첫 번째 shape
+            let level1Title = '';
+            if (rightShapes.length >= 3) {
+              level1Title = rightShapes[2].text.trim();
+            } else if (rightShapes.length > 0) {
+              level1Title = rightShapes[0].text.trim();
+            }
 
             let majorTitleText = '';
             const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
@@ -1366,11 +1373,12 @@ export default function PptValidator({ apiKey }) {
               slideNum,
               majorTitle: majorTitleText,
               titles: leftTitles.map(t => t.text.trim()).filter(Boolean),
-              rightTitle: rightTitle ? rightTitle.text : ''
+              rightTitle: level1Title,
+              rightShapesText: rightShapes.map(r => r.text.trim())
             });
 
-            if (rightTitle && rightTitle.text) {
-              const pageMatch = rightTitle.text.match(/(?:Page|P\.|-)?\s*(\d+)\s*(?:-)?$/i);
+            if (level1Title) {
+              const pageMatch = level1Title.match(/(?:Page|P\.|-)?\s*(\d+)\s*(?:-)?$/i);
               if (pageMatch) {
                 detectedPages.push(parseInt(pageMatch[1], 10));
               }
@@ -1424,6 +1432,9 @@ export default function PptValidator({ apiKey }) {
           // 넘버링별 타이틀 불일치 검증을 위한 해시 맵
           const numbering_title_map = {};
 
+          // 3단계(x.x.x) 부모별 2단계 제목 추적 맵 초기화
+          window.level3_parent_tracker = {};
+
           // 넘버링 순차성 검증을 위한 부모 경로별 마지막 자식 값 추적 맵
           const sibling_tracker = {};
 
@@ -1461,12 +1472,50 @@ export default function PptValidator({ apiKey }) {
               }
             }
 
-            // 1-2) 2단/3단 타이틀 간의 구조적 계층 관계 정합성 검증 (원칙 2, 3, 4)
+            // 1-2) 3단계(x.x.x)가 여러 개 있는 경우 2단계(좌측상단 첫번째 줄) 동일 제목 유지 여부 정합성 검증
+            // subTitles[0] ➜ 2단계 (좌측상단 첫번째 줄)
+            // subTitles[1] ➜ 3단계 (좌측상단 두번째 줄, x.x.x)
             const subTitles = (slide.titles || []).filter(text => !roman_regex.test(text));
-            if (subTitles.length === 2) {
-              const level2Title = subTitles[0];
-              const level3Title = subTitles[1];
-              
+            if (subTitles.length >= 2) {
+              const level2Title = subTitles[0].trim();
+              const level3Title = subTitles[1].trim();
+
+              // 3단계 넘버링 파싱 (x.x.x 패턴: 예: 1.1.1, 1.1.2 등 숫자 점 2개 이상)
+              const level3_num_match = level3Title.match(/^\s*([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)*)/);
+              if (level3_num_match) {
+                const full_num = level3_num_match[1];
+                const num_parts = full_num.split('.');
+                // 상위 2단계 부모 넘버링 (예: "1.1.1" ➜ "1.1")
+                const parent_num = num_parts.slice(0, 2).join('.');
+
+                // 2단계 제목에서 (순서번호/전체페이지수) 접미사 제거
+                const alt_page_regex = /\s*[(\[]\s*\d+\s*[\/]\s*\d+\s*[)\]]\s*$/;
+                const pure_level2 = level2Title.replace(alt_page_regex, '').trim();
+
+                if (!window.level3_parent_tracker) window.level3_parent_tracker = {};
+
+                if (window.level3_parent_tracker[parent_num]) {
+                  const prev_info = window.level3_parent_tracker[parent_num];
+                  if (prev_info.level2 !== pure_level2) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '좌측 타이틀 (2단계 ↔ 3단계)',
+                      text: `[2단계] ${level2Title} / [3단계] ${level3Title}`,
+                      error: '3단계(x.x.x) 하위 2단계 제목 불일치',
+                      guide: `3단계 넘버링("${parent_num}.x")의 슬라이드가 여러 개일 때, 2단계 제목(좌측상단 첫번째 줄)은 동일해야 합니다. (이전 2단계: "${prev_info.level2}" ➜ 현재 2단계: "${pure_level2}")`
+                    });
+                    fileNumErrorsCount++;
+                  }
+                } else {
+                  window.level3_parent_tracker[parent_num] = {
+                    level2: pure_level2,
+                    slideNum: slide.slideNum
+                  };
+                }
+              }
+
+              // 기존 2단/3단 계층 파싱 검증
               const level2Parts = level2Title.split('>').map(s => s.trim());
               const level3Parts = level3Title.split('>').map(s => s.trim());
               
@@ -1481,7 +1530,7 @@ export default function PptValidator({ apiKey }) {
               const l3MainDepth = l3Depths[0];
               
               if (l3MainDepth === 2) {
-                // 원칙 2: 중분류(1.1)가 3단 타이틀로 오는 케이스 -> 2단은 대분류(1.) 단독 구조
+                // 원칙 2: 중분류(1.1)가 3단 타이틀로 오면 2단은 대분류(1.) 단독
                 const isL2Valid = level2Parts.length === 1 && l2Depths[0] === 1;
                 if (!isL2Valid) {
                   allNumberings.push({
