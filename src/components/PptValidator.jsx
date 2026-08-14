@@ -1515,9 +1515,15 @@ export default function PptValidator({ apiKey }) {
                 }
               }
 
-              // 기존 2단/3단 계층 파싱 검증
+              // 기존 2단/3단/4단 계층 파싱 검증
               const level2Parts = level2Title.split('>').map(s => s.trim());
               const level3Parts = level3Title.split('>').map(s => s.trim());
+
+              // 4단계 제목 포함 패턴 검사:
+              // "x.x.x > 4단계 제목" 또는 "x.x.x 3단계 제목 > 4단계 제목" 또는 "(순번/총페이지수)" 포함 여부
+              const alt_page_regex = /\s*[(\[]\s*\d+\s*[\/]\s*\d+\s*[)\]]\s*$/;
+              const has_4th_level = level3Parts.length > 1 || level3Title.includes('>');
+              const has_alt_pages_in_l3 = alt_page_regex.test(level3Title);
               
               const getNumDepth = (txt) => {
                 const match = txt.match(num_regex);
@@ -1532,7 +1538,7 @@ export default function PptValidator({ apiKey }) {
               if (l3MainDepth === 2) {
                 // 원칙 2: 중분류(1.1)가 3단 타이틀로 오면 2단은 대분류(1.) 단독
                 const isL2Valid = level2Parts.length === 1 && l2Depths[0] === 1;
-                if (!isL2Valid) {
+                if (!isL2Valid && !has_4th_level) {
                   allNumberings.push({
                     fileName: file.name,
                     slideNum: slide.slideNum,
@@ -1547,7 +1553,7 @@ export default function PptValidator({ apiKey }) {
                 if (level3Parts.length === 1) {
                   // 원칙 3: 소분류(1.1.1) 단독이 3단 타이틀로 오는 케이스 -> 2단은 대분류 > 중분류 구조
                   const isL2Valid = level2Parts.length === 2 && l2Depths[0] === 1 && l2Depths[1] === 2;
-                  if (!isL2Valid) {
+                  if (!isL2Valid && !has_4th_level) {
                     allNumberings.push({
                       fileName: file.name,
                       slideNum: slide.slideNum,
@@ -1559,18 +1565,21 @@ export default function PptValidator({ apiKey }) {
                     fileNumErrorsCount++;
                   }
                 } else if (level3Parts.length > 1) {
-                  // 원칙 4: 소분류 하위가 3단 타이틀로 오는 케이스 -> 2단은 대분류 > 중분류 구조
-                  const isL2Valid = level2Parts.length === 2 && l2Depths[0] === 1 && l2Depths[1] === 2;
-                  if (!isL2Valid) {
-                    allNumberings.push({
-                      fileName: file.name,
-                      slideNum: slide.slideNum,
-                      area: '좌측 타이틀',
-                      text: `${level2Title} / ${level3Title}`,
-                      error: '타이틀 계층 규칙 위반 (원칙 4)',
-                      guide: `소분류 하위가 3단 타이틀로 올 경우, 2단 타이틀은 '대분류 > 중분류' 구조(예: "1. 대분류 > 1.1 중분류")여야 합니다. (현재 2단: "${level2Title}")`
-                    });
-                    fileNumErrorsCount++;
+                  // 원칙 4: "x.x.x > 4단계 제목" 또는 "x.x.x 3단계 제목 > 4단계 제목 (순번/총페이지수)" 형태로 확장된 4단계 표기는 정상!
+                  // 4단계 표현이나 (순번/총페이지수) 표기가 있을 때는 계층 오류로 검출하지 않음
+                  if (!has_4th_level && !has_alt_pages_in_l3) {
+                    const isL2Valid = level2Parts.length === 2 && l2Depths[0] === 1 && l2Depths[1] === 2;
+                    if (!isL2Valid) {
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '좌측 타이틀',
+                        text: `${level2Title} / ${level3Title}`,
+                        error: '타이틀 계층 규칙 위반 (원칙 4)',
+                        guide: `소분류 하위가 3단 타이틀로 올 경우, 2단 타이틀은 '대분류 > 중분류' 구조(예: "1. 대분류 > 1.1 중분류")여야 합니다. (현재 2단: "${level2Title}")`
+                      });
+                      fileNumErrorsCount++;
+                    }
                   }
                 }
               }
@@ -1585,8 +1594,7 @@ export default function PptValidator({ apiKey }) {
               // 대주제 텍스트 자체는 아래의 세부 넘버링(숫자) 검증에서는 제외
               if (roman_regex.test(text)) continue;
 
-              // "제목 (1/3)" 또는 "제목 (1 / 3)" 또는 "제목 [1/3]" 정규식 파싱
-              // 좌측상단 2번째 줄 등 동일 제목의 연속 페이지 (순서번호/전체페이지수) 패턴 감지
+              // "제목 (1/3)" 또는 "x.x.x 3단계 제목 > 4단계 제목 (1/3)" 정규식 파싱
               const alt_page_regex = /\s*[(\[]\s*(\d+)\s*[\/]\s*(\d+)\s*[)\]]\s*$/;
               const altPageMatch = text.match(alt_page_regex);
               let hasAltPages = false;
@@ -1601,9 +1609,14 @@ export default function PptValidator({ apiKey }) {
                 pureTitle = text.replace(alt_page_regex, '').trim();
               }
 
-              // 순수 제목 추출: 넘버링 숫자 접두사(1., 1.1 등) 제거 후 실제 제목 텍스트만 추출
-              // 예: "1.1 재무구조 및 대외신용평가 현황 (1/3)" → "재무구조 및 대외신용평가 현황"
-              const pureTitleWithoutNum = pureTitle.replace(/^\s*[0-9]+(\.[0-9]+)*[\s\.]+/, '').trim();
+              // 4단계 표현("x.x.x > 4단계 제목" 또는 "x.x.x 3단계 제목 > 4단계 제목")이 포함되어 있는지 점검
+              const is_4th_level_format = text.includes('>') || pureTitle.includes('>');
+
+              // 순수 제목 추출: 넘버링 숫자 접두사(1., 1.1 등) 및 4단계 구분 기호 앞단 제거 후 실제 제목 텍스트만 추출
+              const pureTitleWithoutNum = pureTitle
+                .replace(/^\s*[0-9]+(\.[0-9]+)*[\s\.]+/, '')
+                .replace(/^.*>\s*/, '')
+                .trim();
 
               // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
               const numMatch = text.match(num_regex);
@@ -1616,10 +1629,10 @@ export default function PptValidator({ apiKey }) {
                   const current_val = parts[parts.length - 1];
 
                   // 1. 동일 넘버링이 다른 슬라이드에서 쓰였는데, 제목 텍스트가 다르면 오류 검출
-                  // (단, (순서번호/전체페이지수) 형태는 동일 제목으로 간주)
+                  // (단, (순서번호/전체페이지수) 형태나 4단계 구분 표현은 정상 패턴으로 무시)
                   const existingTitle = numbering_title_map[rawNumStr];
                   if (existingTitle !== undefined) {
-                    if (existingTitle !== pureTitleWithoutNum && !hasAltPages) {
+                    if (existingTitle !== pureTitleWithoutNum && !hasAltPages && !is_4th_level_format) {
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
@@ -1640,21 +1653,21 @@ export default function PptValidator({ apiKey }) {
 
                   if (last_sibling_val !== undefined) {
                     if (current_val === last_sibling_val) {
-                      // 동일 번호 반복: (순서번호/전체페이지수) 표기가 포함되어 있거나 1단 넘버링일 때는 순번대로 기재된 정상 패턴이므로 중복 오류 처리 안 함!
-                      if (!hasAltPages && parts.length > 1) {
+                      // 동일 번호 반복: (순서번호/전체페이지수) 표기나 4단계(x.x.x > 4단계) 형식이 포함되어 있을 때는 정상 패턴이므로 중복 오류 처리 안 함!
+                      if (!hasAltPages && !is_4th_level_format && parts.length > 1) {
                         allNumberings.push({
                           fileName: file.name,
                           slideNum: slide.slideNum,
                           area: '좌측 타이틀',
                           text,
                           error: `넘버링 중복 사용 오류 (${rawNumStr})`,
-                          guide: `이전 슬라이드에서 이미 "${rawNumStr}" 번호가 사용되었습니다. 동일한 제목이 이어질 때는 "제목 (1/3)", "제목 (2/3)" 형태로 순번을 표기해야 합니다.`
+                          guide: `이전 슬라이드에서 이미 "${rawNumStr}" 번호가 사용되었습니다. 동일한 제목이 이어질 때는 "x.x.x 3단계 제목 > 4단계 제목 (1/3)" 형태로 순번을 표기해야 합니다.`
                         });
                         fileNumErrorsCount++;
                       }
                     } else if (current_val !== last_sibling_val + 1) {
-                      // 순서 건너뜀 (시퀀스 단절) - (순서번호/전체페이지수) 연속 장은 제외
-                      if (!hasAltPages) {
+                      // 순서 건너뜀 (시퀀스 단절) - (순서번호/전체페이지수) 및 4단계 연속 장은 제외
+                      if (!hasAltPages && !is_4th_level_format) {
                         allNumberings.push({
                           fileName: file.name,
                           slideNum: slide.slideNum,
@@ -1669,7 +1682,7 @@ export default function PptValidator({ apiKey }) {
                   } else {
                     // 부모 계층 아래 최초의 자식 노드 진입 시에는 반드시 1이어야 함 (로마자 대주제 제외)
                     const isRoman = roman_regex.test(text);
-                    if (!isRoman && current_val !== 1 && !hasAltPages) {
+                    if (!isRoman && current_val !== 1 && !hasAltPages && !is_4th_level_format) {
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
@@ -1682,7 +1695,7 @@ export default function PptValidator({ apiKey }) {
                     }
                   }
                   // 트래커 기록 갱신 (연속 페이지인 경우에도 번호를 유지하여 다음 연속 장에서 비교 가능하도록)
-                  if (!hasAltPages || current_val !== last_sibling_val) {
+                  if ((!hasAltPages && !is_4th_level_format) || current_val !== last_sibling_val) {
                     sibling_tracker[parent_path] = current_val;
                   }
                 }
