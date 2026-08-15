@@ -62,7 +62,7 @@ const gaEvent = (eventName, params = {}) => {
 const tab_guides = {
   ppt: null,
   g2b: {
-    title: '(작업중)나라장터 정보조회',
+    title: '나라장터 정보조회',
     desc: '조달청 나라장터(g2b.go.kr)의 발주계획(발주예정) 및 사전규격 공고 정보를 사업명 및 수요기관 조건으로 검색합니다.',
     steps: [
       '조회 구분 선택 (전체 / 발주계획 / 사전규격)',
@@ -288,7 +288,7 @@ function App() {
       library: '참고자료 라이브러리',
       meeting: 'AI 회의록 생성',
       aippt: '(작업중)AI PPT 디자이너',
-      g2b: '(작업중)나라장터 정보조회',
+      g2b: '나라장터 정보조회',
     };
     gaEvent('page_view', {
       page_title: tabLabels[activeTab] || activeTab,
@@ -364,7 +364,7 @@ function App() {
     { id: 'ismpda', label: '(작업중)ISMP DA 검증 대시보드', icon: Sliders, color: 'var(--accent-purple)', useGemini: false },
     { id: 'hwpx-report', label: '(작업중)HWPX생성(표준보고서)', icon: FileText, color: '#10b981', useGemini: true },
     { id: 'aippt', label: '(작업중)AI PPT 디자이너', icon: Presentation, color: '#ec4899', useGemini: true },
-    { id: 'g2b', label: '(작업중)나라장터 정보조회', icon: Building2, color: 'var(--accent-blue)', useGemini: false },
+    { id: 'g2b', label: '나라장터 정보조회', icon: Building2, color: 'var(--accent-blue)', useGemini: false },
   ];
 
   const activeTabData = tabs.find(t => t.id === activeTab);
