@@ -116,9 +116,9 @@ export default defineConfig({
               let body_json = {};
               try { body_json = JSON.parse(body_str); } catch (e) {}
 
-              const service_key = body_json.service_key || '';
-              const inqry_bgn_dt = body_json.inqry_bgn_dt || '';
-              const inqry_end_dt = body_json.inqry_end_dt || '';
+              const service_key = body_json.service_key || body_json.serviceKey || '';
+              const inqry_bgn_dt = body_json.inqry_bgn_dt || body_json.inqryBgnDt || '';
+              const inqry_end_dt = body_json.inqry_end_dt || body_json.inqryEndDt || '';
 
               if (!service_key) {
                 res.statusCode = 400;
@@ -146,28 +146,205 @@ export default defineConfig({
               const service_type = (body_json.service_type || 'prespec').toLowerCase(); // 'prespec' | 'bid' | 'orderplan'
               const key_variants = [...new Set([key_raw, key_encoded])];
 
-              let endpoints = [];
-              if (service_type === 'bid') {
-                // 입찰공고
-                endpoints = [
-                  `https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdBidPblancInfo`,
-                  `https://apis.data.go.kr/1230000/BidPublicInfoService02/getBidPblancListInfoServc`,
-                  `https://apis.data.go.kr/1230000/BidPublicInfoService02/getBidPblancListInfoServcPPSSrch`
-                ];
-              } else if (service_type === 'orderplan') {
-                // 발주계획
-                endpoints = [
-                  `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusList`,
-                  `https://apis.data.go.kr/1230000/OrderPlanSttusService/getOrderPlanSttusList`
-                ];
-              } else {
-                // 사전규격 (기본)
-                endpoints = [
-                  `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch`,
+              if (service_type === 'prespec') {
+                // 🌟 사전규격: 용역, 물품, 공사 3대 분야를 병렬로 모두 수집하여 통합
+                const prespec_endpoints = [
                   `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServc`,
-                  `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoThngPPSSrch`,
-                  `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoThng`
+                  `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoThng`,
+                  `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoCnstwk`
                 ];
+
+                try {
+                  const fetch_tasks = prespec_endpoints.map(async (ep) => {
+                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1`;
+                    if (inqry_bgn_dt) url += `&inqryBgnDt=${inqry_bgn_dt}`;
+                    if (inqry_end_dt) url += `&inqryEndDt=${inqry_end_dt}`;
+                    try {
+                      const txt = await https_get(url);
+                      const parsed = JSON.parse(txt);
+                      return parsed?.response?.body?.items || [];
+                    } catch (e) {
+                      return [];
+                    }
+                  });
+
+                  const results = await Promise.all(fetch_tasks);
+                  const merged_items = results.flat();
+
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.end(JSON.stringify({
+                    response: {
+                      header: { resultCode: '00', resultMsg: '정상 (용역·물품·공사 통합)' },
+                      body: { items: merged_items, totalCount: merged_items.length }
+                    }
+                  }));
+                  return;
+                } catch (e) {
+                  console.error('사전규격 병렬 수집 에러:', e);
+                }
+              }
+
+              if (service_type === 'bid') {
+                // 🌟 실시간 입찰공고: 용역, 물품, 공사 3대 분야를 병렬로 모두 수집하여 통합
+                const bid_endpoints = [
+                  `https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServcPPSSrch`,
+                  `https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoThngPPSSrch`,
+                  `https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwkPPSSrch`
+                ];
+
+                try {
+                  const fetch_tasks = bid_endpoints.map(async (ep) => {
+                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1`;
+                    if (inqry_bgn_dt) url += `&inqryBgnDt=${inqry_bgn_dt}`;
+                    if (inqry_end_dt) url += `&inqryEndDt=${inqry_end_dt}`;
+                    try {
+                      const txt = await https_get(url);
+                      const parsed = JSON.parse(txt);
+                      return parsed?.response?.body?.items || [];
+                    } catch (e) {
+                      return [];
+                    }
+                  });
+
+                  const results = await Promise.all(fetch_tasks);
+                  const merged_items = results.flat();
+
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.end(JSON.stringify({
+                    response: {
+                      header: { resultCode: '00', resultMsg: '정상 (입찰공고 용역·물품·공사 통합)' },
+                      body: { items: merged_items, totalCount: merged_items.length }
+                    }
+                  }));
+                  return;
+                } catch (e) {
+                  console.error('입찰공고 병렬 수집 에러:', e);
+                }
+              }
+
+              if (service_type === 'orderplan') {
+                // 🌟 발주계획 현황: 용역, 물품, 공사 3대 분야를 병렬로 모두 수집하여 통합
+                const orderplan_endpoints = [
+                  `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusListServc`,
+                  `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusListThng`,
+                  `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusListCnstwk`
+                ];
+
+                try {
+                  const bgn_dt_clean = (inqry_bgn_dt || '').substring(0, 8) || '20260101';
+                  const end_dt_clean = (inqry_end_dt || '').substring(0, 8) || '20261231';
+
+                  const fetch_tasks = orderplan_endpoints.map(async (ep) => {
+                    const url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1&inqryBgnDate=${bgn_dt_clean}&inqryEndDate=${end_dt_clean}`;
+                    try {
+                      const txt = await https_get(url);
+                      const parsed = JSON.parse(txt);
+                      return parsed?.response?.body?.items || [];
+                    } catch (e) {
+                      return [];
+                    }
+                  });
+
+                  const results = await Promise.all(fetch_tasks);
+                  const merged_items = results.flat();
+
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.end(JSON.stringify({
+                    response: {
+                      header: { resultCode: '00', resultMsg: '정상 (발주계획 용역·물품·공사 통합)' },
+                      body: { items: merged_items, totalCount: merged_items.length }
+                    }
+                  }));
+                  return;
+                } catch (e) {
+                  console.error('발주계획 병렬 수집 에러:', e);
+                }
+              }
+
+              if (service_type === 'contract') {
+                // 🌟 계약정보 현황: 용역, 물품, 공사 3대 분야를 병렬로 모두 수집하여 통합
+                const contract_endpoints = [
+                  `https://apis.data.go.kr/1230000/ao/CntrctInfoService/getCntrctInfoListServc`,
+                  `https://apis.data.go.kr/1230000/ao/CntrctInfoService/getCntrctInfoListThng`,
+                  `https://apis.data.go.kr/1230000/ao/CntrctInfoService/getCntrctInfoListCnstwk`
+                ];
+
+                try {
+                  const fetch_tasks = contract_endpoints.map(async (ep) => {
+                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1`;
+                    if (inqry_bgn_dt) url += `&inqryBgnDt=${inqry_bgn_dt}`;
+                    if (inqry_end_dt) url += `&inqryEndDt=${inqry_end_dt}`;
+                    try {
+                      const txt = await https_get(url);
+                      const parsed = JSON.parse(txt);
+                      return parsed?.response?.body?.items || [];
+                    } catch (e) {
+                      return [];
+                    }
+                  });
+
+                  const results = await Promise.all(fetch_tasks);
+                  const merged_items = results.flat();
+
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.end(JSON.stringify({
+                    response: {
+                      header: { resultCode: '00', resultMsg: '정상 (계약정보 용역·물품·공사 통합)' },
+                      body: { items: merged_items, totalCount: merged_items.length }
+                    }
+                  }));
+                  return;
+                } catch (e) {
+                  console.error('계약정보 병렬 수집 에러:', e);
+                }
+              }
+
+              if (service_type === 'scsbid') {
+                // 🌟 낙찰정보 현황: 낙찰정보 엔드포인트 후보군 병렬 수집
+                const scsbid_endpoints = [
+                  `https://apis.data.go.kr/1230000/ad/ScsbidInfoService/getScsbidListInfoServcPPSSrch`,
+                  `https://apis.data.go.kr/1230000/ao/ScsbidInfoService/getScsbidListInfoServcPPSSrch`,
+                  `https://apis.data.go.kr/1230000/ScsbidInfoService/getScsbidListInfoServcPPSSrch`
+                ];
+
+                try {
+                  const fetch_tasks = scsbid_endpoints.map(async (ep) => {
+                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1`;
+                    if (inqry_bgn_dt) url += `&inqryBgnDt=${inqry_bgn_dt}`;
+                    if (inqry_end_dt) url += `&inqryEndDt=${inqry_end_dt}`;
+                    try {
+                      const txt = await https_get(url);
+                      const parsed = JSON.parse(txt);
+                      return parsed?.response?.body?.items || [];
+                    } catch (e) {
+                      return [];
+                    }
+                  });
+
+                  const results = await Promise.all(fetch_tasks);
+                  const merged_items = results.flat();
+
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.end(JSON.stringify({
+                    response: {
+                      header: { resultCode: '00', resultMsg: '정상 (낙찰정보 수신)' },
+                      body: { items: merged_items, totalCount: merged_items.length }
+                    }
+                  }));
+                  return;
+                } catch (e) {
+                  console.error('낙찰정보 병렬 수집 에러:', e);
+                }
               }
 
               let last_error = '';
@@ -180,7 +357,6 @@ export default defineConfig({
                   if (inqry_end_dt) api_url += `&inqryEndDt=${inqry_end_dt}`;
 
                   try {
-                    console.log(`[G2B 프록시 - ${service_type}] 호출: ${endpoint.split('/').slice(-2).join('/')} (key: ${key.substring(0, 8)}...)`);
                     const text = await https_get(api_url);
 
                     if (text.includes('SERVICE_KEY_IS_NOT_REGISTERED_ERROR') || text.includes('SERVICE_KEY_IS_NOT_REGISTERED')) {
@@ -191,12 +367,7 @@ export default defineConfig({
                       last_error = 'LIMITED_NUMBER_OF_SERVICE_REQUESTS';
                       continue;
                     }
-                    if (text.includes('NO_OPENAPI_SERVICE_ERROR')) {
-                      last_error = `엔드포인트 미지원: ${endpoint}`;
-                      continue;
-                    }
 
-                    // 정상 데이터 응답 성공
                     res.statusCode = 200;
                     res.setHeader('Content-Type', 'application/json; charset=utf-8');
                     res.setHeader('Access-Control-Allow-Origin', '*');

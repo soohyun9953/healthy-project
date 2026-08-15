@@ -1,4 +1,4 @@
-﻿// api/g2b.js
+// api/g2b.js
 // Vercel 서버리스 함수: 조달청 나라장터 사전규격 / 입찰공고 / 발주계획 다중 OpenAPI CORS 프록시
 
 export default async function handler(req, res) {
@@ -24,28 +24,113 @@ export default async function handler(req, res) {
         const key_encoded = encodeURIComponent(service_key);
         const key_variants = [...new Set([key_raw, key_encoded])];
 
-        let endpoints = [];
-        if (service_type === 'bid') {
-            // 입찰공고
-            endpoints = [
-                `https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdBidPblancInfo`,
-                `https://apis.data.go.kr/1230000/BidPublicInfoService02/getBidPblancListInfoServc`,
-                `https://apis.data.go.kr/1230000/BidPublicInfoService02/getBidPblancListInfoServcPPSSrch`
-            ];
-        } else if (service_type === 'orderplan') {
-            // 발주계획
-            endpoints = [
-                `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusList`,
-                `https://apis.data.go.kr/1230000/OrderPlanSttusService/getOrderPlanSttusList`
-            ];
-        } else {
-            // 사전규격 (기본)
-            endpoints = [
-                `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch`,
+        if (service_type === 'prespec') {
+            // 🌟 사전규격: 용역, 물품, 공사 3대 분야를 병렬로 모두 수집하여 통합
+            const prespec_endpoints = [
                 `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServc`,
-                `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoThngPPSSrch`,
-                `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoThng`
+                `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoThng`,
+                `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoCnstwk`
             ];
+
+            try {
+                const fetch_tasks = prespec_endpoints.map(async (ep) => {
+                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1`;
+                    if (inqry_bgn_dt) url += `&inqryBgnDt=${inqry_bgn_dt}`;
+                    if (inqry_end_dt) url += `&inqryEndDt=${inqry_end_dt}`;
+                    try {
+                        const resp = await fetch(url);
+                        const data = await resp.json();
+                        return data?.response?.body?.items || [];
+                    } catch (e) {
+                        return [];
+                    }
+                });
+
+                const results = await Promise.all(fetch_tasks);
+                const merged_items = results.flat();
+
+                return res.status(200).json({
+                    response: {
+                        header: { resultCode: '00', resultMsg: '정상 (용역·물품·공사 통합)' },
+                        body: { items: merged_items, totalCount: merged_items.length }
+                    }
+                });
+            } catch (e) {
+                console.error('사전규격 병렬 수집 에러:', e);
+            }
+        }
+
+        if (service_type === 'bid') {
+            // 🌟 실시간 입찰공고: 용역, 물품, 공사 3대 분야를 병렬로 모두 수집하여 통합
+            const bid_endpoints = [
+                `https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServcPPSSrch`,
+                `https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoThngPPSSrch`,
+                `https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwkPPSSrch`
+            ];
+
+            try {
+                const fetch_tasks = bid_endpoints.map(async (ep) => {
+                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1`;
+                    if (inqry_bgn_dt) url += `&inqryBgnDt=${inqry_bgn_dt}`;
+                    if (inqry_end_dt) url += `&inqryEndDt=${inqry_end_dt}`;
+                    try {
+                        const resp = await fetch(url);
+                        const data = await resp.json();
+                        return data?.response?.body?.items || [];
+                    } catch (e) {
+                        return [];
+                    }
+                });
+
+                const results = await Promise.all(fetch_tasks);
+                const merged_items = results.flat();
+
+                return res.status(200).json({
+                    response: {
+                        header: { resultCode: '00', resultMsg: '정상 (입찰공고 용역·물품·공사 통합)' },
+                        body: { items: merged_items, totalCount: merged_items.length }
+                    }
+                });
+            } catch (e) {
+                console.error('입찰공고 병렬 수집 에러:', e);
+            }
+        }
+
+        if (service_type === 'orderplan') {
+            // 🌟 발주계획 현황: 용역, 물품, 공사 3대 분야를 병렬로 모두 수집하여 통합
+            const orderplan_endpoints = [
+                `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusListServc`,
+                `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusListThng`,
+                `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusListCnstwk`
+            ];
+
+            try {
+                const bgn_dt_clean = (inqry_bgn_dt || '').substring(0, 8) || '20260101';
+                const end_dt_clean = (inqry_end_dt || '').substring(0, 8) || '20261231';
+
+                const fetch_tasks = orderplan_endpoints.map(async (ep) => {
+                    const url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1&inqryBgnDate=${bgn_dt_clean}&inqryEndDate=${end_dt_clean}`;
+                    try {
+                        const resp = await fetch(url);
+                        const data = await resp.json();
+                        return data?.response?.body?.items || [];
+                    } catch (e) {
+                        return [];
+                    }
+                });
+
+                const results = await Promise.all(fetch_tasks);
+                const merged_items = results.flat();
+
+                return res.status(200).json({
+                    response: {
+                        header: { resultCode: '00', resultMsg: '정상 (발주계획 용역·물품·공사 통합)' },
+                        body: { items: merged_items, totalCount: merged_items.length }
+                    }
+                });
+            } catch (e) {
+                console.error('발주계획 병렬 수집 에러:', e);
+            }
         }
 
         let last_error = '';

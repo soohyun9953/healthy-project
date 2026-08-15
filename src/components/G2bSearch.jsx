@@ -5,19 +5,21 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
+const DEFAULT_API_KEY = 'NriqcUyo40FehR3q4XmJFYDZPjmnvKFqM7%2BPTnuCRu145Z9cv5JAB5%2FuNigMSbG0t1gvkhYTF6YavITRsNQzYw%3D%3D';
+
+// 📅 날짜 헬퍼: YYYY-MM-DD 형식 반환
+const get_today_string = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const get_past_days_string = (days = 7) => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export default function G2bSearch() {
-    // 📅 날짜 헬퍼: YYYY-MM-DD 형식 반환
-    const get_today_string = () => {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    };
-
-    const get_past_days_string = (days = 7) => {
-        const d = new Date();
-        d.setDate(d.getDate() - days);
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    };
-
     // 0. 조회 서비스 탭 상태 ('prespec': 사전규격 | 'bid': 입찰공고 | 'orderplan': 발주계획)
     const [active_tab, set_active_tab] = useState('prespec');
 
@@ -41,9 +43,12 @@ export default function G2bSearch() {
 
     const [dataGovApiKey, setDataGovApiKey] = useState(() => {
         try {
-            return localStorage.getItem('data_gov_api_key') || '';
+            const saved = localStorage.getItem('data_gov_api_key');
+            if (saved && saved.includes('MSbG0t1gvkhYTF6YavITRsNQzYw')) return saved;
+            localStorage.setItem('data_gov_api_key', DEFAULT_API_KEY);
+            return DEFAULT_API_KEY;
         } catch (e) {
-            return '';
+            return DEFAULT_API_KEY;
         }
     });
     const [showApiKeySetting, setShowApiKeySetting] = useState(false);
@@ -66,236 +71,7 @@ export default function G2bSearch() {
         '공공보건': ['공공보건', '보건의료', '의료원', '병원', 'k-health', '보건소', '건강']
     }), []);
 
-    // 🏛️ 나라장터 실제 최신 공고 데이터셋 (나라장터 사이트 100% 동일 실데이터)
-    const real_g2b_dataset = useMemo(() => [
-        // 🌟 나라장터 실시간 입찰공고 실데이터 (공고명: ISP 검색 결과 1~9번)
-        {
-            id: 'R26BK0168323',
-            type: '입찰공고',
-            title: '[재공고]쎈(SEN) 진학상담 프로그램 고도화를 위한 정보화전략계획(ISP) 수립 용역',
-            agency: '서울특별시교육청 서울특별시교육연구정보원',
-            category: '일반용역',
-            budget: 180000000,
-            regDate: '2026-08-14',
-            dueDate: '2026-08-25',
-            status: '입찰공고 (공고등록)',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EC%84%BC(SEN)%20%EC%A7%84%ED%95%99%EC%83%81%EB%8B%B4%20ISP',
-            description: '[조달청 입찰공고] 공고번호: R26BK0168323 / 공고기관: 서울특별시교육청 서울특별시교육연구정보원 / 단계: 입찰공고 / 상태: 진행완료'
-        },
-        {
-            id: 'R26BK0167979',
-            type: '입찰공고',
-            title: 'B-READY 분쟁해결(Dispute Resolution) 부문 향상을 위한 제도개선 및 정보화전략(ISP) 수립',
-            agency: '법무부',
-            category: '일반용역',
-            budget: 210000000,
-            regDate: '2026-08-12',
-            dueDate: '2026-08-24',
-            status: '입찰공고 (공고등록)',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=B-READY%20%EB%B6%84%EC%9F%81%ED%95%B4%EA%B2%B0%20ISP',
-            description: '[조달청 입찰공고] 공고번호: R26BK0167979 / 공고기관: 법무부 / 단계: 입찰공고 / 상태: 진행완료'
-        },
-        {
-            id: 'R26BK0167878',
-            type: '입찰공고',
-            title: 'AI의료생태계 K-Health실증병원 정보화전략계획(ISP) 수립 공고',
-            agency: 'KS병원',
-            category: '일반용역',
-            budget: 165000000,
-            regDate: '2026-08-12',
-            dueDate: '2026-08-27',
-            status: '변경공고 (공고등록)',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=AI%EC%9D%98%EB%A3%8C%EC%83%9D%ED%83%9C%EA%B3%84%20K-Health%20ISP',
-            description: '[조달청 입찰공고] 공고번호: R26BK0167878 / 공고기관: KS병원 / 단계: 입찰공고 / 상태: 진행완료'
-        },
-        {
-            id: 'R26BK0167882',
-            type: '입찰공고',
-            title: '2026년 공공 재해복구시스템(DR) 구축 ISP 사업(8차)',
-            agency: '한국지능정보사회진흥원',
-            category: '일반용역',
-            budget: 350000000,
-            regDate: '2026-08-12',
-            dueDate: '2026-08-13',
-            status: '재공고 (수의시담)',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EC%9E%AC%ED%95%B4%EB%B3%B5%EA%B5%AC%EC%8B%9C%EC%8A%A4%ED%85%9C%20ISP%208%EC%B0%A8',
-            description: '[조달청 입찰공고] 공고번호: R26BK0167882 / 공고기관: 조달청 대구지방조달청 / 단계: 수의시담 / 상태: 진행완료'
-        },
-        {
-            id: 'R26BK0167883',
-            type: '입찰공고',
-            title: '2026년 공공 재해복구시스템(DR) 구축 ISP 사업(7차)',
-            agency: '한국지능정보사회진흥원',
-            category: '일반용역',
-            budget: 320000000,
-            regDate: '2026-08-12',
-            dueDate: '2026-08-13',
-            status: '재공고 (수의시담)',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EC%9E%AC%ED%95%B4%EB%B3%B5%EA%B5%AC%EC%8B%9C%EC%8A%A4%ED%85%9C%20ISP%207%EC%B0%A8',
-            description: '[조달청 입찰공고] 공고번호: R26BK0167883 / 공고기관: 조달청 대구지방조달청 / 단계: 수의시담 / 상태: 진행완료'
-        },
-        {
-            id: 'R26BK0167612',
-            type: '입찰공고',
-            title: '지방도415호선 신원~여탄(2공구) 도로확포장공사 관급자재(ISP여탄12교)',
-            agency: '강원특별자치도',
-            category: '물품',
-            budget: 80000000,
-            regDate: '2026-08-11',
-            dueDate: '2026-08-12',
-            status: '계약체결 (계약통보)',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EC%A7%80%EB%B0%A9%EB%8F%84415%ED%98%B8%EC%84%A0%20ISP',
-            description: '[조달청 입찰공고] 공고번호: R26BK0167612 / 공고기관: 조달청 강원지방조달청 / 단계: 계약체결 / 상태: 진행완료'
-        },
-        {
-            id: 'R26BK0167556',
-            type: '입찰공고',
-            title: '[서울대학교병원] [진료재료] YUEH CENTESIS DISPOSABLE CATHETER (ISP)',
-            agency: '서울대학교병원',
-            category: '물품',
-            budget: 50000000,
-            regDate: '2026-08-11',
-            dueDate: '2026-08-20',
-            status: '입찰공고 (공고등록)',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EC%84%9C%EC%9A%B8%EB%8C%80%ED%95%99%EA%B5%90%EB%B3%91%EC%9B%90%20YUEH',
-            description: '[조달청 입찰공고] 공고번호: R26BK0167556 / 공고기관: 서울대학교병원 / 단계: 입찰공고 / 상태: 진행완료'
-        },
-        {
-            id: 'R26BK0167419',
-            type: '입찰공고',
-            title: '[긴급] 경기대학교 정보화전략계획(ISP) 수립 사업 용역 업체 선정 입찰',
-            agency: '경기대학교',
-            category: '일반용역',
-            budget: 550000000,
-            regDate: '2026-08-10',
-            dueDate: '2026-08-20',
-            status: '입찰공고 (공고등록)',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EA%B2%BD%EA%B8%B0%EB%8C%80%ED%95%99%EA%B5%90%20ISP',
-            description: '[조달청 입찰공고] 공고번호: R26BK0167419 / 공고기관: 경기대학교 / 단계: 입찰공고 / 상태: 진행완료'
-        },
-        {
-            id: 'R26BK0167103',
-            type: '입찰공고',
-            title: '경성대학교 하이플렉스 강의실 LED Display 구매 설치 입찰 (긴급) 공고 (Display/ISP)',
-            agency: '경성대학교',
-            category: '물품',
-            budget: 120000000,
-            regDate: '2026-08-08',
-            dueDate: '2026-08-14',
-            status: '적격심사 (신청)',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EA%B2%BD%EC%84%B1%EB%8C%80%ED%95%99%EA%B5%90%20LED',
-            description: '[조달청 입찰공고] 공고번호: R26BK0167103 / 공고기관: 경성대학교 직속기관 / 단계: 적격심사 / 상태: 진행중'
-        },
-
-        // 🌟 주요 공공/의료기관 발주계획 및 사전규격 실데이터
-        {
-            id: '2026-NMC-OP01',
-            type: '발주계획',
-            title: '2026년 국립중앙의료원 차세대 공공보건의료 정보시스템 구축 정보화전략계획(ISP)',
-            agency: '국립중앙의료원',
-            category: '정보화사업',
-            budget: 450000000,
-            regDate: '2026-08-05',
-            dueDate: '2026-08-31',
-            status: '발주예정',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EA%B5%AD%EB%A6%BD%EC%A4%91%EC%95%99%EC%9D%98%EB%A3%8C%EC%9B%90%20ISP',
-            description: '[조달청 발주계획] 발주기관: 국립중앙의료원 / 사업구분: 용역(정보화) / 계약방법: 일반경쟁(협상에의한계약) / 담당부서: 정보통신팀'
-        },
-        {
-            id: '2026-NMC-OP02',
-            type: '발주계획',
-            title: '국립중앙의료원 클라우드 기반 통합 의료정보시스템 고도화 및 AI 응급의료 플랫폼 구축',
-            agency: '국립중앙의료원',
-            category: '정보화사업',
-            budget: 720000000,
-            regDate: '2026-07-28',
-            dueDate: '2026-08-31',
-            status: '발주예정',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EA%B5%AD%EB%A6%BD%EC%A4%91%EC%95%99%EC%9D%98%EB%A3%8C%EC%9B%90%20AI',
-            description: '[조달청 발주계획] 발주기관: 국립중앙의료원 / 사업구분: 용역(정보화) / 예산: 720,000,000원 / 조달의뢰'
-        },
-        {
-            id: '2026-MOHW-OP01',
-            type: '발주계획',
-            title: '보건복지부 차세대 복지정보시스템 운영 및 AI 바우처 통합플랫폼 ISP',
-            agency: '보건복지부',
-            category: '정보화사업',
-            budget: 850000000,
-            regDate: '2026-08-01',
-            dueDate: '2026-08-30',
-            status: '발주예정',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EB%B3%B4%EA%B1%B4%EB%B3%B5%EC%A7%80%EB%B6%80%20ISP',
-            description: '[조달청 발주계획] 발주기관: 보건복지부 / 사업구분: 용역(정보화) / 조달청 의뢰'
-        },
-        {
-            id: '2026-SNUH-OP01',
-            type: '발주계획',
-            title: '서울대학교병원 차세대 스마트병원 클라우드 HIS 구축 정보시스템 마스터플랜(ISMP)',
-            agency: '서울대학교병원',
-            category: '정보화사업',
-            budget: 680000000,
-            regDate: '2026-08-04',
-            dueDate: '2026-08-28',
-            status: '발주예정',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EC%84%9C%EC%9A%B8%EB%8C%80%ED%95%99%EA%B5%90%EB%B3%91%EC%9B%90%20ISMP',
-            description: '[조달청 발주계획] 발주기관: 서울대학교병원 / 사업구분: 용역(정보화) / 계약방법: 협상에의한계약'
-        },
-        {
-            id: '20260810-PRE01',
-            type: '사전규격',
-            title: '한국전통문화대학교 학사정보시스템 고도화 용역',
-            agency: '국가유산청 한국전통문화대학교',
-            category: '기술용역',
-            budget: 150000000,
-            regDate: '2026-08-10',
-            dueDate: '2026-08-17',
-            status: '의견수렴중',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%ED%95%9C%EA%B5%AD%EC%A0%84%ED%86%B5%EB%AC%B8%ED%99%94%EB%8C%80%ED%95%99%EA%B5%90',
-            description: '[조달청 사전규격] 담당: 조달청 담당부서 (041-830-7214) / 참조: 정보전산원-1141'
-        },
-        {
-            id: '20260810-PRE02',
-            type: '사전규격',
-            title: '2026년 개도국 재정공무원 재정정보시스템 역량강화 초청연수',
-            agency: '조달청 서울지방조달청',
-            category: '일반용역',
-            budget: 150000000,
-            regDate: '2026-08-10',
-            dueDate: '2026-08-17',
-            status: '의견수렴중',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%EC%9E%AC%EC%A0%95%EC%A0%95%EB%B3%B4%EC%8B%9C%EC%8A%A4%ED%85%9C',
-            description: '[조달청 사전규격] 담당: 조달청 담당부서 (02-590-8891) / 참조: 국제협력부-159'
-        },
-        {
-            id: '20260810-PRE03',
-            type: '사전규격',
-            title: '2026년 제3차 정보화사업 감리 용역',
-            agency: '한국고용정보원',
-            category: '일반용역',
-            budget: 100000000,
-            regDate: '2026-08-10',
-            dueDate: '2026-08-17',
-            status: '의견수렴중',
-            orderTime: '2026년 08월',
-            detailUrl: 'https://www.g2b.go.kr/search/search.do?category=total&kwd=%ED%95%9C%EA%B5%AD%EA%B3%A0%EC%9A%A9%EC%A0%95%EB%B3%B4%EC%8B%9C%EC%8A%A4%ED%85%9C',
-            description: '[조달청 사전규격] 담당: 조달청 담당부서 (043-870-8181) / 참조: 107-82-11255'
-        }
-    ], []);
+    // 🏛️ 조달청 OpenAPI 실시간 데이터만을 다루며, 가상의 정보(Mock)는 일체 배제합니다.
 
     // API Key 저장
     const handle_save_api_key = (key) => {
@@ -410,26 +186,28 @@ export default function G2bSearch() {
             const parsed_result = parse_api_response(text);
 
             if (parsed_result.items.length > 0) {
-                // 원본 파싱 및 표준 객체 변환 (사전규격 / 입찰공고 / 발주계획 통합 지원)
+                // 원본 파싱 및 표준 객체 변환 (사전규격 / 입찰공고 / 발주계획 / 계약 / 낙찰 통합 지원)
                 let formatted_list = parsed_result.items.map((it, idx) => {
                     const budget_num = parseInt(
-                        it.asignBdgtAmt || it.assignBdgtAmt || it.presmPrc || it.bdgtAmt || it.totPrdprcAmt || 0,
+                        it.cntrctAmt || it.thtmCntrctAmt || it.scsbidAmt || it.asignBdgtAmt || it.assignBdgtAmt || it.presmPrc || it.bdgtAmt || it.totPrdprcAmt || 0,
                         10
                     );
                     
-                    const raw_reg_dt = it.rcptDt || it.rgstDt || it.bidNtceDt || it.orderDt || '';
+                    const raw_reg_dt = it.cntrctCnclsDate || it.cntrctDate || it.opengDt || it.rcptDt || it.rgstDt || it.bidNtceDt || it.orderDt || (it.orderYear ? `${it.orderYear}-01-01` : '');
                     const reg_dt_str = raw_reg_dt.length >= 10 ? raw_reg_dt.substring(0, 10) : (raw_reg_dt || '-');
                     
-                    const raw_due_dt = it.opninRgstClseDt || it.opninRcptClsDt || it.bidClseDt || it.opngDt || '';
+                    const raw_due_dt = it.cntrctPd || it.cntrctEndDt || it.opninRgstClseDt || it.opninRcptClsDt || it.bidClseDt || '';
                     const due_dt_str = raw_due_dt.length >= 10 ? raw_due_dt.substring(0, 10) : (raw_due_dt || '-');
 
-                    const item_no = it.bidNtceNo || it.refNo || it.rcptNo || it.bfStndRqstNo || it.orderPlanNo || `G2B-${idx + 1}`;
-                    const title_val = it.bidNtceNm || it.prdctClsfcNoNm || it.prcurRqstPrdNm || it.orderNm || it.bizNm || '사업명 미표시';
-                    const agency_val = it.dminsttNm || it.orderInsttNm || it.ntceInsttNm || it.rlDminsttNm || it.rlDmdOrganNm || it.orderOrganNm || '수요기관 미표시';
-                    const category_val = it.bsnsDivNm || it.taskClNm || it.orderClsNm || (target_service_type === 'bid' ? '입찰공고' : '일반용역');
+                    const item_no = it.untyCntrctNo || it.cntrctNo || it.dcsnCntrctNo || it.bidNtceNo || it.refNo || it.rcptNo || it.bfStndRqstNo || it.orderPlanNo || it.orderPlanUntPrjctNo || `G2B-${idx + 1}`;
+                    const title_val = it.cntrctNm || it.orderPlanNm || it.bidNtceNm || it.prdctClsfcNoNm || it.prcurRqstPrdNm || it.orderNm || it.bizNm || '사업명 미표시';
+                    const agency_val = it.orderInsttNm || it.totlmngInsttNm || it.dminsttNm || it.ntceInsttNm || it.rlDminsttNm || it.rlDmdOrganNm || it.orderOrganNm || '수요기관 미표시';
+                    const category_val = it.bsnsDivNm || it.taskClNm || it.orderClsNm || (target_service_type === 'bid' ? '입찰공고' : (target_service_type === 'contract' ? '계약정보' : (target_service_type === 'scsbid' ? '낙찰정보' : (target_service_type === 'orderplan' ? '발주계획' : '일반용역'))));
 
-                    const type_label = target_service_type === 'bid' ? '입찰공고' : (target_service_type === 'orderplan' ? '발주계획' : '사전규격');
+                    const type_label = target_service_type === 'bid' ? '입찰공고' : (target_service_type === 'contract' ? '계약정보' : (target_service_type === 'scsbid' ? '낙찰정보' : (target_service_type === 'orderplan' ? '발주계획' : '사전규격')));
                     const official_link = it.bidNtceDtlUrl || `https://www.g2b.go.kr/search/search.do?category=total&kwd=${encodeURIComponent(title_val)}`;
+
+                    const extra_info = it.corpNm ? ` [계약/낙찰업체: ${it.corpNm}]` : (it.mainCntrctEntrpsNm ? ` [계약업체: ${it.mainCntrctEntrpsNm}]` : '');
 
                     return {
                         id: item_no,
@@ -439,11 +217,12 @@ export default function G2bSearch() {
                         category: category_val,
                         budget: budget_num,
                         regDate: reg_dt_str,
+                        rawDate: raw_reg_dt,
                         dueDate: due_dt_str,
-                        status: it.bidNtceStatNm || (target_service_type === 'bid' ? '공고중' : '의견수렴중'),
+                        status: it.cntrctCnclsMthdNm || it.bidNtceStatNm || (target_service_type === 'contract' ? '계약체결' : (target_service_type === 'scsbid' ? '낙찰완료' : (target_service_type === 'bid' ? '공고중' : '의견수렴중'))),
                         orderTime: reg_dt_str !== '-' ? `${reg_dt_str.substring(0, 4)}년 ${reg_dt_str.substring(5, 7)}월` : '2026년',
                         detailUrl: official_link,
-                        description: `[조달청 ${type_label}] 번호: ${item_no} / 기관: ${agency_val} / 담당: ${it.ofclNm || it.chrgDeptNm || '조달청 담당부서'}${it.ofclTelNo ? ` (${it.ofclTelNo})` : ''}`
+                        description: `[조달청 ${type_label}] 번호: ${item_no} / 기관: ${agency_val}${extra_info} / 담당: ${it.ofclNm || it.chrgDeptNm || '조달청 담당부서'}${it.ofclTelNo ? ` (${it.ofclTelNo})` : ''}`
                     };
                 });
 
@@ -479,6 +258,13 @@ export default function G2bSearch() {
                     });
                 }
 
+                // 🌟 최신순 정렬: 등록일시/게시일시 기준 내림차순(Descending) 정렬
+                formatted_list.sort((a, b) => {
+                    const dt_a = a.rawDate || a.regDate || '';
+                    const dt_b = b.rawDate || b.regDate || '';
+                    return dt_b.localeCompare(dt_a);
+                });
+
                 set_search_results(formatted_list);
                 setApiSuccessCount(parsed_result.items.length);
                 set_applied_filter({
@@ -490,52 +276,9 @@ export default function G2bSearch() {
                     use_smart_synonym: use_smart_synonym
                 });
             } else {
-                // API 키 동기화 중이거나 0건일 때 실제 조달청 공고 데이터셋에서 조건 매칭
-                const kw = input_keyword.trim().toLowerCase();
-                const ag = input_agency.trim().toLowerCase();
-
-                let target_keywords = [];
-                if (kw) {
-                    target_keywords.push(kw);
-                    if (use_smart_synonym) {
-                        Object.keys(synonym_map).forEach(key => {
-                            if (key === kw || synonym_map[key].includes(kw)) {
-                                target_keywords.push(...synonym_map[key]);
-                            }
-                        });
-                    }
-                    target_keywords = [...new Set(target_keywords.map(k => k.toLowerCase()))];
-                }
-
-                // 실제 공고 데이터셋에서 날짜, 서비스 유형, 키워드, 기관 조건 정밀 매칭
-                const clean_ag = ag.replace(/\s+/g, '');
-
-                let matched_list = real_g2b_dataset.filter(item => {
-                    // 서비스 타입 매칭 (사전규격 vs 입찰공고 vs 발주계획)
-                    if (target_service_type === 'bid' && item.type !== '입찰공고') return false;
-                    if (target_service_type === 'prespec' && item.type !== '사전규격') return false;
-                    if (target_service_type === 'orderplan' && item.type !== '발주계획') return false;
-
-                    // 날짜 범위 체크 (등록일 기준)
-                    if (item.regDate < input_start_date || item.regDate > input_end_date) return false;
-
-                    // 키워드 체크
-                    if (target_keywords.length > 0) {
-                        const text = `${item.title} ${item.category} ${item.description}`.toLowerCase();
-                        if (!target_keywords.some(k => text.includes(k))) return false;
-                    }
-
-                    // 수요기관 체크 (공백 제거 후 유연한 매칭)
-                    if (clean_ag) {
-                        const item_agency_clean = (item.agency + ' ' + (item.description || '')).replace(/\s+/g, '').toLowerCase();
-                        if (!item_agency_clean.includes(clean_ag)) return false;
-                    }
-
-                    return true;
-                });
-
-                set_search_results(matched_list);
-                setApiSuccessCount(matched_list.length);
+                // 조달청 실서버에서 0건이 수신된 경우 또는 API 키 미승인 시
+                set_search_results([]);
+                setApiSuccessCount(0);
                 set_applied_filter({
                     service_type: target_service_type,
                     keyword: input_keyword,
@@ -548,9 +291,9 @@ export default function G2bSearch() {
                 if (parsed_result.resultCode && parsed_result.resultCode !== '00') {
                     const msg = parsed_result.resultMsg || '';
                     if (msg.includes('SERVICE_KEY_IS_NOT_REGISTERED')) {
-                        setApiError('공공데이터포털(data.go.kr) API 키 동기화 진행 중입니다. 나라장터 실제 실시간 공고 데이터셋으로 자동 전환하여 표시합니다.');
-                    } else if (msg.includes('LIMITED_NUMBER_OF_SERVICE_REQUESTS')) {
-                        setApiError('일일 API 호출 한도를 초과하여 실제 조달 데이터셋으로 자동 전환하여 표시합니다.');
+                        setApiError('공공데이터포털(data.go.kr)에 등록된 인증키가 아직 조달청 게이트웨이에 동기화 중(코드 30)이거나 유효하지 않습니다. 실데이터만 제공하기 위해 가상 데이터는 표출하지 않습니다.');
+                    } else {
+                        setApiError(`[조달청 API 알림: 코드 ${parsed_result.resultCode}] ${msg}`);
                     }
                 }
             }
@@ -718,8 +461,8 @@ export default function G2bSearch() {
                     </div>
                 )}
 
-                {/* 🏷️ 조달청 서비스 영역 선택 탭 */}
-                <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px' }}>
+                {/* 🏷️ 조달청 서비스 영역 선택 탭 (4대 핵심 서비스) */}
+                <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px', flexWrap: 'wrap' }}>
                     <button
                         onClick={() => { set_active_tab('prespec'); handle_search('prespec'); }}
                         style={{
@@ -756,6 +499,18 @@ export default function G2bSearch() {
                     >
                         📑 발주계획 현황
                     </button>
+                    <button
+                        onClick={() => { set_active_tab('contract'); handle_search('contract'); }}
+                        style={{
+                            padding: '10px 18px', borderRadius: '10px', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '6px',
+                            background: active_tab === 'contract' ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(217, 119, 6, 0.25))' : 'rgba(255,255,255,0.03)',
+                            border: `1px solid ${active_tab === 'contract' ? '#f59e0b' : 'var(--panel-border)'}`,
+                            color: active_tab === 'contract' ? '#fbbf24' : 'var(--text-secondary)'
+                        }}
+                    >
+                        📝 계약정보 현황
+                    </button>
                 </div>
 
                 {/* 🔍 검색 조건 입력 폼 */}
@@ -766,7 +521,7 @@ export default function G2bSearch() {
                 }}>
                     <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Filter size={16} color="var(--accent-blue)" /> 
-                        {active_tab === 'bid' ? '📢 나라장터 입찰공고 실시간 검색 조건' : (active_tab === 'orderplan' ? '📑 나라장터 발주계획 실시간 검색 조건' : '📋 나라장터 사전규격 실시간 검색 조건')}
+                        {active_tab === 'bid' ? '📢 나라장터 입찰공고 실시간 검색 조건' : (active_tab === 'orderplan' ? '📑 나라장터 발주계획 실시간 검색 조건' : (active_tab === 'contract' ? '📝 나라장터 계약정보 실시간 검색 조건' : '📋 나라장터 사전규격 실시간 검색 조건'))}
                     </div>
 
                     {/* 1열: 조회 기간 선택 (최근 1주일 버튼 + 직접 날짜 선택) */}
@@ -951,7 +706,7 @@ export default function G2bSearch() {
                         ))}
                     </div>
 
-                    {/* 🚀 사전규격/입찰공고 실시간 API 호출 버튼 */}
+                    {/* 🚀 5대 핵심 서비스 실시간 API 호출 버튼 */}
                     <div style={{ display: 'flex', gap: '12px', marginTop: '6px' }}>
                         <button
                             id="btn-fetch-g2b-spec"
@@ -959,17 +714,17 @@ export default function G2bSearch() {
                             disabled={isLoading}
                             style={{
                                 flex: 1, padding: '16px', borderRadius: '10px', border: 'none',
-                                background: active_tab === 'bid' ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : (active_tab === 'orderplan' ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #a855f7, #7c3aed)'),
+                                background: active_tab === 'bid' ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : (active_tab === 'orderplan' ? 'linear-gradient(135deg, #10b981, #059669)' : (active_tab === 'contract' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'linear-gradient(135deg, #a855f7, #7c3aed)')),
                                 color: 'white', fontWeight: 800, fontSize: '15.5px', cursor: isLoading ? 'not-allowed' : 'pointer',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                                boxShadow: active_tab === 'bid' ? '0 4px 20px rgba(59, 130, 246, 0.35)' : '0 4px 20px rgba(168, 85, 247, 0.35)',
+                                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
                                 transition: 'all 0.2s'
                             }}
                         >
                             {isLoading ? (
                                 <><Loader2 size={20} className="animate-spin" /> 조달청 나라장터 DB 실시간 연동 수집 중...</>
                             ) : (
-                                <><Globe size={20} /> {active_tab === 'bid' ? '📢 나라장터 실시간 입찰공고 조회하기' : (active_tab === 'orderplan' ? '📑 나라장터 발주계획 조회하기' : '📋 나라장터 실시간 사전규격 조회하기')} (선택 조건 실행)</>
+                                <><Globe size={20} /> {active_tab === 'bid' ? '📢 나라장터 실시간 입찰공고 조회하기' : (active_tab === 'orderplan' ? '📑 나라장터 발주계획 조회하기' : (active_tab === 'contract' ? '📝 나라장터 계약정보 조회하기' : '📋 나라장터 실시간 사전규격 조회하기'))} (선택 조건 실행)</>
                             )}
                         </button>
                     </div>
@@ -1002,7 +757,7 @@ export default function G2bSearch() {
             <div className="glass-panel animate-slide-up" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                     <h3 style={{ margin: 0, fontSize: '17px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {active_tab === 'bid' ? '📢 조달청 나라장터 실제 입찰공고 (본공고) 목록' : (active_tab === 'orderplan' ? '📑 조달청 나라장터 발주계획 목록' : '📋 조달청 나라장터 실제 사전규격 수집 목록')}
+                        {active_tab === 'bid' ? '📢 조달청 나라장터 실제 입찰공고 (본공고) 목록' : (active_tab === 'orderplan' ? '📑 조달청 나라장터 발주계획 목록' : (active_tab === 'contract' ? '📝 조달청 나라장터 계약정보 목록' : '📋 조달청 나라장터 실제 사전규격 수집 목록'))}
                         <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 400 }}>({search_results.length}건 표시중)</span>
                     </h3>
 
@@ -1019,35 +774,59 @@ export default function G2bSearch() {
                                 color: '#c084fc', fontWeight: 600, fontSize: '12.5px', textDecoration: 'none'
                             }}
                         >
-                            🌐 g2b 공식 웹사이트 실시간 {active_tab === 'bid' ? '입찰공고' : '사전규격'} 검색 <ExternalLink size={13} />
+                            🌐 g2b 공식 웹사이트 실시간 {active_tab === 'bid' ? '입찰공고' : (active_tab === 'contract' ? '계약정보' : (active_tab === 'orderplan' ? '발주계획' : '사전규격'))} 검색 <ExternalLink size={13} />
                         </a>
                     </div>
                 </div>
 
                 {search_results.length === 0 ? (
-                    <div style={{ padding: '60px 20px', textAlign: 'center', background: 'rgba(0,0,0,0.15)', borderRadius: '14px', border: '1px dashed var(--panel-border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ padding: '50px 20px', textAlign: 'center', background: 'rgba(0,0,0,0.15)', borderRadius: '14px', border: '1px dashed var(--panel-border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
                         <Clock size={36} color="#a855f7" />
                         <div>
                             <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                조건에 일치하는 공고가 없거나 아직 조회하지 않았습니다.
+                                {isLoading ? '조달청 실서버로부터 실시간 데이터를 수신하는 중입니다...' : '조건에 일치하는 실제 공고가 없거나 아직 조회되지 않았습니다.'}
                             </div>
                             <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '6px' }}>
-                                상단 검색 조건(기간, 키워드 등)을 설정한 후 <strong>[나라장터 실시간 조회하기]</strong> 버튼을 눌러주세요.
+                                본 시스템은 <strong>가상의 데이터를 일체 배제</strong>하며 100% 조달청 실서버 데이터만을 표출합니다.
                             </div>
+                        </div>
+                        <div style={{ marginTop: '6px' }}>
+                            <a
+                                href={active_tab === 'bid' ? get_g2b_official_search_url('integrated') : get_g2b_official_search_url('preCom')}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                    padding: '10px 18px', borderRadius: '8px',
+                                    background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(124, 58, 237, 0.25))',
+                                    border: '1px solid rgba(168, 85, 247, 0.4)',
+                                    color: '#c084fc', fontWeight: 700, fontSize: '13px', textDecoration: 'none'
+                                }}
+                            >
+                                🌐 나라장터(g2b.go.kr) 공식 사이트에서 입력 조건으로 실시간 직접 조회 <ExternalLink size={14} />
+                            </a>
                         </div>
                     </div>
                 ) : (
-                    <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid var(--panel-border)' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13.5px', textAlign: 'left' }}>
-                            <thead>
-                                <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
-                                    <th style={{ padding: '14px 16px', width: '90px' }}>구분</th>
-                                    <th style={{ padding: '14px 16px' }}>{active_tab === 'bid' ? '입찰 공고명' : (active_tab === 'orderplan' ? '발주계획 사업명' : '사전규격 사업명')}</th>
-                                    <th style={{ padding: '14px 16px', width: '180px' }}>수요기관 (발주처)</th>
-                                    <th style={{ padding: '14px 16px', width: '130px' }}>추정 예산</th>
-                                    <th style={{ padding: '14px 16px', width: '110px' }}>게시/등록일</th>
-                                    <th style={{ padding: '14px 16px', width: '110px' }}>{active_tab === 'bid' ? '입찰마감일' : (active_tab === 'orderplan' ? '발주예정월' : '의견마감일')}</th>
-                                    <th style={{ padding: '14px 16px', width: '90px', textAlign: 'center' }}>g2b 상세</th>
+                    <div style={{
+                        maxHeight: '620px',
+                        overflowY: 'auto',
+                        overflowX: 'auto',
+                        borderRadius: '12px',
+                        border: '1px solid var(--panel-border)',
+                        background: 'rgba(0, 0, 0, 0.2)',
+                        boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
+                    }}>
+                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '13.5px', textAlign: 'left' }}>
+                            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                                <tr style={{ background: '#181a20', borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                                    <th style={{ padding: '14px 16px', width: '90px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>구분</th>
+                                    <th style={{ padding: '14px 16px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>{active_tab === 'bid' ? '입찰 공고명' : (active_tab === 'orderplan' ? '발주계획 사업명' : (active_tab === 'contract' ? '계약 사업명' : '사전규격 사업명'))}</th>
+                                    <th style={{ padding: '14px 16px', width: '180px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>수요기관 (발주처)</th>
+                                    <th style={{ padding: '14px 16px', width: '130px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>{active_tab === 'contract' ? '계약 금액' : '추정 예산'}</th>
+                                    <th style={{ padding: '14px 16px', width: '110px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>{active_tab === 'contract' ? '계약일자' : '게시/등록일'}</th>
+                                    <th style={{ padding: '14px 16px', width: '110px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>{active_tab === 'bid' ? '입찰마감일' : (active_tab === 'orderplan' ? '발주예정월' : (active_tab === 'contract' ? '계약기간' : '의견마감일'))}</th>
+                                    <th style={{ padding: '14px 16px', width: '90px', textAlign: 'center', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>g2b 상세</th>
                                 </tr>
                             </thead>
                             <tbody>
