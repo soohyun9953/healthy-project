@@ -24,34 +24,60 @@ export default async function handler(req, res) {
         const key_encoded = encodeURIComponent(service_key);
         const key_variants = [...new Set([key_raw, key_encoded])];
 
-        if (service_type === 'prespec') {
-            // 🌟 사전규격: 용역, 물품, 공사 3대 분야를 병렬로 모두 수집하여 통합
-            const prespec_endpoints = [
-                `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServc`,
-                `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoThng`,
-                `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoCnstwk`
-            ];
-
+        const fetch_all_pages = async (base_url_builder) => {
+            // 1단계: 첫 페이지 호출 및 전체 개수 파악
+            const first_url = base_url_builder(1);
+            let first_items = [];
+            let total_count = 0;
             try {
-                const fetch_tasks = prespec_endpoints.map(async (ep) => {
-                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1`;
+                const first_resp = await fetch(first_url);
+                const first_parsed = await first_resp.json();
+                first_items = first_parsed?.response?.body?.items || [];
+                total_count = parseInt(first_parsed?.response?.body?.totalCount || '0', 10);
+            } catch (e) {
+                return [];
+            }
+
+            if (total_count <= 999 || first_items.length === 0) {
+                return first_items;
+            }
+
+            // 2단계: 2페이지부터 마지막 페이지까지 전체 병렬 수집 (최대 15페이지, 약 15,000건)
+            const total_pages = Math.min(15, Math.ceil(total_count / 999));
+            const remaining_pages = [];
+            for (let p = 2; p <= total_pages; p++) {
+                remaining_pages.push(p);
+            }
+
+            const page_tasks = remaining_pages.map(async (p) => {
+                const url = base_url_builder(p);
+                try {
+                    const resp = await fetch(url);
+                    const data = await resp.json();
+                    return data?.response?.body?.items || [];
+                } catch (e) {
+                    return [];
+                }
+            });
+
+            const rest_results = await Promise.all(page_tasks);
+            return [...first_items, ...rest_results.flat()];
+        };
+
+        if (service_type === 'prespec') {
+            // 🌟 사전규격: 순수 용역 분야 1~5페이지 전수 수집 (누락 방지)
+            try {
+                const ep = `https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServc`;
+                const merged_items = await fetch_all_pages((p) => {
+                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=999&pageNo=${p}&inqryDiv=1`;
                     if (inqry_bgn_dt) url += `&inqryBgnDt=${inqry_bgn_dt}`;
                     if (inqry_end_dt) url += `&inqryEndDt=${inqry_end_dt}`;
-                    try {
-                        const resp = await fetch(url);
-                        const data = await resp.json();
-                        return data?.response?.body?.items || [];
-                    } catch (e) {
-                        return [];
-                    }
+                    return url;
                 });
-
-                const results = await Promise.all(fetch_tasks);
-                const merged_items = results.flat();
 
                 return res.status(200).json({
                     response: {
-                        header: { resultCode: '00', resultMsg: '정상 (용역·물품·공사 통합)' },
+                        header: { resultCode: '00', resultMsg: '정상 (용역 전수 수집/물품·공사 제외)' },
                         body: { items: merged_items, totalCount: merged_items.length }
                     }
                 });
@@ -61,33 +87,19 @@ export default async function handler(req, res) {
         }
 
         if (service_type === 'bid') {
-            // 🌟 실시간 입찰공고: 용역, 물품, 공사 3대 분야를 병렬로 모두 수집하여 통합
-            const bid_endpoints = [
-                `https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServcPPSSrch`,
-                `https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoThngPPSSrch`,
-                `https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwkPPSSrch`
-            ];
-
+            // 🌟 실시간 입찰공고: 순수 용역 분야 1~5페이지 전수 수집
             try {
-                const fetch_tasks = bid_endpoints.map(async (ep) => {
-                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1`;
+                const ep = `https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServcPPSSrch`;
+                const merged_items = await fetch_all_pages((p) => {
+                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=999&pageNo=${p}&inqryDiv=1`;
                     if (inqry_bgn_dt) url += `&inqryBgnDt=${inqry_bgn_dt}`;
                     if (inqry_end_dt) url += `&inqryEndDt=${inqry_end_dt}`;
-                    try {
-                        const resp = await fetch(url);
-                        const data = await resp.json();
-                        return data?.response?.body?.items || [];
-                    } catch (e) {
-                        return [];
-                    }
+                    return url;
                 });
-
-                const results = await Promise.all(fetch_tasks);
-                const merged_items = results.flat();
 
                 return res.status(200).json({
                     response: {
-                        header: { resultCode: '00', resultMsg: '정상 (입찰공고 용역·물품·공사 통합)' },
+                        header: { resultCode: '00', resultMsg: '정상 (입찰공고 용역 전수 수집/물품·공사 제외)' },
                         body: { items: merged_items, totalCount: merged_items.length }
                     }
                 });
@@ -97,39 +109,46 @@ export default async function handler(req, res) {
         }
 
         if (service_type === 'orderplan') {
-            // 🌟 발주계획 현황: 용역, 물품, 공사 3대 분야를 병렬로 모두 수집하여 통합
-            const orderplan_endpoints = [
-                `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusListServc`,
-                `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusListThng`,
-                `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusListCnstwk`
-            ];
-
+            // 🌟 발주계획 현황: 순수 용역 분야 1~5페이지 전수 수집
             try {
                 const bgn_dt_clean = (inqry_bgn_dt || '').substring(0, 8) || '20260101';
                 const end_dt_clean = (inqry_end_dt || '').substring(0, 8) || '20261231';
+                const ep = `https://apis.data.go.kr/1230000/ao/OrderPlanSttusService/getOrderPlanSttusListServc`;
 
-                const fetch_tasks = orderplan_endpoints.map(async (ep) => {
-                    const url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=100&pageNo=1&inqryDiv=1&inqryBgnDate=${bgn_dt_clean}&inqryEndDate=${end_dt_clean}`;
-                    try {
-                        const resp = await fetch(url);
-                        const data = await resp.json();
-                        return data?.response?.body?.items || [];
-                    } catch (e) {
-                        return [];
-                    }
+                const merged_items = await fetch_all_pages((p) => {
+                    return `${ep}?serviceKey=${key_raw}&type=json&numOfRows=999&pageNo=${p}&inqryDiv=1&inqryBgnDate=${bgn_dt_clean}&inqryEndDate=${end_dt_clean}`;
                 });
-
-                const results = await Promise.all(fetch_tasks);
-                const merged_items = results.flat();
 
                 return res.status(200).json({
                     response: {
-                        header: { resultCode: '00', resultMsg: '정상 (발주계획 용역·물품·공사 통합)' },
+                        header: { resultCode: '00', resultMsg: '정상 (발주계획 용역 전수 수집/물품·공사 제외)' },
                         body: { items: merged_items, totalCount: merged_items.length }
                     }
                 });
             } catch (e) {
                 console.error('발주계획 병렬 수집 에러:', e);
+            }
+        }
+
+        if (service_type === 'contract') {
+            // 🌟 계약정보 현황: 순수 용역 분야 1~5페이지 전수 수집
+            try {
+                const ep = `https://apis.data.go.kr/1230000/ao/CntrctInfoService/getCntrctInfoListServc`;
+                const merged_items = await fetch_all_pages((p) => {
+                    let url = `${ep}?serviceKey=${key_raw}&type=json&numOfRows=999&pageNo=${p}&inqryDiv=1`;
+                    if (inqry_bgn_dt) url += `&inqryBgnDt=${inqry_bgn_dt}`;
+                    if (inqry_end_dt) url += `&inqryEndDt=${inqry_end_dt}`;
+                    return url;
+                });
+
+                return res.status(200).json({
+                    response: {
+                        header: { resultCode: '00', resultMsg: '정상 (계약정보 용역 전수 수집/물품·공사 제외)' },
+                        body: { items: merged_items, totalCount: merged_items.length }
+                    }
+                });
+            } catch (e) {
+                console.error('계약정보 병렬 수집 에러:', e);
             }
         }
 

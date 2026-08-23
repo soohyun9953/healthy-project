@@ -28,7 +28,7 @@ export default function G2bSearch() {
     const [input_agency, set_input_agency] = useState('');
     const [input_start_date, set_input_start_date] = useState(get_past_days_string(7)); // 기본값: 최근 1주일 전
     const [input_end_date, set_input_end_date] = useState(get_today_string());         // 기본값: 오늘
-    const [use_smart_synonym, set_use_smart_synonym] = useState(true);                  // 스마트 동의어 검색 옵션 (기본 ON)
+    const [use_smart_synonym, set_use_smart_synonym] = useState(false);                 // 🌟 스마트 동의어 검색 옵션 (기본 OFF: 단어일치)
 
     // 2. 적용된 검색 결과 상태 (조회 버튼을 눌렀을 때만 갱신)
     const [search_results, set_search_results] = useState([]);
@@ -38,7 +38,7 @@ export default function G2bSearch() {
         agency: '',
         start_date: get_past_days_string(7),
         end_date: get_today_string(),
-        use_smart_synonym: true
+        use_smart_synonym: false
     });
 
     const [dataGovApiKey, setDataGovApiKey] = useState(() => {
@@ -201,29 +201,63 @@ export default function G2bSearch() {
 
                     const item_no = it.untyCntrctNo || it.cntrctNo || it.dcsnCntrctNo || it.bidNtceNo || it.refNo || it.rcptNo || it.bfStndRqstNo || it.orderPlanNo || it.orderPlanUntPrjctNo || `G2B-${idx + 1}`;
                     const title_val = it.cntrctNm || it.orderPlanNm || it.bidNtceNm || it.prdctClsfcNoNm || it.prcurRqstPrdNm || it.orderNm || it.bizNm || '사업명 미표시';
-                    const agency_val = it.orderInsttNm || it.totlmngInsttNm || it.dminsttNm || it.ntceInsttNm || it.rlDminsttNm || it.rlDmdOrganNm || it.orderOrganNm || '수요기관 미표시';
-                    const category_val = it.bsnsDivNm || it.taskClNm || it.orderClsNm || (target_service_type === 'bid' ? '입찰공고' : (target_service_type === 'contract' ? '계약정보' : (target_service_type === 'scsbid' ? '낙찰정보' : (target_service_type === 'orderplan' ? '발주계획' : '일반용역'))));
+                    
+                    // 🏛️ 수요기관(실수요처) vs 공고기관(발주대행기관) 정밀 분리
+                    let demand_agency_val = '수요기관 미표시';
+                    let notice_agency_val = '공고기관 미표시';
 
-                    const type_label = target_service_type === 'bid' ? '입찰공고' : (target_service_type === 'contract' ? '계약정보' : (target_service_type === 'scsbid' ? '낙찰정보' : (target_service_type === 'orderplan' ? '발주계획' : '사전규격')));
+                    if (target_service_type === 'prespec') {
+                        // 사전규격: rlDminsttNm(실수요기관) 최우선, orderInsttNm(공고/발주기관)
+                        demand_agency_val = it.rlDminsttNm || it.rlDmdOrganNm || it.dminsttNm || it.orderInsttNm || '수요기관 미표시';
+                        notice_agency_val = it.orderInsttNm || it.orderOrganNm || it.pblntcInsttNm || '공고기관 미표시';
+                    } else if (target_service_type === 'bid') {
+                        // 입찰공고: dminsttNm(수요기관) 최우선, ntceInsttNm(공고기관)
+                        demand_agency_val = it.dminsttNm || it.rlDminsttNm || it.orderInsttNm || '수요기관 미표시';
+                        notice_agency_val = it.ntceInsttNm || it.pblntcInsttNm || '공고기관 미표시';
+                    } else if (target_service_type === 'orderplan') {
+                        // 발주계획: orderInsttNm(발주/수요기관)
+                        demand_agency_val = it.orderInsttNm || it.totlmngInsttNm || '수요기관 미표시';
+                        notice_agency_val = it.totlmngInsttNm || it.orderInsttNm || '공고기관 미표시';
+                    } else if (target_service_type === 'contract') {
+                        // 계약정보: cntrctInsttNm(수요/계약기관)
+                        demand_agency_val = it.cntrctInsttNm || it.dminsttNm || it.rlDminsttNm || '수요기관 미표시';
+                        notice_agency_val = it.cntrctInsttNm || '계약기관 미표시';
+                    } else {
+                        demand_agency_val = it.rlDminsttNm || it.dminsttNm || it.orderInsttNm || '수요기관 미표시';
+                        notice_agency_val = it.orderInsttNm || it.ntceInsttNm || '공고기관 미표시';
+                    }
+
+                    const category_val = it.bsnsDivNm || it.taskClNm || it.orderClsNm || (target_service_type === 'bid' ? '입찰공고' : (target_service_type === 'contract' ? '계약정보' : (target_service_type === 'orderplan' ? '발주계획' : '일반용역')));
+                    const type_label = target_service_type === 'bid' ? '입찰공고' : (target_service_type === 'contract' ? '계약정보' : (target_service_type === 'orderplan' ? '발주계획' : '사전규격'));
                     const official_link = it.bidNtceDtlUrl || `https://www.g2b.go.kr/search/search.do?category=total&kwd=${encodeURIComponent(title_val)}`;
 
-                    const extra_info = it.corpNm ? ` [계약/낙찰업체: ${it.corpNm}]` : (it.mainCntrctEntrpsNm ? ` [계약업체: ${it.mainCntrctEntrpsNm}]` : '');
+                    const extra_info = it.corpNm ? ` [계약업체: ${it.corpNm}]` : (it.mainCntrctEntrpsNm ? ` [계약업체: ${it.mainCntrctEntrpsNm}]` : '');
 
                     return {
                         id: item_no,
                         type: type_label,
                         title: title_val,
-                        agency: agency_val,
+                        agency: demand_agency_val,          // 🌟 실수요기관
+                        noticeAgency: notice_agency_val,    // 🏢 공고/발주기관
                         category: category_val,
                         budget: budget_num,
                         regDate: reg_dt_str,
                         rawDate: raw_reg_dt,
                         dueDate: due_dt_str,
-                        status: it.cntrctCnclsMthdNm || it.bidNtceStatNm || (target_service_type === 'contract' ? '계약체결' : (target_service_type === 'scsbid' ? '낙찰완료' : (target_service_type === 'bid' ? '공고중' : '의견수렴중'))),
+                        status: it.cntrctCnclsMthdNm || it.bidNtceStatNm || (target_service_type === 'contract' ? '계약체결' : (target_service_type === 'bid' ? '공고중' : '의견수렴중')),
                         orderTime: reg_dt_str !== '-' ? `${reg_dt_str.substring(0, 4)}년 ${reg_dt_str.substring(5, 7)}월` : '2026년',
                         detailUrl: official_link,
-                        description: `[조달청 ${type_label}] 번호: ${item_no} / 기관: ${agency_val}${extra_info} / 담당: ${it.ofclNm || it.chrgDeptNm || '조달청 담당부서'}${it.ofclTelNo ? ` (${it.ofclTelNo})` : ''}`
+                        description: `[조달청 ${type_label}] 번호: ${item_no} / 실수요기관: ${demand_agency_val}${notice_agency_val && notice_agency_val !== demand_agency_val ? ` (공고기관: ${notice_agency_val})` : ''}${extra_info} / 담당: ${it.ofclNm || it.chrgDeptNm || '조달청 담당부서'}${it.ofclTelNo ? ` (${it.ofclTelNo})` : ''}`
                     };
+                });
+
+                // 🚫 물품 및 공사 완전 제외 필터링 (순수 용역·IT·컨설팅·개발 중심)
+                formatted_list = formatted_list.filter(item => {
+                    const cat = (item.category || '').trim();
+                    const title = (item.title || '').trim();
+                    const is_goods = cat.includes('물품') || cat.includes('구매');
+                    const is_cnstwk = cat.includes('공사') || cat.includes('시공') || title.includes('[공사]');
+                    return !is_goods && !is_cnstwk;
                 });
 
                 // 키워드 확장 (스마트 동의어 옵션 활성화 여부에 따라 분기)
@@ -243,18 +277,23 @@ export default function G2bSearch() {
                     target_keywords = [...new Set(target_keywords.map(k => k.toLowerCase()))];
                 }
 
-                // 키워드 및 수요기관 필터링
+                // 키워드 및 실수요기관 필터링
                 if (target_keywords.length > 0) {
                     formatted_list = formatted_list.filter(item => {
-                        const target_text = `${item.title} ${item.category} ${item.description}`.toLowerCase();
-                        return target_keywords.some(k => target_text.includes(k));
+                        const target_text = `${item.title} ${item.category} ${item.agency} ${item.description}`.toLowerCase().replace(/[\s\(\)\[\]\/]/g, '');
+                        return target_keywords.some(k => {
+                            const clean_k = k.replace(/[\s\(\)\[\]\/]/g, '');
+                            return target_text.includes(clean_k);
+                        });
                     });
                 }
                 if (ag) {
                     const clean_ag = ag.replace(/\s+/g, '');
+                    // 🌟 오직 실수요기관(demand_agency)을 최우선으로 일치 검사
                     formatted_list = formatted_list.filter(item => {
-                        const item_agency_clean = (item.agency + ' ' + (item.description || '')).replace(/\s+/g, '').toLowerCase();
-                        return item_agency_clean.includes(clean_ag);
+                        const demand_clean = (item.agency || '').replace(/\s+/g, '').toLowerCase();
+                        const notice_clean = (item.noticeAgency || '').replace(/\s+/g, '').toLowerCase();
+                        return demand_clean.includes(clean_ag) || notice_clean.includes(clean_ag);
                     });
                 }
 
@@ -464,7 +503,7 @@ export default function G2bSearch() {
                 {/* 🏷️ 조달청 서비스 영역 선택 탭 (4대 핵심 서비스) */}
                 <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px', flexWrap: 'wrap' }}>
                     <button
-                        onClick={() => { set_active_tab('prespec'); handle_search('prespec'); }}
+                        onClick={() => set_active_tab('prespec')}
                         style={{
                             padding: '10px 18px', borderRadius: '10px', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer',
                             display: 'flex', alignItems: 'center', gap: '6px',
@@ -476,7 +515,7 @@ export default function G2bSearch() {
                         📋 사전규격 공개
                     </button>
                     <button
-                        onClick={() => { set_active_tab('bid'); handle_search('bid'); }}
+                        onClick={() => set_active_tab('bid')}
                         style={{
                             padding: '10px 18px', borderRadius: '10px', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer',
                             display: 'flex', alignItems: 'center', gap: '6px',
@@ -488,7 +527,7 @@ export default function G2bSearch() {
                         📢 실시간 입찰공고 (본공고)
                     </button>
                     <button
-                        onClick={() => { set_active_tab('orderplan'); handle_search('orderplan'); }}
+                        onClick={() => set_active_tab('orderplan')}
                         style={{
                             padding: '10px 18px', borderRadius: '10px', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer',
                             display: 'flex', alignItems: 'center', gap: '6px',
@@ -500,7 +539,7 @@ export default function G2bSearch() {
                         📑 발주계획 현황
                     </button>
                     <button
-                        onClick={() => { set_active_tab('contract'); handle_search('contract'); }}
+                        onClick={() => set_active_tab('contract')}
                         style={{
                             padding: '10px 18px', borderRadius: '10px', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer',
                             display: 'flex', alignItems: 'center', gap: '6px',
@@ -822,7 +861,7 @@ export default function G2bSearch() {
                                 <tr style={{ background: '#181a20', borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
                                     <th style={{ padding: '14px 16px', width: '90px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>구분</th>
                                     <th style={{ padding: '14px 16px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>{active_tab === 'bid' ? '입찰 공고명' : (active_tab === 'orderplan' ? '발주계획 사업명' : (active_tab === 'contract' ? '계약 사업명' : '사전규격 사업명'))}</th>
-                                    <th style={{ padding: '14px 16px', width: '180px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>수요기관 (발주처)</th>
+                                    <th style={{ padding: '14px 16px', width: '200px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>🏛️ 수요기관 (실수요처)</th>
                                     <th style={{ padding: '14px 16px', width: '130px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>{active_tab === 'contract' ? '계약 금액' : '추정 예산'}</th>
                                     <th style={{ padding: '14px 16px', width: '110px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>{active_tab === 'contract' ? '계약일자' : '게시/등록일'}</th>
                                     <th style={{ padding: '14px 16px', width: '110px', borderBottom: '1px solid var(--panel-border)', background: '#181a20' }}>{active_tab === 'bid' ? '입찰마감일' : (active_tab === 'orderplan' ? '발주예정월' : (active_tab === 'contract' ? '계약기간' : '의견마감일'))}</th>
@@ -849,9 +888,16 @@ export default function G2bSearch() {
                                             </div>
                                         </td>
                                         <td style={{ padding: '14px 16px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <Building2 size={14} color="var(--accent-blue)" />
-                                                {item.agency}
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', fontWeight: 700 }}>
+                                                    <Building2 size={15} color="var(--accent-blue)" />
+                                                    <span>{item.agency}</span>
+                                                </div>
+                                                {item.noticeAgency && item.noticeAgency !== item.agency && (
+                                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', paddingLeft: '21px' }}>
+                                                        공고처: {item.noticeAgency}
+                                                    </div>
+                                                )}
                                             </div>
                                         </td>
                                         <td style={{ padding: '14px 16px', fontWeight: 700, color: 'var(--success-color)' }}>
