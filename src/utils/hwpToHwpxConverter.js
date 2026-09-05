@@ -584,6 +584,24 @@ export async function saveFilesToDirectory(items) {
 }
 
 /**
+ * 모든 HWPX 파일을 브라우저 다운로드로 순차 저장하는 함수
+ */
+export async function downloadAllIndividually(items) {
+  let count = 0;
+  for (const item of items) {
+    const blob = item.blob || item.result?.blob;
+    const name = item.outputName || item.result?.outputName;
+    if (blob && name) {
+      saveBlobAs(blob, name);
+      count++;
+      // 브라우저 다운로드 큐 안정성을 위해 150ms 딜레이
+      await new Promise(r => setTimeout(r, 150));
+    }
+  }
+  return count;
+}
+
+/**
  * 변환된 모든 HWPX 파일들을 하나의 ZIP 파일로 묶어 다운로드하는 함수
  */
 export async function downloadAllAsZip(conversionResults, zipFilename = '변환_HWPX_전체문서.zip') {

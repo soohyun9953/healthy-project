@@ -17,12 +17,14 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
-  Check
+  FileCheck,
+  HardDrive
 } from 'lucide-react';
 import { 
   convertSingleHwpToHwpx, 
   convertBatchHwpToHwpx, 
   downloadAllAsZip,
+  downloadAllIndividually,
   saveFilesToDirectory,
   saveBlobAs
 } from '../utils/hwpToHwpxConverter.js';
@@ -40,7 +42,9 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
   const [selectedPreview, setSelectedPreview] = useState(null);
   const [isZipping, setIsZipping] = useState(false);
   const [isSavingToDir, setIsSavingToDir] = useState(false);
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+  const [showDirTip, setShowDirTip] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -80,7 +84,6 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
       error: null
     }));
 
-    // 기존 목록 초기화 후 새 파일들로 세팅 (또는 덮어쓰기)
     setFileList(newItems);
     setIsConverting(true);
     setSaveSuccessMsg('');
@@ -138,7 +141,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
       currentIndex: targetTotal,
       total: targetTotal,
       percent: 100,
-      currentFileName: '전체 파일 변환이 완료되었습니다! 아래에서 원하는 저장 위치를 선택해 주세요.'
+      currentFileName: '전체 파일 변환이 완료되었습니다! 아래에서 원하는 방식으로 저장하세요.'
     });
     setIsConverting(false);
   };
@@ -172,47 +175,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
     setSaveSuccessMsg('');
   };
 
-  // 1. [원하는 저장 폴더 선택하여 전체 저장]
-  const handleSelectFolderAndSaveAll = async () => {
-    const doneItems = fileList.filter(item => item.status === 'done' && item.result && item.result.blob);
-    if (doneItems.length === 0) {
-      alert('저장할 수 있는 변환 완료 파일이 없습니다.');
-      return;
-    }
-
-    try {
-      setIsSavingToDir(true);
-      setSaveSuccessMsg('');
-
-      // File System Access API 시도
-      if (window.showDirectoryPicker) {
-        const { dirName, savedCount } = await saveFilesToDirectory(doneItems);
-        setSaveSuccessMsg(`🎉 선택하신 [${dirName}] 폴더에 총 ${savedCount}개의 '변환_*.hwpx' 파일이 성공적으로 저장되었습니다!`);
-      } else {
-        // DirectoryPicker 미지원 브라우저는 ZIP 일괄 다운로드로 자동 안내
-        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        await downloadAllAsZip(doneItems, `변환_HWPX_전체문서_${today}.zip`);
-        setSaveSuccessMsg(`🎉 ZIP 압축 파일로 일괄 저장되었습니다!`);
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        // 사용자가 폴더 선택창을 취소한 경우
-        return;
-      }
-      console.warn('Directory save fallback to zip:', err);
-      try {
-        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        await downloadAllAsZip(doneItems, `변환_HWPX_전체문서_${today}.zip`);
-        setSaveSuccessMsg(`🎉 ZIP 압축 파일로 일괄 다운로드되었습니다!`);
-      } catch (zipErr) {
-        alert(`저장 중 오류 발생: ${zipErr.message}`);
-      }
-    } finally {
-      setIsSavingToDir(false);
-    }
-  };
-
-  // 2. [전체 ZIP 일괄 다운로드]
+  // 1. [원클릭 ZIP 압축 파일 저장 - 추천 & 가장 안전]
   const handleDownloadAllZip = async () => {
     const doneItems = fileList.filter(item => item.status === 'done' && item.result && item.result.blob);
     if (doneItems.length === 0) {
@@ -224,7 +187,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
       setIsZipping(true);
       const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       await downloadAllAsZip(doneItems, `변환_HWPX_전체문서_${today}.zip`);
-      setSaveSuccessMsg(`🎉 ZIP 압축 파일로 일괄 저장되었습니다!`);
+      setSaveSuccessMsg(`🎉 ZIP 압축 파일(변환_HWPX_전체문서_${today}.zip)로 다운로드 폴더에 안전하게 일괄 저장되었습니다!`);
     } catch (err) {
       alert(`ZIP 압축 다운로드 중 오류 발생: ${err.message}`);
     } finally {
@@ -232,7 +195,70 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
     }
   };
 
-  // 3. 단일 HWPX 파일 개별 다운로드
+  // 2. [원하는 로컬 폴더를 직접 선택하여 저장]
+  const handleSelectFolderAndSaveAll = async () => {
+    const doneItems = fileList.filter(item => item.status === 'done' && item.result && item.result.blob);
+    if (doneItems.length === 0) {
+      alert('저장할 수 있는 변환 완료 파일이 없습니다.');
+      return;
+    }
+
+    try {
+      setIsSavingToDir(true);
+      setSaveSuccessMsg('');
+
+      if (window.showDirectoryPicker) {
+        const { dirName, savedCount } = await saveFilesToDirectory(doneItems);
+        setSaveSuccessMsg(`🎉 선택하신 [${dirName}] 폴더에 총 ${savedCount}개의 '변환_*.hwpx' 파일이 성공적으로 저장되었습니다!`);
+      } else {
+        // DirectoryPicker 미지원 브라우저는 ZIP 다운로드로 자동 전환
+        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        await downloadAllAsZip(doneItems, `변환_HWPX_전체문서_${today}.zip`);
+        setSaveSuccessMsg(`🎉 ZIP 압축 파일로 일괄 저장되었습니다!`);
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        // 사용자가 폴더 선택창에서 '취소'를 누른 경우
+        return;
+      }
+      
+      // 브라우저 보안 에러 (C: 루트나 Windows 등 시스템 폴더 접근 차단)인 경우
+      console.warn('Directory save blocked by browser policy:', err);
+      setShowDirTip(true);
+      
+      // 사용자에게 친절하게 안내하고 ZIP 다운로드로 즉시 안전하게 저장
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      try {
+        await downloadAllAsZip(doneItems, `변환_HWPX_전체문서_${today}.zip`);
+        setSaveSuccessMsg(`💡 시스템 폴더 보안 제한으로 인해 안전한 ZIP 압축 파일로 다운로드되었습니다. (또는 '새 폴더'를 생성하여 선택해 주세요)`);
+      } catch (zipErr) {
+        alert(`저장 중 오류 발생: ${zipErr.message}`);
+      }
+    } finally {
+      setIsSavingToDir(false);
+    }
+  };
+
+  // 3. [모든 파일 개별 순차 다운로드]
+  const handleDownloadAllIndividually = async () => {
+    const doneItems = fileList.filter(item => item.status === 'done' && item.result && item.result.blob);
+    if (doneItems.length === 0) {
+      alert('다운로드할 수 있는 변환 완료 파일이 없습니다.');
+      return;
+    }
+
+    try {
+      setIsDownloadingAll(true);
+      const count = await downloadAllIndividually(doneItems);
+      setSaveSuccessMsg(`🎉 총 ${count}개의 '변환_*.hwpx' 파일이 다운로드 폴더로 개별 저장되었습니다!`);
+    } catch (err) {
+      alert(`개별 다운로드 중 오류 발생: ${err.message}`);
+    } finally {
+      setIsDownloadingAll(false);
+    }
+  };
+
+  // 4. 단일 HWPX 파일 개별 다운로드
   const handleDownloadSingle = (item) => {
     if (!item.result || !item.result.blob) {
       alert('변환된 파일 데이터가 존재하지 않습니다.');
@@ -245,7 +271,6 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
   const totalUploaded = fileList.length;
   const doneCount = fileList.filter(f => f.status === 'done').length;
   const errorCount = fileList.filter(f => f.status === 'error').length;
-  const processingCount = fileList.filter(f => f.status === 'processing').length;
 
   return (
     <div className="tab-container animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -435,7 +460,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                 color: '#34d399',
                 fontWeight: 700
               }}>
-                <Zap size={13} /> 추가 클릭 없이 등록 즉시 자동 변환 ➔ 원하는 폴더에 원클릭 일괄 저장
+                <Zap size={13} /> 추가 클릭 없이 등록 즉시 자동 변환 ➔ 원하는 위치에 원클릭 일괄 저장
               </div>
             </div>
 
@@ -480,36 +505,80 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
               </div>
             )}
 
-            {/* 변환 완료 후: 원하는 저장 위치 선택 및 일괄 다운로드 액션 바 */}
+            {/* 브라우저 폴더 선택 팁 안내 */}
+            {showDirTip && (
+              <div style={{
+                marginTop: '12px',
+                padding: '10px 14px',
+                background: 'rgba(59, 130, 246, 0.08)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                borderRadius: '8px',
+                color: '#93c5fd',
+                fontSize: '12px',
+                lineHeight: 1.5
+              }}>
+                💡 <strong>폴더 선택 팁</strong>: 브라우저 보안 규정상 <code>C:\</code> 드라이브 최상위나 <code>Windows</code> 시스템 폴더는 직접 저장이 제한됩니다. 작업용 <strong>'새 폴더'</strong>(예: 바탕화면 내 폴더, 문서 폴더)를 선택하시거나 <strong>[ZIP으로 일괄 다운로드]</strong>를 이용하시면 가장 편리합니다.
+              </div>
+            )}
+
+            {/* 변환 완료 후: 3가지 편리한 일괄 저장 옵션 카드 */}
             {doneCount > 0 && (
               <div style={{
                 marginTop: '20px',
-                padding: '16px 20px',
+                padding: '18px 20px',
                 background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.08))',
                 borderRadius: '14px',
                 border: '1px solid rgba(16, 185, 129, 0.3)',
                 display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                flexDirection: 'column',
                 gap: '14px'
               }}>
-                {/* 좌측 요약 */}
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                    <CheckCircle2 size={18} color="#10b981" />
-                    <span style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)' }}>
-                      총 {doneCount}개 파일 변환 완료!
+                {/* 상단 완료 타이틀 */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CheckCircle2 size={20} color="#10b981" />
+                    <span style={{ fontSize: '15.5px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      총 {doneCount}개 파일 변환 완료! 아래에서 원하는 저장 방식을 선택하세요:
                     </span>
                   </div>
-                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
-                    원하는 PC 폴더를 지정하여 <strong>"변환_*.hwpx"</strong> 파일들을 한 번에 쏙 저장하세요.
-                  </p>
                 </div>
 
-                {/* 우측 메인 저장 버튼들 */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  {/* 핵심 1: [원하는 폴더 선택하여 전체 저장] */}
+                {/* 3가지 일괄 저장 방식 버튼 그룹 */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                  
+                  {/* 옵션 1: [📦 ZIP 압축 파일로 다운로드 (추천 - 시스템 보안 제한 없음)] */}
+                  <button
+                    onClick={handleDownloadAllZip}
+                    disabled={isZipping || isConverting}
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '14px 16px',
+                      borderRadius: '10px',
+                      fontSize: '13.5px',
+                      fontWeight: 800,
+                      cursor: (isZipping || isConverting) ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      boxShadow: '0 6px 16px rgba(16, 185, 129, 0.3)',
+                      transition: 'all 0.2s ease'
+                    }}
+                    title="시스템 보안 제한 없이 1개의 ZIP 파일로 바로 일괄 저장 (추천)"
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FolderArchive size={18} />
+                      <span>{isZipping ? 'ZIP 묶는 중...' : `📦 전체 ZIP 일괄 다운로드 (${doneCount}건)`}</span>
+                    </div>
+                    <span style={{ fontSize: '11px', fontWeight: 500, opacity: 0.9 }}>
+                      ★ 추천: 보안 제한 없이 1초 만에 바로 저장
+                    </span>
+                  </button>
+
+                  {/* 옵션 2: [📁 원하는 작업 폴더 선택하여 저장] */}
                   <button
                     onClick={handleSelectFolderAndSaveAll}
                     disabled={isSavingToDir || isConverting}
@@ -517,45 +586,61 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                       background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
                       color: '#ffffff',
                       border: 'none',
-                      padding: '11px 20px',
+                      padding: '14px 16px',
                       borderRadius: '10px',
-                      fontSize: '14px',
+                      fontSize: '13.5px',
                       fontWeight: 800,
                       cursor: (isSavingToDir || isConverting) ? 'not-allowed' : 'pointer',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '8px',
-                      boxShadow: '0 6px 18px rgba(37, 99, 235, 0.4)',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      boxShadow: '0 6px 16px rgba(37, 99, 235, 0.3)',
                       transition: 'all 0.2s ease'
                     }}
-                    title="원하는 PC 저장 폴더를 선택하여 변환된 파일들을 일괄 저장합니다"
+                    title="원하는 작업 폴더를 선택하여 변환된 파일들을 각각 저장합니다"
                   >
-                    <FolderOpen size={18} />
-                    <span>{isSavingToDir ? '폴더에 저장 중...' : `📁 원하는 폴더 선택하여 전체 저장 (${doneCount}건)`}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FolderOpen size={18} />
+                      <span>{isSavingToDir ? '폴더에 저장 중...' : `📁 원하는 폴더 선택하여 저장`}</span>
+                    </div>
+                    <span style={{ fontSize: '11px', fontWeight: 500, opacity: 0.9 }}>
+                      지정한 폴더에 '변환_*.hwpx'로 풀어서 저장
+                    </span>
                   </button>
 
-                  {/* 핵심 2: [ZIP 압축 파일로 일괄 다운로드] */}
+                  {/* 옵션 3: [📥 모든 파일 개별 다운로드] */}
                   <button
-                    onClick={handleDownloadAllZip}
-                    disabled={isZipping || isConverting}
+                    onClick={handleDownloadAllIndividually}
+                    disabled={isDownloadingAll || isConverting}
                     style={{
-                      background: 'rgba(255, 255, 255, 0.08)',
+                      background: 'rgba(255, 255, 255, 0.06)',
                       color: 'var(--text-primary)',
                       border: '1px solid var(--glass-border)',
-                      padding: '11px 16px',
+                      padding: '14px 16px',
                       borderRadius: '10px',
-                      fontSize: '13px',
+                      fontSize: '13.5px',
                       fontWeight: 700,
-                      cursor: (isZipping || isConverting) ? 'not-allowed' : 'pointer',
+                      cursor: (isDownloadingAll || isConverting) ? 'not-allowed' : 'pointer',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '6px'
+                      justifyContent: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s ease'
                     }}
-                    title="ZIP 압축 파일 1개로 묶어 다운로드합니다"
+                    title="ZIP 없이 각 파일을 브라우저 다운로드 폴더에 연속 저장합니다"
                   >
-                    <FolderArchive size={16} />
-                    <span>{isZipping ? 'ZIP 압축 중...' : '📦 ZIP으로 저장'}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Download size={18} />
+                      <span>{isDownloadingAll ? '개별 다운로드 중...' : `📥 모든 파일 개별 다운로드`}</span>
+                    </div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      브라우저 다운로드 폴더로 각각 저장
+                    </span>
                   </button>
+
                 </div>
               </div>
             )}
@@ -774,19 +859,19 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
 
             <div className="glass-panel" style={{ padding: '18px', borderRadius: '14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <FolderOpen size={18} color="#2563eb" />
+                <FolderArchive size={18} color="#10b981" />
                 <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  원하는 로컬 폴더 직접 지정 저장
+                  원클릭 안전 일괄 저장
                 </h4>
               </div>
               <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                <strong>[원하는 폴더 선택하여 전체 저장]</strong>을 클릭하여 내 PC의 원하는 폴더를 선택하면, <strong>변환_*.hwpx</strong> 파일들이 해당 폴더에 한 번에 저장됩니다.
+                브라우저 보안 제한 없는 <strong>[전체 ZIP 일괄 다운로드]</strong> 또는 <strong>[원하는 폴더 선택하여 저장]</strong>을 통해 파일들을 한 번에 손쉽게 저장할 수 있습니다.
               </p>
             </div>
 
             <div className="glass-panel" style={{ padding: '18px', borderRadius: '14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <ShieldCheck size={18} color="#10b981" />
+                <ShieldCheck size={18} color="#8b5cf6" />
                 <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
                   파일명 '변환_' 추가 및 보안성
                 </h4>
