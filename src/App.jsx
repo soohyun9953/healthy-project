@@ -10,7 +10,6 @@ import AiPptDesigner from './components/AiPptDesigner';
 import RagKnowledgeBase from './components/RagKnowledgeBase';
 import IsmpDaDashboard from './components/IsmpDaDashboard';
 import PptValidator from './components/PptValidator';
-import HwpxConverter from './components/HwpxConverter';
 import G2bSearch from './components/G2bSearch';
 import { get_random_quote } from './data/projectQuotes';
 import { 
@@ -62,13 +61,13 @@ const gaEvent = (eventName, params = {}) => {
 const tab_guides = {
   ppt: {
     title: 'PPT 생성(표준산출물)',
-    desc: '사업계획서나 요구사항 분석 결과를 바탕으로 표준 파워포인트(.pptx) 프레젠테이션 산출물을 규격에 맞춰 자동 생성합니다.',
+    desc: '표준 파워포인트(.pptx) 산출물 일괄편집, 엑셀 데이터 매핑 생성, 스마트 애니메이션, PPT ➜ HWPX 양식 융합 및 HWP ➔ HWPX 일괄 자동 변환을 통합 제공합니다.',
     steps: [
-      '슬라이드로 제작할 기획 내용 또는 보고서 초안 입력',
-      '표준 슬라이드 마스터 및 테마 서식 선택',
-      '[PPT 생성 시작] 버튼 클릭 후 결과물 다운로드'
+      '상단 서브 탭에서 원하는 산출물 변환/생성 도구 선택 (PPT 일괄편집, 엑셀 매핑, HWP ➔ HWPX 변환 등)',
+      '대상 파일(.pptx, .xlsx, .hwp 등) 업로드 또는 드래그 앤 드롭',
+      '원터치 일괄 자동 변환/생성 수행 및 원하는 폴더 선택/ZIP 저장'
     ],
-    tips: '생성된 PPTX는 표준산출물 검증 탭에서 중복 및 서식을 정밀 검수할 수 있습니다.'
+    tips: 'HWP ➔ HWPX 변환은 복수 .hwp 파일들을 브라우저에서 100% 로컬로 즉시 자동 변환하며 "변환_" 접두사가 자동 부여됩니다.'
   },
   g2b: {
     title: '나라장터 정보조회',
@@ -195,17 +194,6 @@ const tab_guides = {
       '제시되는 조치 가이드라인에 따라 원본 문서를 수정한 후 재검수를 진행합니다.'
     ],
     tips: '주기적으로 검증을 돌리면 실시간 합격률 추이가 차트로 기록됩니다.'
-  },
-  hwpx: {
-    title: 'HWPX 생성(HWP 변환)',
-    desc: '한글(.hwp) 파일들을 끌어다 놓는 즉시 자동으로 전체 변환되며, 파일명 앞에 "변환_"이 추가되어 원하는 저장 폴더를 선택해 일괄 저장할 수 있습니다.',
-    steps: [
-      '변환할 .hwp 파일들을 업로드 영역에 드래그하여 드롭 (복수 파일 동시 지원)',
-      '추가 조작 없이 브라우저에서 즉시 초고속 자동 변환 진행',
-      '변환 완료 후 [원하는 폴더 선택하여 전체 저장] 버튼을 클릭해 내 PC의 원하는 폴더를 선택',
-      '모든 변환_*.hwpx 파일이 지정된 폴더에 한 번에 자동 저장 (또는 ZIP 일괄 다운로드)'
-    ],
-    tips: '보안 서버 전송 없이 브라우저 내부에서 100% 안전하게 처리되며, 파일명에 "변환_"이 자동 부여되어 원본과 깔끔하게 구분됩니다.'
   }
 };
 
@@ -363,7 +351,6 @@ function App() {
 
   const tabs = [
     { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316', useGemini: false },
-    { id: 'hwpx', label: 'HWPX 생성(HWP 변환)', icon: FileText, color: '#10b981', useGemini: false },
     { id: 'ppt-verify', label: '표준산출물 검증', icon: ShieldAlert, color: '#e11d48', useGemini: false },
     { id: 'main', label: 'AI 기준문서 대비 산출물 검증', icon: Shield, color: 'var(--accent-blue)', useGemini: true },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
@@ -893,14 +880,13 @@ function App() {
           )}
 
           {activeTab === 'main' && <DocumentValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
-          {activeTab === 'hwpx' && <HwpxConverter apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
           {activeTab === 'ismpda' && <IsmpDaDashboard />}
           {activeTab === 'typo' && <TypoValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
           {activeTab === 'law' && <LawConsultant apiKey={apiKey} isMcpMode={false} />}
           {activeTab === 'law-mcp' && <LawConsultant apiKey={apiKey} isMcpMode={true} />}
           { activeTab === 'erd' && <ErdGenerator apiKey={apiKey} /> }
           { activeTab === 'aippt' && <AiPptDesigner apiKey={apiKey} /> }
-          { activeTab === 'ppt' && <PptGenerator apiKey={apiKey} /> }
+          { activeTab === 'ppt' && <PptGenerator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
           { activeTab === 'g2b' && <G2bSearch /> }
           { activeTab === 'ppt-verify' && <PptValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
           {activeTab === 'meeting' && <MeetingMinutes apiKey={apiKey} />}

@@ -9,9 +9,10 @@ import {
     addSmartAnimationsToPpt, saveFileWithLocationPicker, getPptSlideCount 
 } from '../utils/pptExporter';
 import { convertPptxToHwpx, fusePptToHwpxTemplate, fusePptToHwpxListTemplate } from '../utils/hwpxConverter';
+import HwpxConverter from './HwpxConverter.jsx';
 import JSZip from 'jszip';
 
-export default function PptGenerator() {
+export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto' }) {
     const [activeTab, setActiveTab] = useState('batch_edit'); // 'batch_edit' as default
     
     // 엑셀 매핑 관련 State
@@ -1346,6 +1347,20 @@ export default function PptGenerator() {
                         }}
                     >
                         PPT ➜ HWPX 양식 융합
+                    </button>
+                    <button 
+                        id="tab-hwp-to-hwpx"
+                        onClick={() => { setActiveTab('hwp_to_hwpx'); setErrorMsg(null); setSuccessMsg(null); }}
+                        className="interactive"
+                        style={{
+                            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
+                            background: activeTab === 'hwp_to_hwpx' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                            border: '1px solid ' + (activeTab === 'hwp_to_hwpx' ? '#10b981' : 'transparent'),
+                            color: activeTab === 'hwp_to_hwpx' ? '#10b981' : 'var(--text-secondary)',
+                            fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
+                        }}
+                    >
+                        HWP ➔ HWPX 변환
                     </button>
                     <button 
                         id="tab-pdf-convert"
@@ -2933,6 +2948,10 @@ export default function PptGenerator() {
                                 이에 따라 원본 PPTX 슬라이드에 적용된 <strong>특수 폰트, 표 스타일, 스마트아트, 이미지 투명도 및 배치 레이아웃이 100% 동일하게 완벽 보존된 PDF</strong>가 출력됩니다.
                             </div>
                         </div>
+                    </div>
+                ) : activeTab === 'hwp_to_hwpx' ? (
+                    <div className="animate-fade-in">
+                        <HwpxConverter apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />
                     </div>
                 ) : activeTab === 'pdf_to_ppt' ? (
                     <div className="animate-fade-in" style={{
