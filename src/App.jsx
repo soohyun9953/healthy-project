@@ -10,7 +10,7 @@ import AiPptDesigner from './components/AiPptDesigner';
 import RagKnowledgeBase from './components/RagKnowledgeBase';
 import IsmpDaDashboard from './components/IsmpDaDashboard';
 import PptValidator from './components/PptValidator';
-import HwpxGenerator from './components/HwpxGenerator';
+import HwpxConverter from './components/HwpxConverter';
 import G2bSearch from './components/G2bSearch';
 import { get_random_quote } from './data/projectQuotes';
 import { 
@@ -60,7 +60,16 @@ const gaEvent = (eventName, params = {}) => {
 
 // ── 탭별 상세 가이드 데이터 ─────────────────────────
 const tab_guides = {
-  ppt: null,
+  ppt: {
+    title: 'PPT 생성(표준산출물)',
+    desc: '사업계획서나 요구사항 분석 결과를 바탕으로 표준 파워포인트(.pptx) 프레젠테이션 산출물을 규격에 맞춰 자동 생성합니다.',
+    steps: [
+      '슬라이드로 제작할 기획 내용 또는 보고서 초안 입력',
+      '표준 슬라이드 마스터 및 테마 서식 선택',
+      '[PPT 생성 시작] 버튼 클릭 후 결과물 다운로드'
+    ],
+    tips: '생성된 PPTX는 표준산출물 검증 탭에서 중복 및 서식을 정밀 검수할 수 있습니다.'
+  },
   g2b: {
     title: '나라장터 정보조회',
     desc: '조달청 나라장터(g2b.go.kr)의 발주계획(발주예정) 및 사전규격 공고 정보를 사업명 및 수요기관 조건으로 검색합니다.',
@@ -187,16 +196,16 @@ const tab_guides = {
     ],
     tips: '주기적으로 검증을 돌리면 실시간 합격률 추이가 차트로 기록됩니다.'
   },
-  'hwpx-report': {
-    title: 'HWPX 생성(표준보고서)',
-    desc: '제미나이 AI가 사용자 요청 사항에 부합하는 정밀하고 체계적인 한글 표준 보고서 파일(.hwpx)을 스키마 구조에 맞춰 자동 퍼블리싱합니다.',
+  hwpx: {
+    title: 'HWPX 생성(HWP 변환)',
+    desc: '수동 변환이 어려운 여러 개의 한글(.hwp) 파일들을 드래그하여 한컴 최신 표준 규격인 .hwpx 파일로 일괄 변환 및 ZIP 다운로드합니다.',
     steps: [
-      '작성하고자 하는 기획서나 보고서의 개요 및 주제를 입력합니다.',
-      '보고서에 필수로 포함할 항목이나 스타일 템플릿을 선택합니다.',
-      '[HWPX 보고서 자동 생성] 버튼을 클릭해 백그라운드 파싱을 진행합니다.',
-      '최종 렌더링된 한글 문서 파일을 로컬에 저장하고 오피스 툴로 확인합니다.'
+      '변환할 .hwp 파일들을 업로드 영역에 드롭하거나 파일 선택 (복수 파일 동시 지원)',
+      '[일괄 변환 시작] 버튼을 클릭해 순수 브라우저 기반으로 즉시 변환 진행',
+      '변환 완료된 파일 개별 다운로드 또는 [전체 HWPX 다운로드 (.ZIP)]로 일괄 저장',
+      '상단 탭 전환을 통해 AI 기반 표준 HWPX 보고서 자동 생성 기능도 함께 활용 가능'
     ],
-    tips: '목차 템플릿을 상세히 입력할수록 보다 깊이 있는 다량의 분량이 생성됩니다.'
+    tips: '보안 서버 전송 없이 브라우저 내부에서 100% 안전하게 처리되므로 대외비 공문서도 안심하고 변환할 수 있습니다.'
   }
 };
 
@@ -277,18 +286,20 @@ function App() {
   // 탭 변경 시 GA 페이지뷰 전송
   useEffect(() => {
     const tabLabels = {
+      ppt: 'PPT 생성(표준산출물)',
+      hwpx: 'HWPX 생성(HWP 변환)',
+      'ppt-verify': '표준산출물 검증',
       main: 'AI 기준문서 대비 산출물 검증',
       typo: 'AI 교정교열',
+      meeting: 'AI 회의록 생성',
+      g2b: '나라장터 정보조회',
       law: 'AI 법률 자문(제미나이)',
       'law-mcp': 'AI 법률 자문(로컬 RAG)',
       erd: 'AI ERD 설계',
-      ppt: 'PPT 생성(표준산출물)',
-      'ppt-verify': '표준산출물 검증',
-      'hwpx-report': '(작업중)HWPX생성(표준보고서)',
       library: '참고자료 라이브러리',
-      meeting: 'AI 회의록 생성',
+      rag: '프로젝트 RAG 지식베이스',
+      ismpda: '(작업중)ISMP DA 검증 대시보드',
       aippt: '(작업중)AI PPT 디자이너',
-      g2b: '나라장터 정보조회',
     };
     gaEvent('page_view', {
       page_title: tabLabels[activeTab] || activeTab,
@@ -352,6 +363,7 @@ function App() {
 
   const tabs = [
     { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316', useGemini: false },
+    { id: 'hwpx', label: 'HWPX 생성(HWP 변환)', icon: FileText, color: '#10b981', useGemini: false },
     { id: 'ppt-verify', label: '표준산출물 검증', icon: ShieldAlert, color: '#e11d48', useGemini: false },
     { id: 'main', label: 'AI 기준문서 대비 산출물 검증', icon: Shield, color: 'var(--accent-blue)', useGemini: true },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
@@ -363,7 +375,6 @@ function App() {
     { id: 'library', label: '참고자료 라이브러리', icon: Activity, color: '#64748b', useGemini: false },
     { id: 'rag', label: '프로젝트 RAG 지식베이스', icon: Database, color: 'var(--accent-blue)', useGemini: true },
     { id: 'ismpda', label: '(작업중)ISMP DA 검증 대시보드', icon: Sliders, color: 'var(--accent-purple)', useGemini: false },
-    { id: 'hwpx-report', label: '(작업중)HWPX생성(표준보고서)', icon: FileText, color: '#10b981', useGemini: true },
     { id: 'aippt', label: '(작업중)AI PPT 디자이너', icon: Presentation, color: '#ec4899', useGemini: true },
   ];
 
@@ -882,7 +893,7 @@ function App() {
           )}
 
           {activeTab === 'main' && <DocumentValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
-          {activeTab === 'hwpx-report' && <HwpxGenerator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
+          {activeTab === 'hwpx' && <HwpxConverter apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
           {activeTab === 'ismpda' && <IsmpDaDashboard />}
           {activeTab === 'typo' && <TypoValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
           {activeTab === 'law' && <LawConsultant apiKey={apiKey} isMcpMode={false} />}
