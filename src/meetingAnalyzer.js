@@ -364,3 +364,143 @@ export async function analyzeMeeting(inputData, inputType = 'audio', apiKey, ter
         return result;
     }
 }
+
+// ─────────────────────────────────────────────
+//  회의 내용 대상 AI 질의응답 (Q&A) 파이프라인
+// ─────────────────────────────────────────────
+export async function askMeetingQuestion(question, contextData, apiKey, chatHistory = []) {
+    const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+    if (keys.length === 0) throw new Error('유효한 Gemini API 키가 없습니다. 설정에서 API 키를 입력해 주세요.');
+
+    let contextText = '';
+    if (typeof contextData === 'string') {
+        contextText = contextData;
+    } else if (contextData && typeof contextData === 'object') {
+        const sections = [];
+        if (contextData.meetingTitle) sections.push(`[회의명]\n${contextData.meetingTitle}`);
+        if (contextData.meetingContext) sections.push(`[회의 목적 및 배경]\n${contextData.meetingContext}`);
+        if (contextData.agenda) sections.push(`[회의 안건]\n${contextData.agenda}`);
+        if (contextData.summary) sections.push(`[종합 요약]\n${contextData.summary}`);
+        
+        if ((contextData.topicSummaries || []).length > 0) {
+            sections.push(`[주제별 상세 논의 내용]\n` + contextData.topicSummaries.map((t, i) => `주제 ${i + 1}. ${t.topic}\n- 내용: ${t.content}${t.result ? `\n- 결론: ${t.result}` : ''}`).join('\n\n'));
+        }
+        if ((contextData.keyInsights || []).length > 0) {
+            sections.push(`[핵심 인사이트]\n` + contextData.keyInsights.map((ins, i) => `${i + 1}. [${ins.type}] ${ins.content}`).join('\n'));
+        }
+        if ((contextData.decisions || []).length > 0) {
+            sections.push(`[결정된 사항]\n` + contextData.decisions.map((d, i) => `- ${d}`).join('\n'));
+        }
+        if ((contextData.actionItems || []).length > 0) {
+            sections.push(`[할 일(Action Items) 및 담당자]\n` + contextData.actionItems.map((a, i) => `${i + 1}. 과제: ${a.task} | 담당자: ${a.owner || '미정'} | 기한: ${a.deadline || '미정'} | 우선순위: ${a.priority || '보통'}`).join('\n'));
+        }
+        if (contextData.futurePlans) {
+            const fp = contextData.futurePlans;
+            const fpLines = [];
+            if ((fp.shortTerm || []).length > 0) fpLines.push('단기 계획: ' + fp.shortTerm.map(p => `${p.plan} (담당: ${p.owner || '-'}, 목표: ${p.targetDate || '-'})`).join(', '));
+            if ((fp.longTerm || []).length > 0) fpLines.push('중장기 계획: ' + fp.longTerm.map(p => `${p.plan} (담당: ${p.owner || '-'}, 목표: ${p.targetDate || '-'})`).join(', '));
+            if (fpLines.length > 0) sections.push(`[향후 계획]\n` + fpLines.join('\n'));
+        }
+        if ((contextData.transcript || []).length > 0) {
+            sections.push(`[화자별 발언록 상세 (Transcript)]\n` + contextData.transcript.map(t => `[${t.speaker}] ${t.text}`).join('\n'));
+        }
+        contextText = sections.join('\n\n====================\n\n');
+    }
+
+    const systemInstruction = `당신은 회의록 분석 및 질의응답을 수행하는 전문 AI 어시스턴트입니다.
+제공된 [회의 내용 및 상세 발언록]을 바탕으로 사용자의 질문에 정확하고 구체적이며 친절하게 답변하세요.
+
+[답변 원칙]
+1. 회의 내용에 근거하여 사실에 입각해 명확히 답변하세요.
+2. 회의에서 언급된 발언자, 결정사항, 과제 담당자, 일정, 리스크, 핵심 쟁점 등을 충실히 인용하세요.
+3. 회의 내용에 명시되지 않은 추측이나 외부 지식은 "회의 내용에는 언급되지 않았으나"와 같이 구분하여 안내하세요.
+4. 가독성을 위해 개조식(•, 번호)과 볼드체(**)를 적절히 활용하여 깔끔하게 정리하세요.`;
+
+    const contents = [];
+
+    // 이전 대화 히스토리 구성
+    if (chatHistory && chatHistory.length > 0) {
+        chatHistory.forEach(msg => {
+            contents.push({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.text }]
+            });
+        });
+    }
+
+    // 현재 사용자 질문 (컨텍스트 포함)
+    const currentPrompt = `[회의 내용 및 상세 발언록]
+${contextText.substring(0, 100000)}
+
+[질문]
+${question}`;
+
+    contents.push({
+        role: 'user',
+        parts: [{ text: currentPrompt }]
+    });
+
+    const MODELS = FALLBACK_MODELS;
+    let currentKeyIndex = 0;
+    let currentModelIndex = 0;
+    let lastError = null;
+
+    while (currentModelIndex < MODELS.length) {
+        const modelName = MODELS[currentModelIndex];
+        const activeKey = keys[currentKeyIndex];
+        const url = `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${activeKey}`;
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: contents,
+                    systemInstruction: {
+                        parts: [{ text: systemInstruction }]
+                    },
+                    generationConfig: {
+                        temperature: 0.2,
+                        maxOutputTokens: 2048,
+                    }
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const answer = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (answer) {
+                    recordUsage(modelName);
+                    return {
+                        answer: answer.trim(),
+                        modelUsed: modelName
+                    };
+                }
+            }
+
+            // 에러 응답 처리
+            const errBody = await res.json().catch(() => ({}));
+            lastError = new Error(`[${modelName}] API 호출 실패 (${res.status}): ${errBody.error?.message || res.statusText}`);
+
+            // 키 로테이션 먼저 시도
+            if (keys.length > 1 && (currentKeyIndex + 1) < keys.length) {
+                currentKeyIndex++;
+                continue;
+            }
+
+            // 키를 다 썼으면 다음 모델 시도
+            currentKeyIndex = 0;
+            currentModelIndex++;
+        } catch (netErr) {
+            lastError = netErr;
+            if (keys.length > 1 && (currentKeyIndex + 1) < keys.length) {
+                currentKeyIndex++;
+                continue;
+            }
+            currentKeyIndex = 0;
+            currentModelIndex++;
+        }
+    }
+
+    throw lastError || new Error('모든 Gemini 모델 및 API 키로의 질의응답 요청이 실패했습니다.');
+}

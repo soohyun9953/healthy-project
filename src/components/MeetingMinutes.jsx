@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { analyzeMeeting } from '../meetingAnalyzer';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { analyzeMeeting, askMeetingQuestion } from '../meetingAnalyzer';
 import { processFile } from '../utils/fileExtractor';
 import { FALLBACK_MODELS } from '../utils/geminiModels.js';
 import {
@@ -7,7 +7,7 @@ import {
   CheckCircle2, AlertCircle, BookOpen, Download, Copy, Loader2,
   Users, ClipboardList, ListChecks, Sparkles, Tag, Clock,
   FileSearch, CheckSquare, Square, TrendingUp, Lightbulb, Calendar,
-  Target, ArrowRight, Zap, BarChart3, MapPin
+  Target, ArrowRight, Zap, BarChart3, MapPin, MessageSquare, Send, RotateCcw, HelpCircle
 } from 'lucide-react';
 
 // ── 전문 용어 사전 로컬스토리지 키 ─────────────
@@ -197,6 +197,86 @@ export default function MeetingMinutes({ apiKey }) {
   // UI
   const [showTranscript, setShowTranscript] = useState(true);
   const [copied, setCopied]                 = useState(false);
+
+  // 💬 회의 내용 AI Q&A (질의응답) 상태
+  const [qaMessages, setQaMessages]         = useState([]);
+  const [qaInput, setQaInput]               = useState('');
+  const [isQaLoading, setIsQaLoading]       = useState(false);
+  const [qaError, setQaError]               = useState('');
+  const [showQaPanel, setShowQaPanel]       = useState(true);
+  const [copiedQaId, setCopiedQaId]         = useState(null);
+  const qaChatEndRef = useRef(null);
+
+  // 자동 스크롤
+  useEffect(() => {
+    if (qaMessages.length > 0) {
+      qaChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [qaMessages, isQaLoading]);
+
+  // Q&A 질의 전송 핸들러
+  const handleSendQa = async (questionText) => {
+    const q = (typeof questionText === 'string' ? questionText : qaInput).trim();
+    if (!q) return;
+
+    if (!result && !textInput.trim()) {
+      setQaError('회의록을 먼저 생성하거나 분석할 텍스트를 입력해 주세요.');
+      return;
+    }
+
+    const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+    if (keys.length === 0) {
+      setQaError('상단 설정에서 Gemini API 키를 먼저 입력해 주세요.');
+      return;
+    }
+
+    const userMsg = {
+      id: Date.now(),
+      role: 'user',
+      text: q,
+      time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+    };
+
+    const newHistory = [...qaMessages, userMsg];
+    setQaMessages(newHistory);
+    setQaInput('');
+    setIsQaLoading(true);
+    setQaError('');
+
+    try {
+      const contextData = result || textInput;
+      // 최근 6개 대화 히스토리만 유지하여 토큰 최적화
+      const historyForApi = newHistory.slice(-6).map(m => ({ role: m.role, text: m.text }));
+      const res = await askMeetingQuestion(q, contextData, apiKey, historyForApi);
+
+      const botMsg = {
+        id: Date.now() + 1,
+        role: 'model',
+        text: res.answer,
+        modelUsed: res.modelUsed,
+        time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+      };
+      setQaMessages([...newHistory, botMsg]);
+    } catch (err) {
+      setQaError(err.message || '답변 생성 중 오류가 발생했습니다.');
+    } finally {
+      setIsQaLoading(false);
+    }
+  };
+
+  const handleCopyQa = (id, text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedQaId(id);
+      setTimeout(() => setCopiedQaId(null), 2000);
+    });
+  };
+
+  const handleClearQa = () => {
+    if (window.confirm('질의응답 대화 기록을 초기화하시겠습니까?')) {
+      setQaMessages([]);
+      setQaError('');
+    }
+  };
 
   // ── 오디오 드래그앤드롭 ───────────────────────
   const handleDragOver  = useCallback((e) => { e.preventDefault(); setIsDragging(true); }, []);
@@ -925,6 +1005,253 @@ export default function MeetingMinutes({ apiKey }) {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+          {/* 7영역: 💬 회의 내용 AI 질의응답 (Q&A 어시스턴트) */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.4), rgba(15, 23, 42, 0.6))',
+            border: '1px solid rgba(139, 92, 246, 0.3)',
+            borderRadius: '14px',
+            overflow: 'hidden',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.25)'
+          }}>
+            {/* Q&A 헤더 */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid rgba(139, 92, 246, 0.2)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: 'rgba(139, 92, 246, 0.08)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ padding: '8px', background: 'rgba(139, 92, 246, 0.2)', borderRadius: '8px' }}>
+                  <MessageSquare size={18} color="#c084fc" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    회의 내용 AI 질의응답 (Q&A)
+                    <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px', background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', fontWeight: 600 }}>
+                      Gemini Multimodal
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    생성된 회의록 및 상세 발언록을 기반으로 궁금한 점을 자유롭게 질문하세요.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {qaMessages.length > 0 && (
+                  <button
+                    onClick={handleClearQa}
+                    title="대화 내역 초기화"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '4px',
+                      padding: '6px 12px', borderRadius: '6px',
+                      background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)',
+                      color: '#f87171', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer'
+                    }}
+                  >
+                    <RotateCcw size={13} /> 초기화
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowQaPanel(!showQaPanel)}
+                  style={{
+                    background: 'none', border: 'none', color: 'var(--text-muted)',
+                    cursor: 'pointer', padding: '4px'
+                  }}
+                >
+                  {showQaPanel ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
+              </div>
+            </div>
+
+            {showQaPanel && (
+              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* 💡 추천 질문 프롬프트 칩 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Sparkles size={13} color="#c084fc" /> 빠른 추천 질문:
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {[
+                      '이번 회의의 핵심 쟁점과 결론은 무엇인가요?',
+                      '담당자별 액션 아이템과 기한을 표 형태로 정리해줘',
+                      '회의 중 제기된 주요 리스크와 대응 방안은?',
+                      '차기 회의 전까지 완료해야 할 우선순위 과제는?'
+                    ].map((qPrompt, idx) => (
+                      <button
+                        key={idx}
+                        disabled={isQaLoading}
+                        onClick={() => handleSendQa(qPrompt)}
+                        style={{
+                          padding: '6px 12px', borderRadius: '20px',
+                          background: 'rgba(139, 92, 246, 0.1)',
+                          border: '1px solid rgba(139, 92, 246, 0.3)',
+                          color: '#ddd6fe', fontSize: '12px', fontWeight: 500,
+                          cursor: isQaLoading ? 'not-allowed' : 'pointer',
+                          display: 'flex', alignItems: 'center', gap: '6px',
+                          transition: 'all 0.2s',
+                          opacity: isQaLoading ? 0.6 : 1
+                        }}
+                      >
+                        💡 {qPrompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 대화 메시지 목록 창 */}
+                <div style={{
+                  minHeight: qaMessages.length > 0 ? '160px' : '90px',
+                  maxHeight: '480px',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px',
+                  padding: '14px',
+                  background: 'rgba(0, 0, 0, 0.25)',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                }}>
+                  {qaMessages.length === 0 ? (
+                    <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                      <HelpCircle size={28} color="#8b5cf6" style={{ margin: '0 auto 8px', opacity: 0.6 }} />
+                      회의 내용에 대해 질문하시면 AI가 회의록과 발언록을 정밀 분석하여 즉시 답변해 드립니다.
+                    </div>
+                  ) : (
+                    qaMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                          gap: '4px'
+                        }}
+                      >
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '11px',
+                          color: 'var(--text-muted)'
+                        }}>
+                          <span>{msg.role === 'user' ? '👤 나의 질문' : '🤖 회의록 AI 어시스턴트'}</span>
+                          {msg.modelUsed && (
+                            <span style={{ fontSize: '10px', color: '#a78bfa', background: 'rgba(167,139,250,0.15)', padding: '1px 5px', borderRadius: '4px' }}>
+                              {msg.modelUsed}
+                            </span>
+                          )}
+                          <span>{msg.time}</span>
+                        </div>
+
+                        <div style={{
+                          maxWidth: '88%',
+                          padding: '12px 16px',
+                          borderRadius: msg.role === 'user' ? '14px 14px 2px 14px' : '14px 14px 14px 2px',
+                          background: msg.role === 'user'
+                            ? 'linear-gradient(135deg, #6366f1, #4f46e5)'
+                            : 'rgba(30, 41, 59, 0.85)',
+                          border: msg.role === 'user'
+                            ? '1px solid rgba(99, 102, 241, 0.4)'
+                            : '1px solid rgba(148, 163, 184, 0.15)',
+                          color: '#f8fafc',
+                          fontSize: '13px',
+                          lineHeight: '1.7',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                        }}>
+                          {msg.text}
+                          {msg.role === 'model' && (
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                              <button
+                                onClick={() => handleCopyQa(msg.id, msg.text)}
+                                style={{
+                                  background: 'none', border: 'none',
+                                  color: copiedQaId === msg.id ? 'var(--success-color)' : 'var(--text-muted)',
+                                  fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                                }}
+                              >
+                                {copiedQaId === msg.id ? <CheckCircle2 size={12} /> : <Copy size={12} />}
+                                {copiedQaId === msg.id ? '복사됨' : '답변 복사'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  {isQaLoading && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <div style={{
+                        padding: '12px 16px',
+                        borderRadius: '14px 14px 14px 2px',
+                        background: 'rgba(30, 41, 59, 0.85)',
+                        border: '1px solid rgba(148, 163, 184, 0.15)',
+                        color: '#c084fc',
+                        fontSize: '13px',
+                        display: 'flex', alignItems: 'center', gap: '8px'
+                      }}>
+                        <Loader2 size={16} className="animate-spin" />
+                        회의록 및 상세 발언록을 분석하여 답변을 생성하는 중입니다...
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={qaChatEndRef} />
+                </div>
+
+                {/* 에러 메시지 */}
+                {qaError && (
+                  <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', color: '#f87171', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <AlertCircle size={15} /> {qaError}
+                  </div>
+                )}
+
+                {/* 질문 입력창 */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={qaInput}
+                    onChange={(e) => setQaInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendQa();
+                      }
+                    }}
+                    placeholder="회의 내용에 대해 질문하세요 (예: 다음 주까지 누가 어떤 작업을 해야 하나요?)"
+                    disabled={isQaLoading}
+                    style={{
+                      flex: 1, padding: '12px 16px', borderRadius: '10px',
+                      background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(139, 92, 246, 0.3)',
+                      color: 'var(--text-primary)', fontSize: '13.5px', outline: 'none'
+                    }}
+                  />
+                  <button
+                    onClick={() => handleSendQa()}
+                    disabled={isQaLoading || !qaInput.trim()}
+                    style={{
+                      padding: '0 20px', borderRadius: '10px',
+                      background: !qaInput.trim() || isQaLoading
+                        ? 'rgba(255,255,255,0.05)'
+                        : 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                      border: 'none', color: 'white', fontWeight: 700, fontSize: '13.5px',
+                      cursor: !qaInput.trim() || isQaLoading ? 'not-allowed' : 'pointer',
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      opacity: !qaInput.trim() || isQaLoading ? 0.5 : 1,
+                      boxShadow: qaInput.trim() && !isQaLoading ? '0 4px 12px rgba(139, 92, 246, 0.3)' : 'none'
+                    }}
+                  >
+                    <Send size={15} /> 전송
+                  </button>
+                </div>
               </div>
             )}
           </div>
