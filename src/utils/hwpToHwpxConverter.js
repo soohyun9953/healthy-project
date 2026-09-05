@@ -481,7 +481,8 @@ export async function convertSingleHwpToHwpx(file, onProgress) {
 
   if (onProgress) onProgress({ status: 'done', message: '변환 완료!', percent: 100 });
 
-  const outputName = file.name.replace(/\.hwp$/i, '') + '.hwpx';
+  const baseName = file.name.replace(/\.hwp$/i, '');
+  const outputName = `변환_${baseName}.hwpx`;
 
   return {
     originalName: file.name,
@@ -526,11 +527,12 @@ export async function convertBatchHwpToHwpx(fileList, onFileProgress, onOverallP
       });
     } catch (err) {
       console.error(`파일 변환 실패 (${file.name}):`, err);
+      const baseName = file.name.replace(/\.hwp$/i, '');
       results.push({
         id: `file_${i}_${Date.now()}`,
         success: false,
         originalName: file.name,
-        outputName: file.name.replace(/\.hwp$/i, '') + '.hwpx',
+        outputName: `변환_${baseName}.hwpx`,
         originalSize: file.size,
         error: err.message || 'HWP 파일 파싱 중 오류가 발생했습니다.'
       });
@@ -550,15 +552,49 @@ export async function convertBatchHwpToHwpx(fileList, onFileProgress, onOverallP
 }
 
 /**
+ * 사용자가 선택한 로컬 디렉토리/폴더에 변환된 모든 HWPX 파일들을 일괄 저장하는 함수 (File System Access API)
+ */
+export async function saveFilesToDirectory(items) {
+  if (typeof window === 'undefined' || !window.showDirectoryPicker) {
+    throw new Error('NO_DIRECTORY_PICKER');
+  }
+
+  const dirHandle = await window.showDirectoryPicker({
+    mode: 'readwrite'
+  });
+
+  let savedCount = 0;
+  for (const item of items) {
+    if ((item.success || item.status === 'done') && item.result && item.result.blob) {
+      const fileHandle = await dirHandle.getFileHandle(item.result.outputName, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(item.result.blob);
+      await writable.close();
+      savedCount++;
+    } else if (item.blob && item.outputName) {
+      const fileHandle = await dirHandle.getFileHandle(item.outputName, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(item.blob);
+      await writable.close();
+      savedCount++;
+    }
+  }
+
+  return { dirName: dirHandle.name, savedCount };
+}
+
+/**
  * 변환된 모든 HWPX 파일들을 하나의 ZIP 파일로 묶어 다운로드하는 함수
  */
-export async function downloadAllAsZip(conversionResults, zipFilename = 'converted_hwpx_documents.zip') {
+export async function downloadAllAsZip(conversionResults, zipFilename = '변환_HWPX_전체문서.zip') {
   const zip = new JSZip();
   let validCount = 0;
 
   for (const item of conversionResults) {
-    if (item.success && item.blob) {
-      zip.file(item.outputName, item.blob);
+    if ((item.success || item.status === 'done') && (item.blob || item.result?.blob)) {
+      const blob = item.blob || item.result.blob;
+      const name = item.outputName || item.result.outputName;
+      zip.file(name, blob);
       validCount++;
     }
   }

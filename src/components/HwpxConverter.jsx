@@ -6,24 +6,24 @@ import {
   CheckCircle2, 
   Download, 
   Trash2, 
-  FileArchive, 
   AlertCircle, 
   Sparkles, 
   Eye, 
-  FileSpreadsheet, 
   FolderArchive,
+  FolderOpen,
   ArrowRight,
   ShieldCheck,
   Zap,
-  Info,
   Layers,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Check
 } from 'lucide-react';
 import { 
   convertSingleHwpToHwpx, 
   convertBatchHwpToHwpx, 
   downloadAllAsZip,
+  saveFilesToDirectory,
   saveBlobAs
 } from '../utils/hwpToHwpxConverter.js';
 import HwpxGenerator from './HwpxGenerator.jsx';
@@ -32,13 +32,15 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
   // 메인 모드 선택 ('convert' : HWP 일괄 변환 | 'ai_report' : AI 표준보고서 생성)
   const [activeSubMode, setActiveSubMode] = useState('convert');
 
-  // 업로드된 파일 목록 [{ id, file, status: 'idle'|'processing'|'done'|'error', result, error, progress }]
+  // 업로드된 파일 목록 [{ id, file, name, size, status: 'idle'|'processing'|'done'|'error', result, error, progress }]
   const [fileList, setFileList] = useState([]);
   const [isConverting, setIsConverting] = useState(false);
   const [overallProgress, setOverallProgress] = useState({ currentIndex: 0, total: 0, percent: 0, currentFileName: '' });
   const [isDragActive, setIsDragActive] = useState(false);
   const [selectedPreview, setSelectedPreview] = useState(null);
   const [isZipping, setIsZipping] = useState(false);
+  const [isSavingToDir, setIsSavingToDir] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
 
   const fileInputRef = useRef(null);
 
@@ -52,8 +54,8 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   };
 
-  // 파일 추가 핸들러
-  const handleAddFiles = (selectedFiles) => {
+  // 핵심: 파일 추가 즉시 자동으로 전체 일괄 변환을 실행하는 함수
+  const processAndConvertFiles = async (selectedFiles) => {
     const rawFiles = Array.from(selectedFiles);
     const validHwpFiles = rawFiles.filter(f => f.name.toLowerCase().endsWith('.hwp'));
 
@@ -66,86 +68,34 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
       alert(`선택된 파일 중 .hwp 형식이 아닌 ${rawFiles.length - validHwpFiles.length}개 파일은 제외되었습니다.`);
     }
 
-    setFileList(prev => {
-      const newItems = validHwpFiles.filter(f => 
-        !prev.some(p => p.file.name === f.name && p.file.size === f.size)
-      ).map((f, idx) => ({
-        id: `hwp_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
-        file: f,
-        name: f.name,
-        size: f.size,
-        status: 'idle', // 'idle' | 'processing' | 'done' | 'error'
-        progress: 0,
-        result: null,
-        error: null
-      }));
+    // 새로 들어온 파일 아이템들 생성
+    const newItems = validHwpFiles.map((f, idx) => ({
+      id: `hwp_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
+      file: f,
+      name: f.name,
+      size: f.size,
+      status: 'processing', // 즉시 자동 변환 시작
+      progress: 10,
+      result: null,
+      error: null
+    }));
 
-      return [...prev, ...newItems];
-    });
-  };
-
-  // 드래그 앤 드롭 핸들러
-  const handleDrag = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setIsDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setIsDragActive(false);
-    }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleAddFiles(e.dataTransfer.files);
-    }
-  };
-
-  // 특정 파일 제거
-  const handleRemoveFile = (id) => {
-    setFileList(prev => prev.filter(item => item.id !== id));
-  };
-
-  // 전체 목록 초기화
-  const handleClearAll = () => {
-    if (isConverting) return;
-    if (fileList.length === 0) return;
-    if (window.confirm('업로드된 파일 목록을 모두 비우시겠습니까?')) {
-      setFileList([]);
-      setOverallProgress({ currentIndex: 0, total: 0, percent: 0, currentFileName: '' });
-      setSelectedPreview(null);
-    }
-  };
-
-  // 복수 파일 일괄 변환 시작
-  const handleStartBatchConvert = async () => {
-    const idleOrErrorItems = fileList.filter(item => item.status === 'idle' || item.status === 'error');
-    if (idleOrErrorItems.length === 0) {
-      alert('변환할 대기 파일이 없습니다. 새로운 .hwp 파일을 추가해 주세요.');
-      return;
-    }
-
+    // 기존 목록 초기화 후 새 파일들로 세팅 (또는 덮어쓰기)
+    setFileList(newItems);
     setIsConverting(true);
-    const targetTotal = idleOrErrorItems.length;
+    setSaveSuccessMsg('');
+    setSelectedPreview(null);
 
-    for (let i = 0; i < idleOrErrorItems.length; i++) {
-      const currentItem = idleOrErrorItems[i];
+    const targetTotal = newItems.length;
 
-      // 상태를 'processing'으로 갱신
-      setFileList(prev => prev.map(item => 
-        item.id === currentItem.id 
-          ? { ...item, status: 'processing', progress: 20 } 
-          : item
-      ));
+    for (let i = 0; i < targetTotal; i++) {
+      const currentItem = newItems[i];
 
       setOverallProgress({
         currentIndex: i + 1,
         total: targetTotal,
         percent: Math.round(((i) / targetTotal) * 100),
-        currentFileName: currentItem.name
+        currentFileName: `[${i + 1}/${targetTotal}] ${currentItem.name} 변환 중...`
       });
 
       try {
@@ -171,7 +121,6 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
         ));
       } catch (err) {
         console.error(`변환 에러 (${currentItem.name}):`, err);
-        // 에러 상태 반영
         setFileList(prev => prev.map(item => 
           item.id === currentItem.id 
             ? { 
@@ -189,21 +138,81 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
       currentIndex: targetTotal,
       total: targetTotal,
       percent: 100,
-      currentFileName: '전체 파일 변환 작업이 완료되었습니다.'
+      currentFileName: '전체 파일 변환이 완료되었습니다! 아래에서 원하는 저장 위치를 선택해 주세요.'
     });
     setIsConverting(false);
   };
 
-  // 단일 HWPX 파일 다운로드
-  const handleDownloadSingle = (item) => {
-    if (!item.result || !item.result.blob) {
-      alert('변환된 파일 데이터가 존재하지 않습니다.');
-      return;
+  // 드래그 앤 드롭 핸들러
+  const handleDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setIsDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setIsDragActive(false);
     }
-    saveBlobAs(item.result.blob, item.result.outputName);
   };
 
-  // 전체 HWPX 일괄 ZIP 다운로드
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processAndConvertFiles(e.dataTransfer.files);
+    }
+  };
+
+  // 전체 목록 초기화
+  const handleClearAll = () => {
+    if (isConverting) return;
+    setFileList([]);
+    setOverallProgress({ currentIndex: 0, total: 0, percent: 0, currentFileName: '' });
+    setSelectedPreview(null);
+    setSaveSuccessMsg('');
+  };
+
+  // 1. [원하는 저장 폴더 선택하여 전체 저장]
+  const handleSelectFolderAndSaveAll = async () => {
+    const doneItems = fileList.filter(item => item.status === 'done' && item.result && item.result.blob);
+    if (doneItems.length === 0) {
+      alert('저장할 수 있는 변환 완료 파일이 없습니다.');
+      return;
+    }
+
+    try {
+      setIsSavingToDir(true);
+      setSaveSuccessMsg('');
+
+      // File System Access API 시도
+      if (window.showDirectoryPicker) {
+        const { dirName, savedCount } = await saveFilesToDirectory(doneItems);
+        setSaveSuccessMsg(`🎉 선택하신 [${dirName}] 폴더에 총 ${savedCount}개의 '변환_*.hwpx' 파일이 성공적으로 저장되었습니다!`);
+      } else {
+        // DirectoryPicker 미지원 브라우저는 ZIP 일괄 다운로드로 자동 안내
+        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        await downloadAllAsZip(doneItems, `변환_HWPX_전체문서_${today}.zip`);
+        setSaveSuccessMsg(`🎉 ZIP 압축 파일로 일괄 저장되었습니다!`);
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        // 사용자가 폴더 선택창을 취소한 경우
+        return;
+      }
+      console.warn('Directory save fallback to zip:', err);
+      try {
+        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        await downloadAllAsZip(doneItems, `변환_HWPX_전체문서_${today}.zip`);
+        setSaveSuccessMsg(`🎉 ZIP 압축 파일로 일괄 다운로드되었습니다!`);
+      } catch (zipErr) {
+        alert(`저장 중 오류 발생: ${zipErr.message}`);
+      }
+    } finally {
+      setIsSavingToDir(false);
+    }
+  };
+
+  // 2. [전체 ZIP 일괄 다운로드]
   const handleDownloadAllZip = async () => {
     const doneItems = fileList.filter(item => item.status === 'done' && item.result && item.result.blob);
     if (doneItems.length === 0) {
@@ -213,9 +222,9 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
 
     try {
       setIsZipping(true);
-      const resultsToZip = doneItems.map(item => item.result);
       const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      await downloadAllAsZip(resultsToZip, `HWPX_일괄변환_${today}.zip`);
+      await downloadAllAsZip(doneItems, `변환_HWPX_전체문서_${today}.zip`);
+      setSaveSuccessMsg(`🎉 ZIP 압축 파일로 일괄 저장되었습니다!`);
     } catch (err) {
       alert(`ZIP 압축 다운로드 중 오류 발생: ${err.message}`);
     } finally {
@@ -223,11 +232,20 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
     }
   };
 
+  // 3. 단일 HWPX 파일 개별 다운로드
+  const handleDownloadSingle = (item) => {
+    if (!item.result || !item.result.blob) {
+      alert('변환된 파일 데이터가 존재하지 않습니다.');
+      return;
+    }
+    saveBlobAs(item.result.blob, item.result.outputName);
+  };
+
   // 통계 계산
   const totalUploaded = fileList.length;
   const doneCount = fileList.filter(f => f.status === 'done').length;
   const errorCount = fileList.filter(f => f.status === 'error').length;
-  const idleCount = fileList.filter(f => f.status === 'idle').length;
+  const processingCount = fileList.filter(f => f.status === 'processing').length;
 
   return (
     <div className="tab-container animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -261,7 +279,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
             }}
           >
             <Zap size={16} />
-            <span>HWP ➔ HWPX 복수 파일 일괄 변환</span>
+            <span>HWP ➔ HWPX 원터치 자동 변환</span>
             {doneCount > 0 && (
               <span style={{
                 background: 'var(--success-color)',
@@ -270,7 +288,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                 padding: '1px 6px',
                 borderRadius: '10px'
               }}>
-                {doneCount}
+                {doneCount}건 완료
               </span>
             )}
           </button>
@@ -299,11 +317,11 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)' }}>
           <ShieldCheck size={14} color="var(--success-color)" />
-          <span>한컴 표준 OWPML 100% 호환</span>
+          <span>파일명 앞 "변환_" 자동 추가 &amp; 표준 OWPML</span>
         </div>
       </div>
 
-      {/* 모드 1: HWP -> HWPX 일괄 변환기 */}
+      {/* 모드 1: HWP -> HWPX 자동 변환기 */}
       {activeSubMode === 'convert' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
@@ -313,10 +331,10 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
               <div>
                 <h3 style={{ margin: '0 0 6px', fontSize: '17px', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <FileText size={20} color="var(--accent-blue)" />
-                  한글 문서(.hwp) ➔ 개방형 문서(.hwpx) 자동 변환
+                  한글 파일(.hwp) ➔ HWPX 자동 변환 및 원하는 폴더 저장
                 </h3>
                 <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  수동으로 하나씩 변환하기 힘든 <strong>복수의 HWP 파일들을 일괄 업로드</strong>하여, 한컴오피스 최신 규격인 <strong>HWPX(ZIP+XML) 파일로 즉시 변환</strong>합니다.
+                  파일을 끌어다 놓으면 <strong>즉시 자동으로 전체 변환</strong>되며, 파일명 앞에 <strong>"변환_"</strong>이 추가되어 <strong>원하는 PC 저장 위치에 한 번에 저장</strong>됩니다.
                 </p>
               </div>
 
@@ -337,12 +355,12 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                     gap: '4px'
                   }}
                 >
-                  <Trash2 size={14} /> 목록 전체 비우기
+                  <Trash2 size={14} /> 목록 비우기
                 </button>
               )}
             </div>
 
-            {/* 드래그 앤 드롭 영역 */}
+            {/* 원터치 자동 변환 드롭존 */}
             <div
               onDragEnter={handleDrag}
               onDragOver={handleDrag}
@@ -353,7 +371,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                 border: `2px dashed ${isDragActive ? 'var(--accent-blue)' : 'var(--glass-border)'}`,
                 background: isDragActive ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
                 borderRadius: '14px',
-                padding: '36px 20px',
+                padding: '38px 20px',
                 textAlign: 'center',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
@@ -371,7 +389,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                 accept=".hwp"
                 onChange={(e) => {
                   if (e.target.files && e.target.files.length > 0) {
-                    handleAddFiles(e.target.files);
+                    processAndConvertFiles(e.target.files);
                   }
                   e.target.value = ''; // 재선택 가능하게 리셋
                 }}
@@ -379,25 +397,29 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
               />
 
               <div style={{
-                width: '56px',
-                height: '56px',
-                borderRadius: '16px',
-                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(99, 102, 241, 0.2))',
+                width: '60px',
+                height: '60px',
+                borderRadius: '18px',
+                background: isConverting 
+                  ? 'rgba(59, 130, 246, 0.2)' 
+                  : 'linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(16, 185, 129, 0.25))',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'var(--accent-blue)',
-                boxShadow: '0 8px 16px rgba(0,0,0,0.2)'
+                color: isConverting ? 'var(--accent-blue)' : '#10b981',
+                boxShadow: '0 8px 20px rgba(0,0,0,0.2)'
               }}>
-                <Upload size={28} />
+                {isConverting ? <RefreshCw size={30} className="spin" /> : <Upload size={30} />}
               </div>
 
               <div>
-                <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  변환할 .hwp 파일들을 여기에 끌어다 놓으세요 (복수 선택 지원)
+                <p style={{ margin: '0 0 4px', fontSize: '15.5px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {isConverting 
+                    ? '⚡ 파일을 실시간 자동 변환하고 있습니다...' 
+                    : '변환할 .hwp 파일들을 여기에 끌어다 놓으세요 (복수 선택 지원)'}
                 </p>
-                <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
-                  또는 클릭하여 파일 탐색기에서 여러 개의 .hwp 파일을 한 번에 선택할 수 있습니다.
+                <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                  파일을 놓는 즉시 <strong>자동으로 전체 변환</strong>이 시작되며, <strong>"변환_*.hwpx"</strong>로 생성됩니다.
                 </p>
               </div>
 
@@ -405,149 +427,155 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
-                background: 'rgba(59, 130, 246, 0.1)',
-                border: '1px solid rgba(59, 130, 246, 0.25)',
-                padding: '4px 12px',
+                background: 'rgba(16, 185, 129, 0.1)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                padding: '5px 14px',
                 borderRadius: '20px',
-                fontSize: '11px',
-                color: '#60a5fa',
-                fontWeight: 600
+                fontSize: '11.5px',
+                color: '#34d399',
+                fontWeight: 700
               }}>
-                <Sparkles size={12} /> OLE5 바이너리 스트림 정밀 해독 및 표준 OWPML 패키징
+                <Zap size={13} /> 추가 클릭 없이 등록 즉시 자동 변환 ➔ 원하는 폴더에 원클릭 일괄 저장
               </div>
             </div>
 
-            {/* 작업 제어 및 상태 통계 바 */}
-            {fileList.length > 0 && (
-              <div style={{
-                marginTop: '20px',
-                display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px',
-                padding: '14px 18px',
-                background: 'rgba(0, 0, 0, 0.25)',
-                borderRadius: '12px',
-                border: '1px solid var(--glass-border)'
-              }}>
-                {/* 좌측: 통계 배지 */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    총 {totalUploaded}개 파일
-                  </span>
-                  {doneCount > 0 && (
-                    <span style={{ fontSize: '12px', color: 'var(--success-color)', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                      <CheckCircle2 size={14} /> 완료 {doneCount}개
-                    </span>
-                  )}
-                  {idleCount > 0 && (
-                    <span style={{ fontSize: '12px', color: 'var(--warning-color)', fontWeight: 600 }}>
-                      대기 {idleCount}개
-                    </span>
-                  )}
-                  {errorCount > 0 && (
-                    <span style={{ fontSize: '12px', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                      <AlertCircle size={14} /> 오류 {errorCount}개
-                    </span>
-                  )}
-                </div>
-
-                {/* 우측: 액션 버튼들 */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {doneCount > 0 && (
-                    <button
-                      onClick={handleDownloadAllZip}
-                      disabled={isZipping || isConverting}
-                      style={{
-                        background: 'linear-gradient(135deg, #10b981, #059669)',
-                        color: '#ffffff',
-                        border: 'none',
-                        padding: '9px 16px',
-                        borderRadius: '8px',
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        cursor: (isZipping || isConverting) ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
-                      }}
-                    >
-                      <FolderArchive size={16} />
-                      {isZipping ? 'ZIP 묶는 중...' : `전체 HWPX 다운로드 (.ZIP ${doneCount}건)`}
-                    </button>
-                  )}
-
-                  <button
-                    onClick={handleStartBatchConvert}
-                    disabled={isConverting || idleCount === 0}
-                    style={{
-                      background: (isConverting || idleCount === 0)
-                        ? 'rgba(255, 255, 255, 0.05)'
-                        : 'linear-gradient(135deg, var(--accent-blue), #6366f1)',
-                      color: (isConverting || idleCount === 0) ? 'var(--text-muted)' : '#ffffff',
-                      border: 'none',
-                      padding: '9px 20px',
-                      borderRadius: '8px',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      cursor: (isConverting || idleCount === 0) ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      boxShadow: (isConverting || idleCount === 0) ? 'none' : '0 4px 14px rgba(59, 130, 246, 0.4)'
-                    }}
-                  >
-                    {isConverting ? (
-                      <>
-                        <RefreshCw size={16} className="spin" />
-                        <span>변환 진행 중... ({overallProgress.currentIndex}/{overallProgress.total})</span>
-                      </>
-                    ) : (
-                      <>
-                        <Zap size={16} />
-                        <span>{doneCount > 0 ? '남은 파일 일괄 변환' : '일괄 변환 시작'}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* 전체 진행률 게이지 바 */}
+            {/* 변환 진행률 게이지 바 */}
             {isConverting && (
-              <div style={{ marginTop: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px', color: 'var(--text-secondary)' }}>
-                  <span>{overallProgress.currentFileName}</span>
-                  <span style={{ fontWeight: 700, color: 'var(--accent-blue)' }}>{overallProgress.percent}%</span>
+              <div style={{ marginTop: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                  <span style={{ fontWeight: 600 }}>{overallProgress.currentFileName}</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-blue)' }}>{overallProgress.percent}%</span>
                 </div>
-                <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '6px', overflow: 'hidden' }}>
                   <div 
                     style={{ 
                       width: `${overallProgress.percent}%`, 
                       height: '100%', 
                       background: 'linear-gradient(to right, var(--accent-blue), #10b981)', 
-                      transition: 'width 0.3s ease' 
+                      transition: 'width 0.25s ease' 
                     }} 
                   />
                 </div>
               </div>
             )}
+
+            {/* 저장 성공 안내 알림 배너 */}
+            {saveSuccessMsg && (
+              <div style={{
+                marginTop: '16px',
+                padding: '12px 16px',
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                borderRadius: '10px',
+                color: '#34d399',
+                fontSize: '13px',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                animation: 'scale-in 0.2s ease'
+              }}>
+                <CheckCircle2 size={18} />
+                <span>{saveSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* 변환 완료 후: 원하는 저장 위치 선택 및 일괄 다운로드 액션 바 */}
+            {doneCount > 0 && (
+              <div style={{
+                marginTop: '20px',
+                padding: '16px 20px',
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.08))',
+                borderRadius: '14px',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '14px'
+              }}>
+                {/* 좌측 요약 */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                    <CheckCircle2 size={18} color="#10b981" />
+                    <span style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      총 {doneCount}개 파일 변환 완료!
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
+                    원하는 PC 폴더를 지정하여 <strong>"변환_*.hwpx"</strong> 파일들을 한 번에 쏙 저장하세요.
+                  </p>
+                </div>
+
+                {/* 우측 메인 저장 버튼들 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  {/* 핵심 1: [원하는 폴더 선택하여 전체 저장] */}
+                  <button
+                    onClick={handleSelectFolderAndSaveAll}
+                    disabled={isSavingToDir || isConverting}
+                    style={{
+                      background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '11px 20px',
+                      borderRadius: '10px',
+                      fontSize: '14px',
+                      fontWeight: 800,
+                      cursor: (isSavingToDir || isConverting) ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      boxShadow: '0 6px 18px rgba(37, 99, 235, 0.4)',
+                      transition: 'all 0.2s ease'
+                    }}
+                    title="원하는 PC 저장 폴더를 선택하여 변환된 파일들을 일괄 저장합니다"
+                  >
+                    <FolderOpen size={18} />
+                    <span>{isSavingToDir ? '폴더에 저장 중...' : `📁 원하는 폴더 선택하여 전체 저장 (${doneCount}건)`}</span>
+                  </button>
+
+                  {/* 핵심 2: [ZIP 압축 파일로 일괄 다운로드] */}
+                  <button
+                    onClick={handleDownloadAllZip}
+                    disabled={isZipping || isConverting}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--glass-border)',
+                      padding: '11px 16px',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      cursor: (isZipping || isConverting) ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                    title="ZIP 압축 파일 1개로 묶어 다운로드합니다"
+                  >
+                    <FolderArchive size={16} />
+                    <span>{isZipping ? 'ZIP 압축 중...' : '📦 ZIP으로 저장'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* 파일 리스트 테이블 */}
+          {/* 변환된 파일 목록 */}
           {fileList.length > 0 && (
             <div className="glass-panel" style={{ padding: '20px', borderRadius: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Layers size={18} color="var(--accent-blue)" />
-                  변환 대상 목록 ({fileList.length}건)
+                  변환 대상 및 결과 파일 목록 ({fileList.length}건)
                 </h4>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  파일명 앞에 <strong>"변환_"</strong>이 자동 부여되었습니다
+                </span>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {fileList.map((item, idx) => (
+                {fileList.map((item) => (
                   <div
                     key={item.id}
                     style={{
@@ -598,46 +626,38 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
 
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                          <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {item.name}
-                          </span>
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                            ({formatBytes(item.size)})
+                          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                            [원본] {item.name} ({formatBytes(item.size)})
                           </span>
                         </div>
 
                         {item.status === 'done' && item.result && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11.5px', color: 'var(--text-secondary)' }}>
-                            <span style={{ color: '#10b981', fontWeight: 600 }}>
-                              ➔ {item.result.outputName} ({formatBytes(item.result.outputSize)})
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13.5px', color: 'var(--text-primary)', fontWeight: 700, flexWrap: 'wrap' }}>
+                            <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <ArrowRight size={14} /> {item.result.outputName}
                             </span>
-                            <span>· 문단 {item.result.paragraphsCount}개</span>
-                            {item.result.tablesCount > 0 && <span>· 표 {item.result.tablesCount}개</span>}
+                            <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: 400 }}>
+                              ({formatBytes(item.result.outputSize)} · 문단 {item.result.paragraphsCount}개)
+                            </span>
                           </div>
                         )}
 
                         {item.status === 'processing' && (
-                          <div style={{ fontSize: '11.5px', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ fontSize: '12px', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <RefreshCw size={12} className="spin" />
-                            <span>바이너리 스트림 분석 및 HWPX 빌드 중...</span>
+                            <span>바이너리 스트림 분석 및 HWPX 자동 빌드 중...</span>
                           </div>
                         )}
 
                         {item.status === 'error' && (
-                          <div style={{ fontSize: '11.5px', color: '#f87171' }}>
+                          <div style={{ fontSize: '12px', color: '#f87171' }}>
                             ❌ 변환 실패: {item.error}
-                          </div>
-                        )}
-
-                        {item.status === 'idle' && (
-                          <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                            변환 대기 중
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* 우측: 버튼들 */}
+                    {/* 우측: 개별 다운로드 및 미리보기 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                       {item.status === 'done' && item.result && (
                         <>
@@ -677,27 +697,11 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                               alignItems: 'center',
                               gap: '4px'
                             }}
+                            title="이 파일만 개별 저장"
                           >
-                            <Download size={14} /> HWPX 저장
+                            <Download size={14} /> 개별 저장
                           </button>
                         </>
-                      )}
-
-                      {!isConverting && (
-                        <button
-                          onClick={() => handleRemoveFile(item.id)}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: 'var(--text-muted)',
-                            padding: '6px',
-                            cursor: 'pointer',
-                            borderRadius: '6px'
-                          }}
-                          title="목록에서 제거"
-                        >
-                          <Trash2 size={15} />
-                        </button>
                       )}
                     </div>
                   </div>
@@ -719,7 +723,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                       <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        📄 [{previewItem.name}] 텍스트 추출 내용 미리보기
+                        📄 [{previewItem.result.outputName}] 추출 텍스트 미리보기
                       </span>
                       <button
                         onClick={() => setSelectedPreview(null)}
@@ -750,7 +754,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
             </div>
           )}
 
-          {/* 특징 및 안내 카드 */}
+          {/* 하단 3가지 핵심 안내 */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
@@ -760,35 +764,35 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <Zap size={18} color="var(--accent-blue)" />
                 <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  순수 브라우저 기반 초고속 일괄 변환
+                  드래그 즉시 전체 자동 변환
                 </h4>
               </div>
               <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                서버로 파일을 전송하지 않고 브라우저 내에서 즉각 변환되므로 대외비 보고서, 개인정보가 포함된 공문서도 보안 유출 걱정 없이 안전하게 변환됩니다.
+                파일을 끌어다 놓는 순간 수동 버튼을 누를 필요 없이 즉시 전체 파일이 백그라운드에서 고속 자동 변환됩니다.
               </p>
             </div>
 
             <div className="glass-panel" style={{ padding: '18px', borderRadius: '14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <FolderArchive size={18} color="#10b981" />
+                <FolderOpen size={18} color="#2563eb" />
                 <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  원클릭 ZIP 압축 일괄 다운로드
+                  원하는 로컬 폴더 직접 지정 저장
                 </h4>
               </div>
               <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                수십 개의 .hwp 파일을 하나씩 다운로드할 필요 없이, 변환 완료 후 <strong>[전체 HWPX 다운로드 (.ZIP)]</strong> 버튼 하나로 압축 파일로 일괄 저장할 수 있습니다.
+                <strong>[원하는 폴더 선택하여 전체 저장]</strong>을 클릭하여 내 PC의 원하는 폴더를 선택하면, <strong>변환_*.hwpx</strong> 파일들이 해당 폴더에 한 번에 저장됩니다.
               </p>
             </div>
 
             <div className="glass-panel" style={{ padding: '18px', borderRadius: '14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <ShieldCheck size={18} color="#8b5cf6" />
+                <ShieldCheck size={18} color="#10b981" />
                 <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  한컴 표준 OWPML 규격 준수
+                  파일명 '변환_' 추가 및 보안성
                 </h4>
               </div>
               <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                표준 section0.xml, header.xml, content.hpf, mimetype(STORED) 등 공공기관 및 한컴오피스 2024의 개방형 한글 스키마를 완벽히 준수하여 제작됩니다.
+                원본 파일과 구분하기 쉽게 <strong>"변환_원본파일명.hwpx"</strong>로 생성되며, 외부 서버 전송 없이 100% 브라우저 내에서 안전하게 처리됩니다.
               </p>
             </div>
           </div>
