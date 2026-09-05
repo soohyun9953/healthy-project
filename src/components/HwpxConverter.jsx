@@ -48,6 +48,8 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
 
   const fileInputRef = useRef(null);
 
+  const [excludedNotice, setExcludedNotice] = useState('');
+
   // 파일 크기 포맷터
   const formatBytes = (bytes, decimals = 2) => {
     if (!bytes || bytes === 0) return '0 Bytes';
@@ -58,21 +60,40 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   };
 
-  // 핵심: 파일 추가 즉시 자동으로 전체 일괄 변환을 실행하는 함수
+  // 핵심: 파일 추가 즉시 자동으로 전체 일괄 변환을 실행하는 함수 (HWPX 파일은 자동 제외)
   const processAndConvertFiles = async (selectedFiles) => {
     const rawFiles = Array.from(selectedFiles);
+    
+    // 1. HWPX 파일 및 비 HWP 파일 분리 필터링 (HWPX 파일은 전환 대상에서 자동 제외)
     const validHwpFiles = rawFiles.filter(f => f.name.toLowerCase().endsWith('.hwp'));
+    const hwpxFiles = rawFiles.filter(f => f.name.toLowerCase().endsWith('.hwpx'));
+    const otherFiles = rawFiles.filter(f => !f.name.toLowerCase().endsWith('.hwp') && !f.name.toLowerCase().endsWith('.hwpx'));
+
+    // 제외된 파일 안내 메시지 구성
+    const excludedParts = [];
+    if (hwpxFiles.length > 0) {
+      excludedParts.push(`이미 HWPX 형식인 파일 ${hwpxFiles.length}건(${hwpxFiles.map(f => f.name).slice(0, 2).join(', ')}${hwpxFiles.length > 2 ? ' 외' : ''})`);
+    }
+    if (otherFiles.length > 0) {
+      excludedParts.push(`지원되지 않는 형식 ${otherFiles.length}건`);
+    }
+
+    if (excludedParts.length > 0) {
+      setExcludedNotice(`💡 ${excludedParts.join(', ')}은(는) 변환 대상에서 자동으로 제외되었습니다.`);
+    } else {
+      setExcludedNotice('');
+    }
 
     if (validHwpFiles.length === 0) {
-      alert('한글(.hwp) 확장자 파일만 업로드 가능합니다.\n(HWPX 파일은 이미 변환된 파일입니다)');
+      if (hwpxFiles.length > 0) {
+        alert('선택하신 파일들이 이미 HWPX(.hwpx) 파일이므로 변환 대상에서 제외되어 변환할 .hwp 파일이 없습니다.');
+      } else {
+        alert('변환 대상인 한글(.hwp) 파일이 없습니다. .hwp 파일을 선택해 주세요.');
+      }
       return;
     }
 
-    if (validHwpFiles.length !== rawFiles.length) {
-      alert(`선택된 파일 중 .hwp 형식이 아닌 ${rawFiles.length - validHwpFiles.length}개 파일은 제외되었습니다.`);
-    }
-
-    // 새로 들어온 파일 아이템들 생성
+    // 새로 들어온 유효 HWP 파일 아이템들 생성
     const newItems = validHwpFiles.map((f, idx) => ({
       id: `hwp_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
       file: f,
@@ -173,6 +194,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
     setOverallProgress({ currentIndex: 0, total: 0, percent: 0, currentFileName: '' });
     setSelectedPreview(null);
     setSaveSuccessMsg('');
+    setExcludedNotice('');
   };
 
   // 1. [원클릭 ZIP 압축 파일 저장 - 추천 & 가장 안전]
@@ -411,7 +433,7 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".hwp"
+                accept=".hwp,.hwpx"
                 onChange={(e) => {
                   if (e.target.files && e.target.files.length > 0) {
                     processAndConvertFiles(e.target.files);
@@ -460,9 +482,28 @@ export default function HwpxConverter({ apiKey, llmProvider = 'gemini', omniRout
                 color: '#34d399',
                 fontWeight: 700
               }}>
-                <Zap size={13} /> 추가 클릭 없이 등록 즉시 자동 변환 ➔ 원하는 위치에 원클릭 일괄 저장
+                <Zap size={13} /> 추가 클릭 없이 등록 즉시 자동 변환 (HWPX 파일은 자동 제외)
               </div>
             </div>
+
+            {/* 제외된 파일(HWPX 등) 안내 알림 */}
+            {excludedNotice && (
+              <div style={{
+                marginTop: '12px',
+                padding: '10px 14px',
+                background: 'rgba(59, 130, 246, 0.08)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                borderRadius: '8px',
+                color: '#93c5fd',
+                fontSize: '12.5px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                <Sparkles size={14} color="#60a5fa" />
+                <span>{excludedNotice}</span>
+              </div>
+            )}
 
             {/* 변환 진행률 게이지 바 */}
             {isConverting && (
