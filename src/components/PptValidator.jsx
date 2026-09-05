@@ -1006,24 +1006,46 @@ export default function PptValidator({ apiKey }) {
                 cy = parseInt(extNode.getAttribute('cy') || '0', 10);
               }
 
-              // 2-2. 텍스트 추출
-              const tNodes = node.getElementsByTagName('a:t');
-              let tList = [];
-              if (tNodes.length > 0) {
+              // 2-2. Shape 이름 및 ph 속성 추출
+              let shapeName = '';
+              let phType = '';
+              for (let k = 0; k < childs.length; k++) {
+                const cNode = childs[k];
+                const cName = cNode.localName || cNode.tagName.split(':').pop();
+                if (cName === 'cNvPr') {
+                  shapeName = cNode.getAttribute('name') || '';
+                }
+                if (cName === 'ph') {
+                  phType = cNode.getAttribute('type') || '';
+                }
+              }
+
+              // 2-3. 텍스트 추출 (문단 단위 보존, 런 단위 결합)
+              const pNodes = node.getElementsByTagName('a:p');
+              let pTexts = [];
+              if (pNodes.length > 0) {
+                for (let pIdx = 0; pIdx < pNodes.length; pIdx++) {
+                  const pEl = pNodes[pIdx];
+                  const tEls = pEl.getElementsByTagName('a:t');
+                  let pStr = '';
+                  for (let tIdx = 0; tIdx < tEls.length; tIdx++) {
+                    pStr += (tEls[tIdx].textContent || '');
+                  }
+                  if (pStr.trim()) pTexts.push(pStr.trim());
+                }
+                textContent = pTexts.join(' ').trim();
+              } else {
+                const tNodes = node.getElementsByTagName('a:t');
+                let tList = [];
                 for (let k = 0; k < tNodes.length; k++) {
                   tList.push(tNodes[k].textContent || '');
                 }
-              } else {
-                for (let k = 0; k < childs.length; k++) {
-                  const cNode = childs[k];
-                  const cName = cNode.localName || cNode.tagName.split(':').pop();
-                  if (cName === 't') tList.push(cNode.textContent || '');
-                }
+                textContent = tList.join('').trim();
               }
-              textContent = tList.join(' ').trim();
 
               if (textContent) {
-                shapes.push({ x, y, cx, cy, text: textContent });
+                const isTitleShape = phType === 'title' || phType === 'ctrTitle' || shapeName.includes('제목') || shapeName.toLowerCase().includes('title');
+                shapes.push({ x, y, cx, cy, text: textContent, shapeName, phType, isTitleShape });
                 if (!slides_text_map[slideNum]) {
                   slides_text_map[slideNum] = [];
                 }
@@ -1326,60 +1348,42 @@ export default function PptValidator({ apiKey }) {
           }
 
           if (checkNumbering) {
-            // 헤더 수집: y좌표가 있으면 상단 영역(y<1500000), y=null인 레이아웃 상속 도형은 넘버링 패턴으로 판단
-            // ★ 넘버링 정규식 엄격화: 반드시 숫자 뒤에 점(.)이 포함된 '1. ', '1.1. ', '1.1.1. ' 등의 표기만 넘버링으로 인정!
-            // '1) ', '100%', '1. 본 사업은...' 등 점 없이 시작하는 거버닝 서술 문장은 넘버링에서 100% 제외
-            const strict_num_regex = /^\s*([0-9]+\.(?:[0-9]+\.)*)[0-9]*[\s\.]|^\s*([0-9]+\.[0-9]+)[\s\.]|^\s*(I{1,3}|IV|V|VI{0,3}|IX|X)\b/i;
-
+            // 헤더 수집: phType이 title이거나 shapeName에 '제목'이 포함된 경우 최우선 수집, 그 외 상단 영역(y<1500000)
+            const num_title_regex = /^\s*([0-9]+(\.[0-9]+)*)[\s\.]|^\s*(I{1,3}|IV|V|VI{0,3}|IX|X)\b/i;
             const headerShapes = shapes.filter(s => {
-              // Y좌표 1,100,000 EMU (약 3cm) 이내의 진짜 최상단 헤더 영역만 수집하여 거버닝 문장 영역(Y>1.1M) 자동 차단
-              if (s.y !== null) return s.y < 1100000;
-              return strict_num_regex.test(s.text);
+              if (s.isTitleShape) return true;
+              if (s.y !== null) return s.y < 1500000;
+              return num_title_regex.test(s.text);
             });
             
             let leftTitles = [];
-            let rightShapes = [];
+            let rightTitle = '';
             
             headerShapes.forEach(hs => {
-              const txt = hs.text.trim();
-              
-              // 거버닝 문장 필터링: 텍스트 길이가 40자 이상이거나 서술형 문장인 경우 제목에서 제외
-              const is_governing_sentence = txt.length > 45 || 
-                txt.endsWith('합니다.') || txt.endsWith('함.') || txt.endsWith('임.') || txt.endsWith('다.') ||
-                txt.startsWith('※') || txt.startsWith('■') || txt.startsWith('▶') || /^\d+\)/.test(txt);
-
-              if (is_governing_sentence) return;
-
               // x=null(레이아웃 상속)이거나 x<6000000이면 좌측 타이틀
-              if (hs.x === null || hs.x < 6000000) {
-                const is_dup = leftTitles.some(t => t.text.trim() === txt);
+              if (hs.x === null || hs.x < 6000000 || hs.isTitleShape) {
+                const is_dup = leftTitles.some(t => t.text.trim() === hs.text.trim());
                 if (!is_dup) {
                   leftTitles.push(hs);
                 }
               } else if (hs.x !== null && hs.x >= 6000000) {
-                rightShapes.push(hs);
+                if (!rightTitle || hs.y < (rightTitle.y || 99999999)) {
+                  rightTitle = hs;
+                }
               }
             });
 
-            leftTitles.sort((a, b) => a.y - b.y);
-            rightShapes.sort((a, b) => a.y - b.y);
-
-            // ★ 좌측 상단은 최대 2줄(상위 2개)까지만 진짜 제목으로 인정
-            const validLeftTitles = leftTitles.slice(0, 2);
-            const validRightShapes = rightShapes.slice(0, 3);
-
-            // 상단우측 세번째 줄이 1단계, 없으면 상단 우측 첫 번째 shape
-            let level1Title = '';
-            if (validRightShapes.length >= 3) {
-              level1Title = validRightShapes[2].text.trim();
-            } else if (validRightShapes.length > 0) {
-              level1Title = validRightShapes[0].text.trim();
-            }
+            // isTitleShape 우선, 그 다음 y좌표 순으로 정렬
+            leftTitles.sort((a, b) => {
+              if (a.isTitleShape && !b.isTitleShape) return -1;
+              if (!a.isTitleShape && b.isTitleShape) return 1;
+              return (a.y || 0) - (b.y || 0);
+            });
 
             let majorTitleText = '';
             const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
 
-            validLeftTitles.forEach(t => {
+            leftTitles.forEach(t => {
               const txt = t.text.trim();
               if (roman_regex.test(txt)) {
                 majorTitleText = txt;
@@ -1389,13 +1393,12 @@ export default function PptValidator({ apiKey }) {
             slideList.push({
               slideNum,
               majorTitle: majorTitleText,
-              titles: validLeftTitles.map(t => t.text.trim()).filter(Boolean),
-              rightTitle: level1Title,
-              rightShapesText: validRightShapes.map(r => r.text.trim())
+              titles: leftTitles.map(t => t.text.trim()).filter(Boolean),
+              rightTitle: rightTitle ? rightTitle.text : ''
             });
 
-            if (level1Title) {
-              const pageMatch = level1Title.match(/(?:Page|P\.|-)?\s*(\d+)\s*(?:-)?$/i);
+            if (rightTitle && rightTitle.text) {
+              const pageMatch = rightTitle.text.match(/(?:Page|P\.|-)?\s*(\d+)\s*(?:-)?$/i);
               if (pageMatch) {
                 detectedPages.push(parseInt(pageMatch[1], 10));
               }
@@ -1449,8 +1452,8 @@ export default function PptValidator({ apiKey }) {
           // 넘버링별 타이틀 불일치 검증을 위한 해시 맵
           const numbering_title_map = {};
 
-          // 3단계(x.x.x) 부모별 2단계 제목 추적 맵 초기화
-          window.level3_parent_tracker = {};
+          // 타이틀별 넘버링 불일치 검증을 위한 해시 맵 (동일 제목에 다른 번호 부여 검출)
+          const title_numbering_map = {};
 
           // 넘버링 순차성 검증을 위한 부모 경로별 마지막 자식 값 추적 맵
           const sibling_tracker = {};
@@ -1459,8 +1462,7 @@ export default function PptValidator({ apiKey }) {
           const alt_page_tracker = {};
 
           const roman_regex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X)\b/i;
-          // ★ 넘버링 추출 정규식 강화: 반드시 숫자 뒤에 점(.)이 명시된 '1.', '1.1.', '1.1.1.' 형식만 넘버링으로 인정 (거버닝 '1)' 또는 서술문 숫자 차단)
-          const num_regex = /^\s*([0-9]+(\.[0-9]+)+|[0-9]+\.)[\s\.]/;
+          const num_regex = /^\s*([0-9]+(\.[0-9]+)*)[\s\.]/;
 
           for (let i = 0; i < slideList.length; i++) {
             const slide = slideList[i];
@@ -1490,106 +1492,29 @@ export default function PptValidator({ apiKey }) {
               }
             }
 
-            // 1-2) 3단계(x.x.x)가 여러 개 있는 경우 2단계(좌측상단 첫번째 줄) 동일 제목 유지 여부 정합성 검증
-            // subTitles[0] ➜ 2단계 (좌측상단 첫번째 줄)
-            // subTitles[1] ➜ 3단계 (좌측상단 두번째 줄, x.x.x)
-            const subTitles = (slide.titles || []).filter(text => !roman_regex.test(text));
-            if (subTitles.length >= 2) {
-              const level2Title = subTitles[0].trim();
-              const level3Title = subTitles[1].trim();
-
-              // 3단계 넘버링 파싱 (x.x.x 패턴: 예: 1.1.1, 1.1.2 등 숫자 점 2개 이상)
-              const level3_num_match = level3Title.match(/^\s*([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)*)/);
-              if (level3_num_match) {
-                const full_num = level3_num_match[1];
-                const num_parts = full_num.split('.');
-                // 상위 2단계 부모 넘버링 (예: "1.1.1" ➜ "1.1")
-                const parent_num = num_parts.slice(0, 2).join('.');
-
-                // 2단계 제목에서 (순서번호/전체페이지수) 접미사 제거
-                const alt_page_regex = /\s*[(\[]\s*\d+\s*[\/]\s*\d+\s*[)\]]\s*$/;
-                const pure_level2 = level2Title.replace(alt_page_regex, '').trim();
-
-                if (!window.level3_parent_tracker) window.level3_parent_tracker = {};
-
-                if (window.level3_parent_tracker[parent_num]) {
-                  const prev_info = window.level3_parent_tracker[parent_num];
-                  if (prev_info.level2 !== pure_level2) {
-                    allNumberings.push({
-                      fileName: file.name,
-                      slideNum: slide.slideNum,
-                      area: '좌측 타이틀 (2단계 ↔ 3단계)',
-                      text: `[2단계] ${level2Title} / [3단계] ${level3Title}`,
-                      error: '3단계(x.x.x) 하위 2단계 제목 불일치',
-                      guide: `3단계 넘버링("${parent_num}.x")의 슬라이드가 여러 개일 때, 2단계 제목(좌측상단 첫번째 줄)은 동일해야 합니다. (이전 2단계: "${prev_info.level2}" ➜ 현재 2단계: "${pure_level2}")`
-                    });
-                    fileNumErrorsCount++;
-                  }
-                } else {
-                  window.level3_parent_tracker[parent_num] = {
-                    level2: pure_level2,
-                    slideNum: slide.slideNum
-                  };
-                }
-              }
-
-              // 기존 2단/3단/4단 계층 파싱 검증
-              const level2Parts = level2Title.split('>').map(s => s.trim());
-              const level3Parts = level3Title.split('>').map(s => s.trim());
-
-              // 4단계 제목 포함 패턴 검사:
-              // "x.x.x > 4단계 제목" 또는 "x.x.x 3단계 제목 > 4단계 제목" 또는 "(순번/총페이지수)" 포함 여부
-              const alt_page_regex = /\s*[(\[]\s*\d+\s*[\/]\s*\d+\s*[)\]]\s*$/;
-              const has_4th_level = level3Parts.length > 1 || level3Title.includes('>');
-              const has_alt_pages_in_l3 = alt_page_regex.test(level3Title);
-              
-              const getNumDepth = (txt) => {
-                const match = txt.match(num_regex);
-                if (!match) return 0;
-                return match[1].split('.').length;
-              };
-              
-              const l2Depths = level2Parts.map(getNumDepth);
-              const l3Depths = level3Parts.map(getNumDepth);
-              const l3MainDepth = l3Depths[0];
-
-              // ★ 사용자 지침 표준 규칙: 좌측상단 2번째 줄(level3Title)이 x.x (2단계 넘버링, depth 2)인 경우
-              // 좌측상단 첫번째 줄은 비워두고 2단계로 작성하는 것이 정당한 표준 규칙이므로 오류에서 제외!
-              const is_l3_actually_2nd_level = l3MainDepth === 2;
-              
-              if (l3MainDepth === 2) {
-                // 좌측상단 2번째 줄이 x.x (2단계)인 경우 1번째 줄은 비워두는 규칙이므로 오류 아님 (정상)
-                // (기존 원칙 2 오탐 방지)
-              } else if (l3MainDepth === 3) {
-                if (level3Parts.length === 1) {
-                  // 원칙 3: 소분류(1.1.1) 단독이 3단 타이틀로 오는 케이스 -> 2단은 대분류 > 중분류 구조
-                  const isL2Valid = level2Parts.length === 2 && l2Depths[0] === 1 && l2Depths[1] === 2;
-                  if (!isL2Valid && !has_4th_level && !is_l3_actually_2nd_level) {
+            // 1-2) 좌측 상단 계층 관계 정합성 검증
+            // 케이스 A: 좌측 1줄(중분류) + 좌측 2줄(소분류) 구조 (일반 슬라이드)
+            // 케이스 B: 좌측 1줄이 비어있고 좌측 2줄에 'x.x'(중분류)만 단독으로 있는 구조 (개요/시사점/간지 슬라이드 - 정상 허용)
+            const nonRomanTitles = (slide.titles || []).filter(text => !roman_regex.test(text));
+            if (nonRomanTitles.length === 1) {
+              const singleTitle = nonRomanTitles[0];
+              const singleMatch = singleTitle.match(num_regex);
+              if (singleMatch) {
+                const singleParts = singleMatch[1].split('.');
+                // 1자리(대분류) 또는 2자리(x.x 중분류) 단독 메인 타이틀은 정상 패턴
+                // 단, 대분류 번호와 일치하는지 점검
+                if (singleParts.length === 2 && current_major_val !== null) {
+                  const majorNum = parseInt(singleParts[0], 10);
+                  if (majorNum !== current_major_val) {
                     allNumberings.push({
                       fileName: file.name,
                       slideNum: slide.slideNum,
                       area: '좌측 타이틀',
-                      text: `${level2Title} / ${level3Title}`,
-                      error: '타이틀 계층 규칙 위반 (원칙 3)',
-                      guide: `소분류(${level3Parts[0]})가 3단 타이틀로 올 경우, 2단 타이틀은 '대분류 > 중분류' 구조(예: "1. 대분류 > 1.1 중분류")여야 합니다. (현재 2단: "${level2Title}")`
+                      text: singleTitle,
+                      error: `대장/대분류 계층 불일치 오류 (${singleMatch[1]})`,
+                      guide: `현재 장("${current_major_roman}" = ${current_major_val}장)과 슬라이드 제목의 대분류 번호("${majorNum}")가 서로 일치하지 않습니다.`
                     });
                     fileNumErrorsCount++;
-                  }
-                } else if (level3Parts.length > 1) {
-                  // 원칙 4: "x.x.x > 4단계 제목" 또는 "x.x.x 3단계 제목 > 4단계 제목 (순번/총페이지수)" 형태로 확장된 4단계 표기는 정상!
-                  if (!has_4th_level && !has_alt_pages_in_l3 && !is_l3_actually_2nd_level) {
-                    const isL2Valid = level2Parts.length === 2 && l2Depths[0] === 1 && l2Depths[1] === 2;
-                    if (!isL2Valid) {
-                      allNumberings.push({
-                        fileName: file.name,
-                        slideNum: slide.slideNum,
-                        area: '좌측 타이틀',
-                        text: `${level2Title} / ${level3Title}`,
-                        error: '타이틀 계층 규칙 위반 (원칙 4)',
-                        guide: `소분류 하위가 3단 타이틀로 올 경우, 2단 타이틀은 '대분류 > 중분류' 구조(예: "1. 대분류 > 1.1 중분류")여야 합니다. (현재 2단: "${level2Title}")`
-                      });
-                      fileNumErrorsCount++;
-                    }
                   }
                 }
               }
@@ -1604,10 +1529,8 @@ export default function PptValidator({ apiKey }) {
               // 대주제 텍스트 자체는 아래의 세부 넘버링(숫자) 검증에서는 제외
               if (roman_regex.test(text)) continue;
 
-              // "제목 (1/3)" 또는 "x.x.x 3단계 제목 (1/3)" 또는 "x.x.x 3단계 제목 > 4단계 제목 (1/3)" 정규식 파싱
-              // 다양 형태 지원: (1/3), (1 / 3), (1페이지/3페이지), [1/3], (1p/3p) 등
-              const alt_page_regex = /\s*[(\[]\s*(\d+)\s*(?:페이지|p|page)?\s*[\/]\s*(\d+)\s*(?:페이지|p|page)?\s*[)\]]\s*$/i;
-              const altPageMatch = text.match(alt_page_regex);
+              // "목차 명칭 (1/4)" 정규식 파싱
+              const altPageMatch = text.match(/\((\d+)\/(\d+)\)\s*$/);
               let hasAltPages = false;
               let currentAltPage = null;
               let totalAltPage = null;
@@ -1617,17 +1540,12 @@ export default function PptValidator({ apiKey }) {
                 hasAltPages = true;
                 currentAltPage = parseInt(altPageMatch[1], 10);
                 totalAltPage = parseInt(altPageMatch[2], 10);
-                pureTitle = text.replace(alt_page_regex, '').trim();
+                pureTitle = text.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
               }
 
-              // 4단계 표현("x.x.x > 4단계 제목" 또는 "x.x.x 3단계 제목 > 4단계 제목")이 포함되어 있는지 점검
-              const is_4th_level_format = text.includes('>') || pureTitle.includes('>');
-
-              // 순수 제목 추출: 넘버링 숫자 접두사(1., 1.1, 1.1.1 등) 및 4단계 구분 기호 앞단 제거 후 실제 제목 텍스트만 추출
-              const pureTitleWithoutNum = pureTitle
-                .replace(/^\s*[0-9]+(\.[0-9]+)*[\s\.]+/, '')
-                .replace(/^.*>\s*/, '')
-                .trim();
+              // 순수 제목 추출: 넘버링 숫자 접두사(1., 1.1 등) 제거 후 실제 제목 텍스트만 추출
+              // 예: "1.1 재무구조 및 대외신용평가 현황" → "재무구조 및 대외신용평가 현황"
+              const pureTitleWithoutNum = pureTitle.replace(/^\s*[0-9]+(\.[0-9]+)*[\s\.]+/, '').trim();
 
               // 넘버링 형식 추출 정규식: "1. ", "1.1 ", "1.1.1 " 등
               const numMatch = text.match(num_regex);
@@ -1636,19 +1554,14 @@ export default function PptValidator({ apiKey }) {
                 const rawNumStr = numMatch[1];
                 const parts = rawNumStr.split('.').map(n => parseInt(n, 10));
                 
-                // 2단계 넘버링 (x.x) 여부 감지 (점 1개: 예: 1.1, 1.2 등)
-                const is_2nd_level_numbering = parts.length === 2;
-                // 3단계 넘버링 (x.x.x) 여부 감지 (점 2개 이상: 예: 1.1.1, 1.1.2 등)
-                const is_3rd_level_numbering = parts.length >= 3;
-                
                 if (parts.length > 0) {
                   const current_val = parts[parts.length - 1];
 
                   // 1. 동일 넘버링이 다른 슬라이드에서 쓰였는데, 제목 텍스트가 다르면 오류 검출
-                  // (단, 2단계(x.x)의 동일 제목 연속 유지, 3단계(x.x.x) 연속 표기, (페이지수/총페이지수), 4단계 표시는 정상 패턴으로 무시)
+                  // pureTitleWithoutNum: 넘버링 숫자를 제거한 순수 제목만으로 비교
                   const existingTitle = numbering_title_map[rawNumStr];
                   if (existingTitle !== undefined) {
-                    if (existingTitle !== pureTitleWithoutNum && !hasAltPages && !is_4th_level_format && !is_3rd_level_numbering) {
+                    if (existingTitle !== pureTitleWithoutNum && !hasAltPages) {
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
@@ -1663,70 +1576,114 @@ export default function PptValidator({ apiKey }) {
                     numbering_title_map[rawNumStr] = pureTitleWithoutNum;
                   }
 
+                  // 1-2. [신규] 동일한 순수 제목 텍스트인데 서로 다른 넘버링 번호가 사용된 경우 오류 검출
+                  if (pureTitleWithoutNum && !hasAltPages) {
+                    const prevNumInfo = title_numbering_map[pureTitleWithoutNum];
+                    if (prevNumInfo !== undefined) {
+                      if (prevNumInfo.rawNumStr !== rawNumStr) {
+                        allNumberings.push({
+                          fileName: file.name,
+                          slideNum: slide.slideNum,
+                          area: '좌측 타이틀',
+                          text,
+                          error: `동일 타이틀 내 넘버링 번호 불일치 (${pureTitleWithoutNum})`,
+                          guide: `타이틀 "${pureTitleWithoutNum}"에 대해 이전 슬라이드(${prevNumInfo.slideNum}페이지: "${prevNumInfo.fullText}")와 현재 슬라이드(${slide.slideNum}페이지: "${text}")의 넘버링 번호가 서로 일치하지 않습니다. (이전: ${prevNumInfo.rawNumStr} ➜ 현재: ${rawNumStr})`
+                        });
+                        fileNumErrorsCount++;
+                      }
+                    } else {
+                      title_numbering_map[pureTitleWithoutNum] = {
+                        rawNumStr,
+                        slideNum: slide.slideNum,
+                        fullText: text
+                      };
+                    }
+                  }
+
+                  // 1-3. [신규] 상위-하위 계층 간 넘버링 불일치 검증
+                  // 예: 메인 타이틀이 2.2.x인데 상단 중분류가 2.3. 사회환경 분석인 경우 오류 도출
+                  if (parts.length >= 3 && slide.titles && slide.titles.length > 1) {
+                    const expectedParentNum = parts.slice(0, 2).join('.'); // "2.2"
+                    // 슬라이드 내 다른 헤더 중 2자리 넘버링(중분류) 탐색
+                    const level2Header = slide.titles.find(t => {
+                      const m = t.match(num_regex);
+                      return m && m[1].split('.').length === 2 && t !== text;
+                    });
+                    if (level2Header) {
+                      const l2Match = level2Header.match(num_regex);
+                      const actualParentNum = l2Match ? l2Match[1] : '';
+                      if (actualParentNum && actualParentNum !== expectedParentNum) {
+                        allNumberings.push({
+                          fileName: file.name,
+                          slideNum: slide.slideNum,
+                          area: '좌측 타이틀',
+                          text: `${level2Header} ➜ ${text}`,
+                          error: `상하위 계층 넘버링 불일치 오류 (${actualParentNum} ≠ ${expectedParentNum})`,
+                          guide: `슬라이드 메인 타이틀 번호("${rawNumStr}")의 상위 계층은 "${expectedParentNum}"이나, 상단 중분류 헤더는 "${actualParentNum}"("${level2Header}")로 표기되어 계층 번호가 서로 모순됩니다.`
+                        });
+                        fileNumErrorsCount++;
+                      }
+                    }
+                  }
+
                   // 2. 형제 노드 간의 순차적(sequential) 검증 진행
                   const parent_path = parts.slice(0, -1).join('.');
                   const last_sibling_val = sibling_tracker[parent_path];
 
                   if (last_sibling_val !== undefined) {
                     if (current_val === last_sibling_val) {
-                      // 동일 번호 반복:
-                      // - 2단계 넘버링(x.x)이 동일한 2단계 제목 텍스트를 유지하면서 3단계 슬라이드가 이어지는 케이스 ➔ 정상 (중복 에러 아님!)
-                      // - 3단계(x.x.x) 표기, (페이지수/총페이지수), 4단계 형식 ➔ 정상 (중복 에러 아님!)
-                      const is_same_2nd_level_title = is_2nd_level_numbering && existingTitle === pureTitleWithoutNum;
-                      
-                      if (!hasAltPages && !is_4th_level_format && !is_3rd_level_numbering && !is_same_2nd_level_title && parts.length > 1) {
+                      // 동일 번호 반복 오류:
+                      // 중분류(2단 넘버링 이하, 예: "2", "2.2")는 여러 슬라이드에 걸쳐 유지되는 섹션 헤더이므로 반복이 정상임!
+                      // 오직 3단 이상의 소분류 메인 타이틀(예: 2.2.x, parts.length >= 3)에서만 연속 페이지(1/2 등)가 없을 때 중복 오류로 검출!
+                      if (!hasAltPages && parts.length >= 3) {
                         allNumberings.push({
                           fileName: file.name,
                           slideNum: slide.slideNum,
                           area: '좌측 타이틀',
                           text,
-                          error: `넘버링 중복 사용 오류 (${rawNumStr})`,
-                          guide: `이전 슬라이드에서 이미 "${rawNumStr}" 번호가 사용되었습니다. 동일한 제목이 이어질 때는 "x.x.x 제목 (1/3)" 형태로 순번을 표기해야 합니다.`
+                          error: `소분류 넘버링 중복 사용 오류 (${rawNumStr})`,
+                          guide: `이전 슬라이드에서 이미 "${rawNumStr}" 번호가 사용되었습니다. 동일한 소분류 주제의 연속 슬라이드가 아니라면 순차적으로 다음 번호로 증가시켜야 합니다.`
                         });
                         fileNumErrorsCount++;
                       }
                     } else if (current_val !== last_sibling_val + 1) {
-                      // 순서 건너뜀 (시퀀스 단절) - (페이지수/총페이지수) 및 2/3/4단계 연속 장은 제외
-                      if (!hasAltPages && !is_4th_level_format && !is_3rd_level_numbering && !is_2nd_level_numbering) {
-                        allNumberings.push({
-                          fileName: file.name,
-                          slideNum: slide.slideNum,
-                          area: '좌측 타이틀',
-                          text,
-                          error: `넘버링 시퀀스 단절 (${rawNumStr})`,
-                          guide: `동일 계층 수준 내에서 일련번호는 순차적으로 1씩 증가해야 합니다. (이전 형제 값: ${last_sibling_val} ➜ 현재 표기: ${current_val})`
-                        });
-                        fileNumErrorsCount++;
-                      }
+                      // 순서 건너뜀 (시퀀스 단절)
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '좌측 타이틀',
+                        text,
+                        error: `넘버링 시퀀스 단절 (${rawNumStr})`,
+                        guide: `동일 계층 수준("${parent_path}") 내에서 일련번호는 순차적으로 1씩 증가해야 합니다. (이전 번호: ${parent_path}.${last_sibling_val} ➜ 현재 표기: ${rawNumStr})`
+                      });
+                      fileNumErrorsCount++;
                     }
                   } else {
                     // 부모 계층 아래 최초의 자식 노드 진입 시에는 반드시 1이어야 함 (로마자 대주제 제외)
                     const isRoman = roman_regex.test(text);
-                    if (!isRoman && current_val !== 1 && !hasAltPages && !is_4th_level_format && !is_3rd_level_numbering) {
+                    if (!isRoman && current_val !== 1 && parts.length >= 3) {
                       allNumberings.push({
                         fileName: file.name,
                         slideNum: slide.slideNum,
                         area: '좌측 타이틀',
                         text,
                         error: `하위 넘버링 시작값 오류 (${rawNumStr})`,
-                        guide: `새로운 하위 계층으로 진입할 때 일련번호는 항상 1부터 순차 시작해야 합니다. (${parent_path ? parent_path + '.1' : '1.'} 권장)`
+                        guide: `새로운 하위 계층("${parent_path}")으로 진입할 때 일련번호는 항상 1부터 순차 시작해야 합니다. (${parent_path}.1 권장, 현재: ${rawNumStr})`
                       });
                       fileNumErrorsCount++;
                     }
                   }
                   // 트래커 기록 갱신 (연속 페이지인 경우에도 번호를 유지하여 다음 연속 장에서 비교 가능하도록)
-                  if ((!hasAltPages && !is_4th_level_format && !is_3rd_level_numbering) || current_val !== last_sibling_val) {
+                  if (!hasAltPages || current_val !== last_sibling_val) {
                     sibling_tracker[parent_path] = current_val;
                   }
                 }
               }
 
-              // 3. 연속 페이지 "제목 (순서번호/전체페이지수)" 형식의 순번 연속성 검사
+              // 3. 연속 페이지 (1/4) 형식의 연속성 세부 검사 (alt_page_tracker 기반 독립 검사)
               if (hasAltPages) {
-                const prevPageInfo = alt_page_tracker[pureTitleWithoutNum] || alt_page_tracker[pureTitle];
-                
-                if (prevPageInfo) {
-                  // 전체 페이지 수(분모) 변경 점검
+                const prevPageInfo = alt_page_tracker[pureTitle];
+                if (prevPageInfo && prevPageInfo.slideNum === slide.slideNum - 1) {
                   if (totalAltPage !== prevPageInfo.totalAltPage) {
                     allNumberings.push({
                       fileName: file.name,
@@ -1734,33 +1691,19 @@ export default function PptValidator({ apiKey }) {
                       area: '좌측 타이틀',
                       text,
                       error: '목차 전체 페이지 수 불일치',
-                      guide: `동일 제목("${pureTitleWithoutNum}")의 전체 페이지 수(분모)가 이전 슬라이드(${prevPageInfo.totalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
+                      guide: `연속 목차의 전체 페이지 수(분모)가 이전 슬라이드(${prevPageInfo.totalAltPage}장)와 현재 슬라이드(${totalAltPage}장)가 서로 다릅니다.`
                     });
                     fileNumErrorsCount++;
                   }
                   
-                  // 순번(순서번호) 연속성 점검: 1, 2, 3... 순번대로 정직하게 올라가면 오류가 아님!
-                  if (currentAltPage === prevPageInfo.currentAltPage + 1) {
-                    // ✅ 순번대로 정상 증가함 ➜ 오류 아님 (정상)
-                  } else if (currentAltPage === prevPageInfo.currentAltPage) {
-                    allNumberings.push({
-                      fileName: file.name,
-                      slideNum: slide.slideNum,
-                      area: '좌측 타이틀',
-                      text,
-                      error: '동일 순서번호 중복 표기',
-                      guide: `동일 제목("${pureTitleWithoutNum}")의 순서번호가 이전 슬라이드와 동일하게 (${currentAltPage}/${totalAltPage})로 중복 표기되었습니다. 순번대로 증가시켜 주세요.`
-                    });
-                    fileNumErrorsCount++;
-                  } else if (currentAltPage !== 1) {
-                    // 순번이 1부터 새로 시작하지 않고 1, 3... 처럼 건너뛴 경우
+                  if (currentAltPage !== prevPageInfo.currentAltPage + 1) {
                     allNumberings.push({
                       fileName: file.name,
                       slideNum: slide.slideNum,
                       area: '좌측 타이틀',
                       text,
                       error: '목차 연속 페이지 번호 단절',
-                      guide: `동일 제목("${pureTitleWithoutNum}")의 순서번호가 순차적으로 증가하지 않고 단절되었습니다. (이전: ${prevPageInfo.currentAltPage}/${prevPageInfo.totalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
+                      guide: `연속된 목차 페이지 번호가 순차적으로 증가하지 않았습니다. (이전: ${prevPageInfo.currentAltPage}/${prevPageInfo.totalAltPage} ➜ 현재: ${currentAltPage}/${totalAltPage})`
                     });
                     fileNumErrorsCount++;
                   }
@@ -1772,12 +1715,12 @@ export default function PptValidator({ apiKey }) {
                       area: '좌측 타이틀',
                       text,
                       error: '목차 페이지 범위 초과',
-                      guide: `순서번호(${currentAltPage})가 지정된 전체 페이지 수(${totalAltPage})를 초과하였습니다.`
+                      guide: `목차 페이지 번호(${currentAltPage})가 전체 페이지 수(${totalAltPage})를 초과하였습니다.`
                     });
                     fileNumErrorsCount++;
                   }
                 } else {
-                  // 동일 제목의 첫 시작 슬라이드에서는 순서번호가 1이면 정상!
+                  // 직전 슬라이드에 연속되는 목차가 없었던 경우 시작 번호는 무조건 1이어야 함
                   if (currentAltPage !== 1) {
                     allNumberings.push({
                       fileName: file.name,
@@ -1785,15 +1728,14 @@ export default function PptValidator({ apiKey }) {
                       area: '좌측 타이틀',
                       text,
                       error: '목차 페이지 시작 번호 오류',
-                      guide: `동일 제목("${pureTitleWithoutNum}")의 연속 작업이 시작될 때는 (1/${totalAltPage})부터 순번대로 시작해야 합니다. (현재 표기: ${currentAltPage}/${totalAltPage})`
+                      guide: `연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${currentAltPage}/${totalAltPage})`
                     });
                     fileNumErrorsCount++;
                   }
                 }
 
-                // 현재 슬라이드의 동일 제목 순번 상태 등록
-                const tracker_key = pureTitleWithoutNum || pureTitle;
-                alt_page_tracker[tracker_key] = {
+                // 현재 슬라이드의 연속 목차 상태 등록
+                alt_page_tracker[pureTitle] = {
                   slideNum: slide.slideNum,
                   currentAltPage,
                   totalAltPage

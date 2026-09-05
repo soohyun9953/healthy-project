@@ -897,8 +897,10 @@ export async function processPptBatch(pptFile, options) {
     let totalTextColorReplaced = 0;
     let totalWordWrapPrevented = 0;
     
-    // [옵션 G] 동일 제목 슬라이드 일련번호 자동 추가 로직
-    if (add_title_page_numbers) {
+    // 💡 [1단계: 모든 슬라이드 제목 괄호 앞 공백 전수 보정]
+    // add_title_page_numbers 실행 여부나 동일 제목 반복 여부와 무관하게,
+    // add_space_before_parenthesis가 켜져 있으면 모든 슬라이드의 제목 Shape을 순회하며 '글자(내용)' -> '글자 (내용)'으로 100% 보정
+    if (add_space_before_parenthesis) {
         const slide_files = allFiles
             .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml'))
             .sort((a, b) => {
@@ -906,9 +908,7 @@ export async function processPptBatch(pptFile, options) {
                 const num_b = parseInt(b.match(/\d+/)[0]);
                 return num_a - num_b;
             });
-            
-        const slide_titles = []; // [{ slidePath, xmlDoc, titleText, titleNodes }]
-        
+
         slide_files.forEach(slide_path => {
             const slide_xml_str = zip.file(slide_path).asText();
             const xml_doc = parser.parseFromString(slide_xml_str, 'application/xml');
@@ -926,19 +926,18 @@ export async function processPptBatch(pptFile, options) {
                 let is_title_shape = false;
                 if (c_nv_pr) {
                     const sp_name = (c_nv_pr.getAttribute('name') || '').toLowerCase();
-                    if (sp_name.includes('title') || sp_name.includes('header') || sp_name.includes('제목')) {
+                    if (sp_name.includes('title') || sp_name.includes('header') || sp_name.includes('제목') || sp_name.includes('헤더')) {
                         is_title_shape = true;
                     }
                 }
                 if (ph) {
                     const ph_type = ph.getAttribute('type');
-                    if (ph_type === 'title' || ph_type === 'ctrTitle') {
+                    if (ph_type === 'title' || ph_type === 'ctrTitle' || ph_type === 'subTitle') {
                         is_title_shape = true;
                     }
                 }
                 
                 if (is_title_shape) {
-                    // txBody 내부의 모든 a:t 노드 수집
                     const tx_body = sp.getElementsByTagNameNS('*', 'txBody')[0];
                     if (tx_body) {
                         const t_elements = tx_body.getElementsByTagNameNS('*', 't');
@@ -948,7 +947,82 @@ export async function processPptBatch(pptFile, options) {
                             if (text_content) {
                                 title_text = text_content;
                                 title_nodes = nodes_arr;
-                                break; // 첫 번째로 발견한 제목 Shape만 해당 슬라이드의 공식 제목으로 채택
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (title_nodes.length > 0) {
+                const regex = /([^\s])\(([^)]+?)\)/g;
+                if (regex.test(title_text)) {
+                    const matchCount = (title_text.match(regex) || []).length;
+                    title_nodes[0].textContent = title_text.replace(regex, "$1 ($2)");
+                    for (let n_idx = 1; n_idx < title_nodes.length; n_idx++) {
+                        title_nodes[n_idx].textContent = "";
+                    }
+                    totalTitleSpacesAdded += matchCount;
+                    
+                    const updated_xml = serializer.serializeToString(xml_doc);
+                    zip.file(slide_path, updated_xml);
+                    hasChanges = true;
+                }
+            }
+        });
+    }
+
+    // 💡 [2단계: 동일 제목 슬라이드 일련번호 자동 추가] (선택 시에만 실행)
+    if (add_title_page_numbers) {
+        const slide_files = allFiles
+            .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml'))
+            .sort((a, b) => {
+                const num_a = parseInt(a.match(/\d+/)[0]);
+                const num_b = parseInt(b.match(/\d+/)[0]);
+                return num_a - num_b;
+            });
+            
+        const slide_titles = []; // [{ slidePath, xmlDoc, titleText, titleNodes }]
+        
+        slide_files.forEach(slide_path => {
+            const slide_xml_str = zip.file(slide_path).asText();
+            const xml_doc = parser.parseFromString(slide_xml_str, 'application/xml');
+            
+            // 제목 Shape 추출 (1단계 공백 보정이 완료된 최신 텍스트 반영)
+            let title_text = "";
+            let title_nodes = [];
+            
+            const shapes = xml_doc.getElementsByTagNameNS('*', 'sp');
+            for (let i = 0; i < shapes.length; i++) {
+                const sp = shapes[i];
+                const c_nv_pr = sp.getElementsByTagNameNS('*', 'cNvPr')[0];
+                const ph = sp.getElementsByTagNameNS('*', 'ph')[0];
+                
+                let is_title_shape = false;
+                if (c_nv_pr) {
+                    const sp_name = (c_nv_pr.getAttribute('name') || '').toLowerCase();
+                    if (sp_name.includes('title') || sp_name.includes('header') || sp_name.includes('제목') || sp_name.includes('헤더')) {
+                        is_title_shape = true;
+                    }
+                }
+                if (ph) {
+                    const ph_type = ph.getAttribute('type');
+                    if (ph_type === 'title' || ph_type === 'ctrTitle' || ph_type === 'subTitle') {
+                        is_title_shape = true;
+                    }
+                }
+                
+                if (is_title_shape) {
+                    const tx_body = sp.getElementsByTagNameNS('*', 'txBody')[0];
+                    if (tx_body) {
+                        const t_elements = tx_body.getElementsByTagNameNS('*', 't');
+                        if (t_elements.length > 0) {
+                            const nodes_arr = Array.from(t_elements);
+                            const text_content = nodes_arr.map(n => n.textContent || '').join('').trim();
+                            if (text_content) {
+                                title_text = text_content;
+                                title_nodes = nodes_arr;
+                                break;
                             }
                         }
                     }
@@ -1004,15 +1078,7 @@ export async function processPptBatch(pptFile, options) {
                 const t_nodes = slide_info.titleNodes;
                 
                 if (t_nodes.length > 0) {
-                    let final_title = run.title_text;
-                    if (add_space_before_parenthesis) {
-                        const regex = /([^\s])\(([^)]+?)\)/g;
-                        if (regex.test(final_title)) {
-                            const matchCount = (final_title.match(regex) || []).length;
-                            final_title = final_title.replace(regex, "$1 ($2)");
-                            totalTitleSpacesAdded += matchCount;
-                        }
-                    }
+                    const final_title = run.title_text;
 
                     // 첫 번째 t 노드에 전체 텍스트 + 일련번호 결합 주입
                     t_nodes[0].textContent = `${final_title} (${idx + 1}/${run.count})`;
@@ -1025,79 +1091,6 @@ export async function processPptBatch(pptFile, options) {
                     // 변경된 슬라이드 XML을 zip 아카이브에 직렬화 갱신
                     const updated_xml = serializer.serializeToString(slide_info.xmlDoc);
                     zip.file(slide_info.slidePath, updated_xml);
-                    hasChanges = true;
-                }
-            }
-        });
-    }
-
-    // [옵션 G 하위 옵션 단독 실행] 일련번호 추가가 안 켜졌으나 제목 괄호 공백 추가만 단독 켜진 경우
-    if (add_space_before_parenthesis && !add_title_page_numbers) {
-        const slide_files = allFiles
-            .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml'))
-            .sort((a, b) => {
-                const num_a = parseInt(a.match(/\d+/)[0]);
-                const num_b = parseInt(b.match(/\d+/)[0]);
-                return num_a - num_b;
-            });
-
-        slide_files.forEach(slide_path => {
-            const slide_xml_str = zip.file(slide_path).asText();
-            const xml_doc = parser.parseFromString(slide_xml_str, 'application/xml');
-            
-            // 제목 Shape 추출
-            let title_text = "";
-            let title_nodes = [];
-            
-            const shapes = xml_doc.getElementsByTagNameNS('*', 'sp');
-            for (let i = 0; i < shapes.length; i++) {
-                const sp = shapes[i];
-                const c_nv_pr = sp.getElementsByTagNameNS('*', 'cNvPr')[0];
-                const ph = sp.getElementsByTagNameNS('*', 'ph')[0];
-                
-                let is_title_shape = false;
-                if (c_nv_pr) {
-                    const sp_name = (c_nv_pr.getAttribute('name') || '').toLowerCase();
-                    if (sp_name.includes('title') || sp_name.includes('header') || sp_name.includes('제목')) {
-                        is_title_shape = true;
-                    }
-                }
-                if (ph) {
-                    const ph_type = ph.getAttribute('type');
-                    if (ph_type === 'title' || ph_type === 'ctrTitle') {
-                        is_title_shape = true;
-                    }
-                }
-                
-                if (is_title_shape) {
-                    const tx_body = sp.getElementsByTagNameNS('*', 'txBody')[0];
-                    if (tx_body) {
-                        const t_elements = tx_body.getElementsByTagNameNS('*', 't');
-                        if (t_elements.length > 0) {
-                            const nodes_arr = Array.from(t_elements);
-                            const text_content = nodes_arr.map(n => n.textContent || '').join('').trim();
-                            if (text_content) {
-                                title_text = text_content;
-                                title_nodes = nodes_arr;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (title_nodes.length > 0) {
-                const regex = /([^\s])\(([^)]+?)\)/g;
-                if (regex.test(title_text)) {
-                    const matchCount = (title_text.match(regex) || []).length;
-                    title_nodes[0].textContent = title_text.replace(regex, "$1 ($2)");
-                    for (let n_idx = 1; n_idx < title_nodes.length; n_idx++) {
-                        title_nodes[n_idx].textContent = "";
-                    }
-                    totalTitleSpacesAdded += matchCount;
-                    
-                    const updated_xml = serializer.serializeToString(xml_doc);
-                    zip.file(slide_path, updated_xml);
                     hasChanges = true;
                 }
             }

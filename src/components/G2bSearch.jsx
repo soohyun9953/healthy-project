@@ -24,8 +24,8 @@ export default function G2bSearch() {
     const [active_tab, set_active_tab] = useState('prespec');
 
     // 1. 입력 폼 상태 (사용자가 입력/선택하는 값 - 조회 버튼 누르기 전까지 화면 결과에 영향 안 줌)
-    const [input_keyword, set_input_keyword] = useState('');
-    const [input_agency, set_input_agency] = useState('');
+    const [input_keyword, set_input_keyword] = useState(''); // 🔍 사업명 키워드
+    const [input_agency, set_input_agency] = useState('');   // 🏛️ 수요기관
     const [input_start_date, set_input_start_date] = useState(get_past_days_string(7)); // 기본값: 최근 1주일 전
     const [input_end_date, set_input_end_date] = useState(get_today_string());         // 기본값: 오늘
     const [use_smart_synonym, set_use_smart_synonym] = useState(false);                 // 🌟 스마트 동의어 검색 옵션 (기본 OFF: 단어일치)
@@ -55,9 +55,12 @@ export default function G2bSearch() {
     const [isLoading, setIsLoading] = useState(false);
     const [apiError, setApiError] = useState(null);
     const [apiSuccessCount, setApiSuccessCount] = useState(null);
+    const [hasSearched, setHasSearched] = useState(false); // 🌟 조회 실행 여부 추적
 
     // 추천 검색어 태그
     const recommended_titles = ['ISP', 'ISMP', 'AI', '정보시스템', '빅데이터', '유지관리', '클라우드', '공공보건'];
+    // 🏛️ 추천 수요기관 태그
+    const recommended_agencies = ['국립중앙의료원', '한국생명공학연구원', '한국지능정보사회진흥원', '한국사회보장정보원', '국민건강보험공단', '질병관리청', '보건복지부'];
 
     // 💡 스마트 동의어 및 연관어 사전
     const synonym_map = useMemo(() => ({
@@ -288,13 +291,15 @@ export default function G2bSearch() {
                     });
                 }
                 if (ag) {
-                    const clean_ag = ag.replace(/\s+/g, '');
-                    // 🌟 오직 실수요기관(demand_agency)을 최우선으로 일치 검사
-                    formatted_list = formatted_list.filter(item => {
-                        const demand_clean = (item.agency || '').replace(/\s+/g, '').toLowerCase();
-                        const notice_clean = (item.noticeAgency || '').replace(/\s+/g, '').toLowerCase();
-                        return demand_clean.includes(clean_ag) || notice_clean.includes(clean_ag);
-                    });
+                    // 콤마(,)로 구분된 다중 수요기관 키워드 지원 (예: '국립중앙의료원, 한국생명공학연구원')
+                    const agency_keywords = ag.split(',').map(s => s.trim().replace(/\s+/g, '').toLowerCase()).filter(Boolean);
+                    if (agency_keywords.length > 0) {
+                        formatted_list = formatted_list.filter(item => {
+                            const demand_clean = (item.agency || '').replace(/\s+/g, '').toLowerCase();
+                            const notice_clean = (item.noticeAgency || '').replace(/\s+/g, '').toLowerCase();
+                            return agency_keywords.some(clean_ag => demand_clean.includes(clean_ag) || notice_clean.includes(clean_ag));
+                        });
+                    }
                 }
 
                 // 🌟 최신순 정렬: 등록일시/게시일시 기준 내림차순(Descending) 정렬
@@ -343,26 +348,15 @@ export default function G2bSearch() {
             setApiSuccessCount(0);
         } finally {
             setIsLoading(false);
+            setHasSearched(true); // 🌟 조회 실행 완료 플래그
         }
     };
-
-    // 🚀 컴포넌트 마운트 시 1회 기본 조회 실행
-    useEffect(() => {
-        handle_search('prespec');
-    }, []);
 
     // 빠른 날짜 선택 핸들러
     const handle_set_quick_date = (days) => {
         set_input_start_date(get_past_days_string(days));
         set_input_end_date(get_today_string());
     };
-
-    // 초기 API키가 존재할 시 최초 1회 자동으로 최근 1주일 공고 조회
-    useEffect(() => {
-        if (dataGovApiKey) {
-            handle_search();
-        }
-    }, []);
 
     // 🔗 g2b.go.kr 나라장터 공식 사이트 실시간 검색 URL
     const get_g2b_official_search_url = (tab_type = 'integrated') => {
@@ -639,19 +633,19 @@ export default function G2bSearch() {
                         </div>
                     </div>
 
-                    {/* 2열: 키워드 및 수요기관 */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                        {/* 1. 사업명 (키워드 + 스마트 동의어 옵션) */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {/* 2열: 키워드(좌) 및 수요기관(우) 좌우 대칭 배치 */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+                        {/* 👈 [좌측] 1. 사업명 키워드 입력 & 추천 사업명 태그 */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(0,0,0,0.15)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <label style={{ fontSize: '12.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                    🔍 사업명 키워드
+                                <label style={{ fontSize: '12.5px', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Search size={14} color="var(--accent-blue)" /> <strong>사업명 키워드</strong>
                                 </label>
                                 {/* 💡 스마트 동의어 ON/OFF 토글 옵션 */}
                                 <label 
                                     style={{ 
-                                        display: 'inline-flex', alignItems: 'center', gap: '6px', 
-                                        fontSize: '12px', cursor: 'pointer', userSelect: 'none',
+                                        display: 'inline-flex', alignItems: 'center', gap: '5px', 
+                                        fontSize: '11.5px', cursor: 'pointer', userSelect: 'none',
                                         padding: '2px 8px', borderRadius: '6px',
                                         background: use_smart_synonym ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                                         border: `1px solid ${use_smart_synonym ? 'rgba(168, 85, 247, 0.4)' : 'var(--panel-border)'}`,
@@ -665,14 +659,15 @@ export default function G2bSearch() {
                                         onChange={(e) => set_use_smart_synonym(e.target.checked)}
                                         style={{ cursor: 'pointer', accentColor: '#a855f7' }}
                                     />
-                                    <Sparkles size={12} color={use_smart_synonym ? '#c084fc' : 'var(--text-muted)'} />
-                                    <span>스마트 동의어 {use_smart_synonym ? 'ON (확장검색)' : 'OFF (단어일치)'}</span>
+                                    <Sparkles size={11} color={use_smart_synonym ? '#c084fc' : 'var(--text-muted)'} />
+                                    <span>동의어 {use_smart_synonym ? 'ON' : 'OFF'}</span>
                                 </label>
                             </div>
+                            
                             <div style={{ position: 'relative' }}>
                                 <input
                                     type="text"
-                                    placeholder={use_smart_synonym ? "예: ISP, AI, 정보시스템 (연관어 자동 포함)" : "예: ISP, AI (정확한 단어 일치 검색)"}
+                                    placeholder={use_smart_synonym ? "예: 국립중앙의료원, ISP, AI (연관어 자동 포함)" : "예: 국립중앙의료원, ISP (정확한 단어 일치 검색)"}
                                     value={input_keyword}
                                     onChange={(e) => set_input_keyword(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handle_search()}
@@ -698,17 +693,50 @@ export default function G2bSearch() {
                                     </button>
                                 )}
                             </div>
+
+                            {/* 추천 사업명 키워드 태그 (좌측) */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingTop: '4px' }}>
+                                <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <Tag size={12} /> 추천:
+                                </span>
+                                {recommended_titles.map(t => (
+                                    <button
+                                        key={t}
+                                        onClick={() => { set_input_keyword(prev => prev === t ? '' : t); }}
+                                        style={{
+                                            padding: '2px 8px', borderRadius: '5px', fontSize: '11.5px', cursor: 'pointer',
+                                            background: input_keyword === t ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255,255,255,0.04)',
+                                            border: `1px solid ${input_keyword === t ? 'var(--accent-blue)' : 'var(--panel-border)'}`,
+                                            color: input_keyword === t ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                                            fontWeight: input_keyword === t ? 700 : 400
+                                        }}
+                                    >
+                                        #{t} {input_keyword === t && '✕'}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
-                        {/* 2. 수요기관명 */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <label style={{ fontSize: '12.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                🏛️ 특정 수요기관 (발주처명 - 선택사항)
-                            </label>
+                        {/* 👉 [우측] 2. 수요기관명 입력 & 추천 수요기관 태그 */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(0,0,0,0.15)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '12.5px', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Building2 size={14} color="#34d399" /> <strong>특정 수요기관</strong> <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400 }}>(선택사항)</span>
+                                </label>
+                                {input_agency && (
+                                    <button
+                                        onClick={() => set_input_agency('')}
+                                        style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                                    >
+                                        초기화 (전체 기관)
+                                    </button>
+                                )}
+                            </div>
+                            
                             <div style={{ position: 'relative' }}>
                                 <input
                                     type="text"
-                                    placeholder="예: 국립중앙의료원, 보건복지부"
+                                    placeholder="예: 국립중앙의료원, 한국생명공학연구원 (콤마로 구분)"
                                     value={input_agency}
                                     onChange={(e) => set_input_agency(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handle_search()}
@@ -719,30 +747,56 @@ export default function G2bSearch() {
                                     }}
                                 />
                                 <Building2 size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                                {input_agency && (
+                                    <button
+                                        onClick={() => set_input_agency('')}
+                                        title="기관 지우기"
+                                        style={{
+                                            position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                                            background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%',
+                                            width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            color: 'var(--text-muted)', cursor: 'pointer', fontSize: '12px'
+                                        }}
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* 추천 수요기관 태그 (우측) */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingTop: '4px' }}>
+                                <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <Building2 size={12} /> 추천:
+                                </span>
+                                {recommended_agencies.map(ag => {
+                                    const is_included = input_agency.includes(ag);
+                                    return (
+                                        <button
+                                            key={ag}
+                                            onClick={() => {
+                                                if (is_included) {
+                                                    const parts = input_agency.split(',').map(s => s.trim()).filter(s => s && s !== ag);
+                                                    set_input_agency(parts.join(', '));
+                                                } else {
+                                                    const parts = input_agency.split(',').map(s => s.trim()).filter(Boolean);
+                                                    parts.push(ag);
+                                                    set_input_agency(parts.join(', '));
+                                                }
+                                            }}
+                                            style={{
+                                                padding: '2px 8px', borderRadius: '5px', fontSize: '11.5px', cursor: 'pointer',
+                                                background: is_included ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.04)',
+                                                border: `1px solid ${is_included ? 'rgba(16, 185, 129, 0.5)' : 'var(--panel-border)'}`,
+                                                color: is_included ? '#34d399' : 'var(--text-secondary)',
+                                                fontWeight: is_included ? 700 : 400
+                                            }}
+                                        >
+                                            {is_included ? '✓ ' : '+ '}{ag}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
-                    </div>
-
-                    {/* 추천 사업명 태그 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', paddingTop: '6px', borderTop: '1px dashed var(--panel-border)' }}>
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Tag size={13} /> 추천 키워드 태그:
-                        </span>
-                        {recommended_titles.map(t => (
-                            <button
-                                key={t}
-                                onClick={() => { set_input_keyword(prev => prev === t ? '' : t); }}
-                                style={{
-                                    padding: '3px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer',
-                                    background: input_keyword === t ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255,255,255,0.04)',
-                                    border: `1px solid ${input_keyword === t ? 'var(--accent-blue)' : 'var(--panel-border)'}`,
-                                    color: input_keyword === t ? 'var(--accent-blue)' : 'var(--text-secondary)',
-                                    fontWeight: input_keyword === t ? 700 : 400
-                                }}
-                            >
-                                #{t} {input_keyword === t && '✕'}
-                            </button>
-                        ))}
                     </div>
 
                     {/* 🚀 5대 핵심 서비스 실시간 API 호출 버튼 */}
@@ -823,27 +877,47 @@ export default function G2bSearch() {
                         <Clock size={36} color="#a855f7" />
                         <div>
                             <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                {isLoading ? '조달청 실서버로부터 실시간 데이터를 수신하는 중입니다...' : '조건에 일치하는 실제 공고가 없거나 아직 조회되지 않았습니다.'}
+                                {isLoading 
+                                    ? '조달청 실서버로부터 실시간 데이터를 수신하는 중입니다...' 
+                                    : (!hasSearched 
+                                        ? '상단의 검색 조건(수요기관, 사업명 키워드, 조회 기간)을 확인하신 후 [조회하기] 버튼을 눌러주세요.'
+                                        : '설정하신 조건(기간/키워드/수요기관)에 일치하는 실제 공고가 없습니다.')}
                             </div>
                             <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '6px' }}>
-                                본 시스템은 <strong>가상의 데이터를 일체 배제</strong>하며 100% 조달청 실서버 데이터만을 표출합니다.
+                                {!hasSearched 
+                                    ? '기본 수요기관(국립중앙의료원, 한국생명공학연구원) 또는 원하시는 키워드로 최신 공고를 즉시 조회할 수 있습니다.'
+                                    : '본 시스템은 가상의 데이터를 일체 배제하며 100% 조달청 실서버 데이터만을 표출합니다.'}
                             </div>
                         </div>
-                        <div style={{ marginTop: '6px' }}>
-                            <a
-                                href={active_tab === 'bid' ? get_g2b_official_search_url('integrated') : get_g2b_official_search_url('preCom')}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                                    padding: '10px 18px', borderRadius: '8px',
-                                    background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(124, 58, 237, 0.25))',
-                                    border: '1px solid rgba(168, 85, 247, 0.4)',
-                                    color: '#c084fc', fontWeight: 700, fontSize: '13px', textDecoration: 'none'
-                                }}
-                            >
-                                🌐 나라장터(g2b.go.kr) 공식 사이트에서 입력 조건으로 실시간 직접 조회 <ExternalLink size={14} />
-                            </a>
+                        <div style={{ marginTop: '6px', display: 'flex', gap: '10px' }}>
+                            {!hasSearched ? (
+                                <button
+                                    onClick={() => handle_search(active_tab)}
+                                    style={{
+                                        padding: '10px 22px', borderRadius: '8px',
+                                        background: 'linear-gradient(135deg, #a855f7, #7c3aed)',
+                                        border: 'none', color: 'white', fontWeight: 700, fontSize: '13.5px', cursor: 'pointer',
+                                        boxShadow: '0 4px 14px rgba(168, 85, 247, 0.35)'
+                                    }}
+                                >
+                                    🚀 지금 바로 조달청 공고 조회하기
+                                </button>
+                            ) : (
+                                <a
+                                    href={active_tab === 'bid' ? get_g2b_official_search_url('integrated') : get_g2b_official_search_url('preCom')}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                        padding: '10px 18px', borderRadius: '8px',
+                                        background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(124, 58, 237, 0.25))',
+                                        border: '1px solid rgba(168, 85, 247, 0.4)',
+                                        color: '#c084fc', fontWeight: 700, fontSize: '13px', textDecoration: 'none'
+                                    }}
+                                >
+                                    🌐 나라장터(g2b.go.kr) 공식 사이트에서 입력 조건으로 실시간 직접 조회 <ExternalLink size={14} />
+                                </a>
+                            )}
                         </div>
                     </div>
                 ) : (

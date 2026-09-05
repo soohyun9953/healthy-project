@@ -4,6 +4,11 @@ import { exec } from 'child_process'
 
 // https://vite.dev/config/
 export default defineConfig({
+  css: {
+    postcss: {
+      plugins: []
+    }
+  },
   plugins: [
     react(),
     {
@@ -164,8 +169,8 @@ export default defineConfig({
                   return first_items;
                 }
 
-                // 2단계: 2페이지부터 마지막 페이지까지 전체 병렬 수집 (최대 15페이지, 약 15,000건)
-                const total_pages = Math.min(15, Math.ceil(total_count / 999));
+                // 2단계: 2페이지부터 마지막 페이지까지 전체 병렬 수집 (최대 5페이지, 약 5,000건으로 속도 대폭 최적화)
+                const total_pages = Math.min(5, Math.ceil(total_count / 999));
                 const remaining_pages = [];
                 for (let p = 2; p <= total_pages; p++) {
                   remaining_pages.push(p);
