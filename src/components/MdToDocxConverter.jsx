@@ -661,6 +661,9 @@ export default function MdToDocxConverter() {
                                     <p style={{ margin: '2px 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                                         각 파일을 개별 다운로드하거나, 전체를 한 번에 원하는 로컬 폴더에 저장할 수 있습니다.
                                     </p>
+                                    <div style={{ fontSize: '11.5px', color: '#fbbf24', marginTop: '4px' }}>
+                                        💡 <strong>폴더 선택 팁:</strong> 브라우저 보안 정책상 '바탕화면' 루트 대신 <strong>'새 폴더'</strong>를 만들어 선택해 주세요.
+                                    </div>
                                 </div>
 
                                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
