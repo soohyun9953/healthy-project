@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
+import { extractStructuredFileContent } from '../utils/fileExtractor.js';
 import { 
   FileUp, 
   ShieldAlert, 
@@ -608,9 +609,16 @@ export default function PptValidator({ apiKey }) {
     localStorage.setItem('ppt_validator_forbidden_words', forbiddenWordsText);
   }, [forbiddenWordsText]);
 
+  // 파일 지원 여부 판별 헬퍼
+  const isSupportedDocument = (fileName) => {
+    const lower = (fileName || '').toLowerCase();
+    const validExts = ['.pptx', '.hwpx', '.pdf', '.md', '.markdown', '.txt', '.docx', '.doc', '.xlsx', '.xls', '.csv'];
+    return validExts.some(ext => lower.endsWith(ext));
+  };
+
   // 파일 업로드 핸들러
   const handleFileChange = (e) => {
-    const files = Array.from(e.target.files).filter(f => f.name.endsWith('.pptx') || f.name.endsWith('.hwpx'));
+    const files = Array.from(e.target.files).filter(f => isSupportedDocument(f.name));
     if (files.length > 0) {
       setPptFiles(prev => [...prev, ...files]);
       setIsValidated(false);
@@ -623,7 +631,7 @@ export default function PptValidator({ apiKey }) {
 
   const handleDrop = (e) => {
     e.preventDefault();
-    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.pptx') || f.name.endsWith('.hwpx'));
+    const files = Array.from(e.dataTransfer.files).filter(f => isSupportedDocument(f.name));
     if (files.length > 0) {
       setPptFiles(prev => [...prev, ...files]);
       setIsValidated(false);
@@ -705,48 +713,203 @@ export default function PptValidator({ apiKey }) {
 
         const slides_text_map = {};
 
-        let arrayBuffer = await file.arrayBuffer();
-        let zip;
+        const lowerName = (file.name || '').toLowerCase();
+        const is_hwpx = lowerName.endsWith('.hwpx');
+        const is_pptx = lowerName.endsWith('.pptx');
+        const is_other = !is_hwpx && !is_pptx;
+
         let isFilePatched = false;
         let patchCount = 0;
 
-        try {
-          zip = await JSZip.loadAsync(arrayBuffer);
-        } catch (zipErr) {
-          const errorMsg = zipErr.message || '';
-          if (errorMsg.includes('CRC32') || errorMsg.includes('Corrupted') || errorMsg.includes('zip') || errorMsg.includes('inflate')) {
-            console.warn(`[CRC-32 오류 감지] 로컬 파이썬 서버를 활용한 복구 시도 시작: ${file.name}`);
-            try {
-              const formData = new FormData();
-              formData.append('file', file);
+        if (is_other) {
+          // PDF, MD, Word(DOCX), Excel(XLSX), Text 등 범용 문서 검증
+          try {
+            const structured = await extractStructuredFileContent(file);
+            const pageMap = structured.pageMap || { 1: [structured.text] };
+            const pageNums = Object.keys(pageMap).map(n => parseInt(n, 10)).sort((a, b) => a - b);
+            const totalPages = pageNums.length > 0 ? Math.max(...pageNums) : 1;
 
-              const fixResponse = await fetch('http://localhost:8000/fix-pptx', {
-                method: 'POST',
-                body: formData
-              });
-
-              if (fixResponse.ok) {
-                const fixedBlob = await fixResponse.blob();
-                arrayBuffer = await fixedBlob.arrayBuffer();
-                zip = await JSZip.loadAsync(arrayBuffer);
-                isFilePatched = true;
-                patchCount = parseInt(fixResponse.headers.get('X-Patched-Count') || '0', 10);
-                console.log(`[CRC-32 복구 성공] 더미 이미지 패치 완료. 패치 수: ${patchCount}개`);
-              } else {
-                throw new Error(`로컬 복구 서버 응답 실패: ${fixResponse.statusText}`);
+            for (const pNum of pageNums) {
+              const paragraphs = pageMap[pNum] || [];
+              if (!slides_text_map[pNum]) {
+                slides_text_map[pNum] = [];
               }
-            } catch (patchErr) {
-              console.error(`[CRC-32 복구 실패]`, patchErr);
-              throw new Error(`파일 압축 구조(CRC-32)가 손상되었으며, 로컬 복구 서버(http://localhost:8000)를 통한 복구도 실패했습니다. 서버 실행 상태를 확인해 주세요. (에러: ${patchErr.message})`);
+
+              for (const paragraph_text of paragraphs) {
+                if (!paragraph_text || !paragraph_text.trim()) continue;
+                const text = paragraph_text.trim();
+                slides_text_map[pNum].push(text);
+
+                // 1) 오탈자 점검
+                if (checkTypos) {
+                  Object.keys(mergedDict).forEach(typo => {
+                    if (text.includes(typo) && validate_typo_match(text, typo)) {
+                      const exists = allTypos.some(t => 
+                        t.fileName === file.name && 
+                        t.slideNum === pNum && 
+                        t.sentence === text && 
+                        t.typo === typo
+                      );
+                      if (!exists) {
+                        const info = mergedDict[typo];
+                        allTypos.push({
+                          fileName: file.name,
+                          slideNum: pNum,
+                          sentence: text,
+                          typo,
+                          correction: info.correction,
+                          type: info.type,
+                          desc: info.desc
+                        });
+                        fileTyposCount++;
+                      }
+                    }
+                  });
+                }
+
+                // 2) 특정 단어(금지어) 검증
+                if (checkForbiddenWords && forbiddenWordsText.trim()) {
+                  const targetWords = forbiddenWordsText.split('\n')
+                    .map(w => w.trim())
+                    .filter(w => w.length > 0);
+                  targetWords.forEach(word => {
+                    if (text.includes(word)) {
+                      const exists = allForbiddens.some(e => 
+                        e.fileName === file.name && 
+                        e.slideNum === pNum && 
+                        e.sentence === text && 
+                        e.word === word
+                      );
+                      if (!exists) {
+                        allForbiddens.push({
+                          fileName: file.name,
+                          slideNum: pNum,
+                          sentence: text,
+                          word,
+                          error: `지정 단어 검출 (${word})`,
+                          guide: `문서 본문 내에 점검 지정 단어인 "${word}"가 포함되어 있습니다. 최종 제출 시 적절한 표현인지 확인해 주세요.`
+                        });
+                        fileForbiddenCount++;
+                      }
+                    }
+                  });
+                }
+
+                // 3) 영어/한글 혼용 단어 검증
+                if (checkEngKoMixed) {
+                  const words = text.split(/\s+/);
+                  words.forEach(word => {
+                    const cleanWord = word.replace(/^[.,;:!?()\[\]"']+|[.,;:!?()\[\]"']+$/g, '');
+                    const mixRegex = /[a-zA-Z][가-힣ㄱ-ㅎㅏ-ㅣ]|[가-힣ㄱ-ㅎㅏ-ㅣ][a-zA-Z]/;
+                    if (mixRegex.test(cleanWord)) {
+                      const exists = allEngKoMixed.some(e => 
+                        e.fileName === file.name && 
+                        e.slideNum === pNum && 
+                        e.word === cleanWord &&
+                        e.sentence === text
+                      );
+                      if (!exists) {
+                        allEngKoMixed.push({
+                          fileName: file.name,
+                          slideNum: pNum,
+                          sentence: text,
+                          word: cleanWord,
+                          error: '영어/한글 혼용 단어 검출',
+                          guide: `단어 "${cleanWord}" 내에 영어와 한글이 공백 없이 혼용되어 표시되어 있습니다. 오타가 아닌지 확인해 주세요.`
+                        });
+                        fileEngKoMixedCount++;
+                      }
+                    }
+                  });
+                }
+
+                // 4) 동일 단어 중복 검증
+                if (check_duplicate_words) {
+                  const matches = [...text.matchAll(/(\S{2,})\s*\1/g)];
+                  matches.forEach(match => {
+                    const matched_full_str = match[0];
+                    const duplicated_word = match[1];
+                    const match_index = match.index;
+                    
+                    if (!check_word_boundary(text, match_index, matched_full_str.length, duplicated_word)) {
+                      return;
+                    }
+
+                    const exists = all_duplicates.some(d => 
+                      d.fileName === file.name && 
+                      d.slideNum === pNum && 
+                      d.word === duplicated_word &&
+                      d.sentence === text
+                    );
+                    if (!exists) {
+                      all_duplicates.push({
+                        fileName: file.name,
+                        slideNum: pNum,
+                        sentence: text,
+                        word: duplicated_word,
+                        error: `동일 단어 중복 기재 (${duplicated_word} ${duplicated_word})`,
+                        guide: `동일한 단어/기호("${duplicated_word}")가 연속으로 중복 기재되었습니다. 오탈자인지 확인 후 수정해 주세요.`
+                      });
+                      file_duplicate_count++;
+                    }
+                  });
+                }
+              }
             }
-          } else {
-            throw zipErr;
+
+            // 페이지 범위 통계 등록
+            if (checkPageRange) {
+              allPageRanges.push({
+                fileName: file.name,
+                startPage: 1,
+                endPage: totalPages,
+                totalSlides: totalPages,
+                isCoverMissing: false
+              });
+            }
+          } catch (docErr) {
+            console.error(`문서 파싱 실패 (${file.name}):`, docErr);
           }
-        }
+        } else {
+          // PPTX 또는 HWPX 문서 검증
+          let arrayBuffer = await file.arrayBuffer();
+          let zip;
+
+          try {
+            zip = await JSZip.loadAsync(arrayBuffer);
+          } catch (zipErr) {
+            const errorMsg = zipErr.message || '';
+            if (errorMsg.includes('CRC32') || errorMsg.includes('Corrupted') || errorMsg.includes('zip') || errorMsg.includes('inflate')) {
+              console.warn(`[CRC-32 오류 감지] 로컬 파이썬 서버를 활용한 복구 시도 시작: ${file.name}`);
+              try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const fixResponse = await fetch('http://localhost:8000/fix-pptx', {
+                  method: 'POST',
+                  body: formData
+                });
+
+                if (fixResponse.ok) {
+                  const fixedBlob = await fixResponse.blob();
+                  arrayBuffer = await fixedBlob.arrayBuffer();
+                  zip = await JSZip.loadAsync(arrayBuffer);
+                  isFilePatched = true;
+                  patchCount = parseInt(fixResponse.headers.get('X-Patched-Count') || '0', 10);
+                  console.log(`[CRC-32 복구 성공] 더미 이미지 패치 완료. 패치 수: ${patchCount}개`);
+                } else {
+                  throw new Error(`로컬 복구 서버 응답 실패: ${fixResponse.statusText}`);
+                }
+              } catch (patchErr) {
+                console.error(`[CRC-32 복구 실패]`, patchErr);
+                throw new Error(`파일 압축 구조(CRC-32)가 손상되었으며, 로컬 복구 서버(http://localhost:8000)를 통한 복구도 실패했습니다. 서버 실행 상태를 확인해 주세요. (에러: ${patchErr.message})`);
+              }
+            } else {
+              throw zipErr;
+            }
+          }
         
-        const is_hwpx = file.name.endsWith('.hwpx');
-        
-        if (is_hwpx) {
+          if (is_hwpx) {
           const section_files = Object.keys(zip.files).filter(p => 
             p.startsWith('Contents/section') && p.endsWith('.xml')
           ).sort((a, b) => {
@@ -1773,6 +1936,7 @@ export default function PptValidator({ apiKey }) {
           }
         }
         }
+        }
 
         if (check_ai_typos && (apiKey || llmProvider === 'omniroute')) {
           try {
@@ -2026,11 +2190,11 @@ export default function PptValidator({ apiKey }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(225, 29, 72, 0.15), rgba(168, 85, 247, 0.05))', border: '1px solid rgba(225, 29, 72, 0.25)', padding: '24px', borderRadius: '16px', backdropFilter: 'blur(10px)' }}>
         <div>
           <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '22px', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-            <ShieldAlert size={28} color="#e11d48" /> PPT / HWPX 검증(표준산출물)
+            <ShieldAlert size={28} color="#e11d48" /> 표준산출물 종합 검증 (PPT / HWPX / PDF / MD / Word / Excel)
           </h2>
           <p style={{ margin: '8px 0 0 0', fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-            PPTX 제안서 또는 HWPX 한글 보고서를 업로드하면 텍스트 내의 **오탈자(비즈니스/외래어/맞춤법)**와 **중복 단어, 영한 혼용 단어** 등을 정교하게 분석합니다.<br />
-            (PPTX의 경우 상단 헤더 넘버링 규칙성 및 대체텍스트도 점검하며, HWPX는 본문 텍스트 기반 검증이 수행됩니다.)
+            다양한 포맷의 산출물 문서(PPTX, HWPX, PDF, Markdown, Word, Excel)를 업로드하면 텍스트 내의 **오탈자(비즈니스/외래어/맞춤법)**와 **중복 단어, 영한 혼용 단어, 금지어** 등을 정교하게 분석합니다.<br />
+            (PPTX의 경우 상단 헤더 넘버링 및 대체텍스트 점검을 지원하며, HWPX/PDF/Word/Excel/MD는 문서 구조 및 단락 기반 검증이 수행됩니다.)
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -2075,13 +2239,26 @@ export default function PptValidator({ apiKey }) {
               <FileUp size={32} />
             </div>
             <div>
-              <p style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>검증할 PPTX 또는 HWPX 파일을 끌어다 놓으세요</p>
-              <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>또는 컴퓨터에서 파일 찾아보기 (다중 선택 가능)</p>
+              <p style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                검증할 표준산출물 파일을 여기에 끌어다 놓으세요
+              </p>
+              <p style={{ margin: '6px 0 10px 0', fontSize: '13px', color: 'var(--text-muted)' }}>
+                또는 컴퓨터에서 파일 찾아보기 (복수 파일 동시 지원)
+              </p>
+              {/* 지원 포맷 뱃지 태그 목록 */}
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '11px', background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>PPTX</span>
+                <span style={{ fontSize: '11px', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>HWPX</span>
+                <span style={{ fontSize: '11px', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>PDF</span>
+                <span style={{ fontSize: '11px', background: 'rgba(37, 99, 235, 0.15)', color: '#3b82f6', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>MD (Markdown)</span>
+                <span style={{ fontSize: '11px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>Word (DOCX)</span>
+                <span style={{ fontSize: '11px', background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>Excel (XLSX)</span>
+              </div>
             </div>
             <input 
               ref={fileInputRef}
               type="file" 
-              accept=".pptx, .hwpx" 
+              accept=".pptx,.hwpx,.pdf,.md,.markdown,.txt,.docx,.doc,.xlsx,.xls,.csv" 
               multiple 
               onChange={handleFileChange}
               style={{ display: 'none' }}
@@ -2588,7 +2765,7 @@ export default function PptValidator({ apiKey }) {
               }}
             >
               {isProcessing ? (
-                <><RefreshCw size={18} className="animate-spin" /> PPTX 구조 해독 및 규칙 검증 중...</>
+                <><RefreshCw size={18} className="animate-spin" /> 문서 구조 해독 및 규칙 검증 중...</>
               ) : (
                 <><ShieldAlert size={18} /> 검증 프로세스 실행</>
               )}
