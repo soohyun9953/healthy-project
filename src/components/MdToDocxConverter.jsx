@@ -56,7 +56,7 @@ const SAMPLE_MARKDOWN = `# 차세대 클라우드 기반 통합의료정보시�
 \`\`\`json
 {
   "service": "SmartHospitalCore",
-  "version": "v2.11.0",
+  "version": "v2.11.2",
   "status": "active",
   "features": ["AI_EMR", "HL7_FHIR", "CloudNative_DB"]
 }
