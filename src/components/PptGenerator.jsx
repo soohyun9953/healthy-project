@@ -10,6 +10,7 @@ import {
 } from '../utils/pptExporter';
 import { convertPptxToHwpx, fusePptToHwpxTemplate, fusePptToHwpxListTemplate } from '../utils/hwpxConverter';
 import HwpxConverter from './HwpxConverter.jsx';
+import MdToDocxConverter from './MdToDocxConverter.jsx';
 import JSZip from 'jszip';
 
 export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto' }) {
@@ -1361,6 +1362,20 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
                         }}
                     >
                         HWP ➔ HWPX 변환
+                    </button>
+                    <button 
+                        id="tab-md-to-docx"
+                        onClick={() => { setActiveTab('md_to_docx'); setErrorMsg(null); setSuccessMsg(null); }}
+                        className="interactive"
+                        style={{
+                            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
+                            background: activeTab === 'md_to_docx' ? 'rgba(37, 99, 235, 0.15)' : 'transparent',
+                            border: '1px solid ' + (activeTab === 'md_to_docx' ? '#2563eb' : 'transparent'),
+                            color: activeTab === 'md_to_docx' ? '#3b82f6' : 'var(--text-secondary)',
+                            fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
+                        }}
+                    >
+                        MD ➔ Word 변환
                     </button>
                     <button 
                         id="tab-pdf-convert"
@@ -2952,6 +2967,10 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
                 ) : activeTab === 'hwp_to_hwpx' ? (
                     <div className="animate-fade-in">
                         <HwpxConverter apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />
+                    </div>
+                ) : activeTab === 'md_to_docx' ? (
+                    <div className="animate-fade-in">
+                        <MdToDocxConverter />
                     </div>
                 ) : activeTab === 'pdf_to_ppt' ? (
                     <div className="animate-fade-in" style={{
