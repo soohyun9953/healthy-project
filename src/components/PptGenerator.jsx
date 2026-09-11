@@ -11,6 +11,7 @@ import {
 import { convertPptxToHwpx, fusePptToHwpxTemplate, fusePptToHwpxListTemplate } from '../utils/hwpxConverter';
 import HwpxConverter from './HwpxConverter.jsx';
 import MdToDocxConverter from './MdToDocxConverter.jsx';
+import PptSplitter from './PptSplitter.jsx';
 import JSZip from 'jszip';
 
 export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto' }) {
@@ -1348,6 +1349,20 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
                         }}
                     >
                         PPT ➜ HWPX 양식 융합
+                    </button>
+                    <button 
+                        id="tab-ppt-split"
+                        onClick={() => { setActiveTab('ppt_split'); setErrorMsg(null); setSuccessMsg(null); }}
+                        className="interactive"
+                        style={{
+                            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
+                            background: activeTab === 'ppt_split' ? 'rgba(168, 85, 247, 0.15)' : 'transparent',
+                            border: '1px solid ' + (activeTab === 'ppt_split' ? '#a855f7' : 'transparent'),
+                            color: activeTab === 'ppt_split' ? '#c084fc' : 'var(--text-secondary)',
+                            fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
+                        }}
+                    >
+                        PPT 목차별 분할
                     </button>
                     <button 
                         id="tab-hwp-to-hwpx"
@@ -2963,6 +2978,10 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
                                 이에 따라 원본 PPTX 슬라이드에 적용된 <strong>특수 폰트, 표 스타일, 스마트아트, 이미지 투명도 및 배치 레이아웃이 100% 동일하게 완벽 보존된 PDF</strong>가 출력됩니다.
                             </div>
                         </div>
+                    </div>
+                ) : activeTab === 'ppt_split' ? (
+                    <div className="animate-fade-in">
+                        <PptSplitter />
                     </div>
                 ) : activeTab === 'hwp_to_hwpx' ? (
                     <div className="animate-fade-in">
