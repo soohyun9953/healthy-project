@@ -286,29 +286,30 @@ export async function analyzePptxSections(fileInput, splitLevel = 'major') {
         }
     }
 
-    // 6. 목차별 구간(Section) 군집화
+    // 5-1. 표지와 목차는 무조건 첫 번째 목차(1장)에 같이 편입 (1번 슬라이드부터 시작)
+    const firstChSlide = classifiedSlides.find(s => s.majorNum !== null);
+    const defaultMajorNum = firstChSlide?.majorNum || canonicalChapters[0]?.num || 1;
+    const defaultMajorTitle = firstChSlide?.majorTitle || canonicalChapters[0]?.title || `1. 목표모델 수립 개요`;
+    const defaultMidNum = firstChSlide?.midNum || 1;
+    const defaultMidTitle = firstChSlide?.midTitle || defaultMajorTitle;
+
+    for (let i = 0; i < classifiedSlides.length; i++) {
+        const s = classifiedSlides[i];
+        if (s.majorNum === null) {
+            s.majorNum = defaultMajorNum;
+            s.majorTitle = defaultMajorTitle;
+            s.midNum = defaultMidNum;
+            s.midTitle = defaultMidTitle;
+        } else {
+            break; // 첫 챕터 도달 시 루프 종료
+        }
+    }
+
+    // 6. 목차별 구간(Section) 군집화 (1번 슬라이드부터 시작)
     const finalSections = [];
     let curSec = null;
 
-    // 1번 슬라이드부터 1장 시작 전까지 [표지 및 목차] 섹션 생성
-    const firstChIdx = classifiedSlides.findIndex(s => s.majorNum !== null);
-
-    if (firstChIdx > 0) {
-        finalSections.push({
-            id: 1,
-            title: '표지 및 목차',
-            startSlide: 1,
-            endSlide: firstChIdx,
-            slideCount: firstChIdx,
-            previewText: classifiedSlides[0].previewText,
-            selected: true,
-            isIntro: true
-        });
-    }
-
-    const startIndex = firstChIdx >= 0 ? firstChIdx : 0;
-
-    for (let i = startIndex; i < classifiedSlides.length; i++) {
+    for (let i = 0; i < classifiedSlides.length; i++) {
         const s = classifiedSlides[i];
         const currentKey = splitLevel === 'mid' 
             ? `${s.majorNum}_${s.midNum || 0}`
