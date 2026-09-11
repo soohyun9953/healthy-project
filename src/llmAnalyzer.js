@@ -1,4 +1,5 @@
 import { FALLBACK_MODELS } from './utils/geminiModels.js';
+import { extract_dictionary_typos, generate_conjugation_rules, TYPO_DICTIONARY } from './utils/typoDictionary.js';
 
 async function fetch_with_timeout(resource, options = {}) {
     const { timeout = 25000 } = options;
@@ -507,7 +508,41 @@ function parse_and_normalize_response(text, raw_artifact_text = '') {
                     recommendation: '실행 계획을 산출물에 추가하십시오.'
                 }));
 
-            return { score, summary, requirementMapping, rtm, omissions, typos: unique_typos };
+            const finalResult = { score, summary, requirementMapping, rtm, omissions, typos: unique_typos };
+            // 교정완료본 텍스트 자동 생성
+            if (raw_artifact_text && unique_typos.length > 0) {
+                finalResult.correctedFullText = apply_typos_to_text(raw_artifact_text, unique_typos);
+            } else {
+                finalResult.correctedFullText = raw_artifact_text || '';
+            }
+            return finalResult;
+}
+
+// 텍스트에 교정사항들을 안전하게 치환 반영하는 함수
+export function apply_typos_to_text(originalText, typosList) {
+    if (!originalText || !typosList || !Array.isArray(typosList) || typosList.length === 0) {
+        return originalText || '';
+    }
+
+    let modified = originalText;
+    // 긴 문장/단어부터 치환하여 부분 치환 충돌 방지
+    const sorted = [...typosList].sort((a, b) => {
+        const lenA = (a.originalText || a.original || '').length;
+        const lenB = (b.originalText || b.original || '').length;
+        return lenB - lenA;
+    });
+
+    sorted.forEach(item => {
+        const orig = (item.originalText || item.original || '').trim();
+        const corr = (item.correction || item.correct || '').trim();
+        if (orig && corr && orig !== corr) {
+            if (modified.includes(orig)) {
+                modified = modified.split(orig).join(corr);
+            }
+        }
+    });
+
+    return modified;
 }
 
 export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', omniRouteModel = 'auto') {
@@ -521,23 +556,40 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
     const isOnlyTypoCheck = !guidelineText || guidelineText.trim() === '';
 
     if (!isSubCall) {
-        if (isOnlyTypoCheck && artifactText && artifactText.length > 50000) {
-            const chunks = split_text_into_chunks(artifactText, 45000);
+        // [교정교열 모드 1차 정밀 분할 스캔]: 8,000자 이상 시 분할하여 LLM의 토큰 한계로 인한 누락 원천 차단
+        if (isOnlyTypoCheck && artifactText && artifactText.length > 8000) {
+            const chunks = split_text_into_chunks(artifactText, 7000);
             if (chunks.length > 1) {
                 const results = [];
                 for (let i = 0; i < chunks.length; i++) {
-                    if (onProgress) onProgress(`산출물 용량이 커서 ${chunks.length}회로 나누어 분석을 진행합니다. (${i + 1}/${chunks.length}부 시작)`);
+                    if (onProgress) onProgress(`[정밀 전수 스캔] 산출물을 ${chunks.length}개 구간으로 나누어 누락 없이 분석 중입니다 (${i + 1}/${chunks.length}구간)`);
                     
                     if (i > 0) {
-                        if (onProgress) onProgress(`Rate Limit 방지를 위해 3초 대기합니다...`);
-                        await sleep_delay(3000);
+                        if (onProgress) onProgress(`Rate Limit 방지 대기 중...`);
+                        await sleep_delay(1500);
                     }
                     
                     const res = await analyzeDocumentsWithLLM("", chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, omniRouteModel);
                     results.push(res);
                 }
-                if (onProgress) onProgress("분석 결과 병합 중...");
-                return merge_multiple_results(results, true);
+                if (onProgress) onProgress("전체 구간 분석 결과 병합 중...");
+                const mergedRes = merge_multiple_results(results, true);
+                
+                // 정적 사전 결합
+                const dictTypos = extract_dictionary_typos(artifactText);
+                const seenSig = new Set((mergedRes.typos || []).map(t => `${t.page}_${t.originalText}_${t.correction}`));
+                dictTypos.forEach(dt => {
+                    const sig = `${dt.page}_${dt.originalText}_${dt.correction}`;
+                    if (!seenSig.has(sig)) {
+                        seenSig.add(sig);
+                        mergedRes.typos.push(dt);
+                    }
+                });
+
+                if (mergedRes) {
+                    mergedRes.correctedFullText = apply_typos_to_text(artifactText, mergedRes.typos);
+                }
+                return mergedRes;
             }
         }
         

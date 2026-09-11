@@ -1,5 +1,5 @@
-import React from 'react';
-import { ShieldAlert, CheckCircle2, XCircle, FileWarning, AlertTriangle, ClipboardList, ArrowRightLeft, Download, PenTool, RotateCcw } from 'lucide-react';
+import React, { useState } from 'react';
+import { ShieldAlert, CheckCircle2, XCircle, FileWarning, AlertTriangle, ClipboardList, ArrowRightLeft, Download, PenTool, RotateCcw, Copy, Check, FileText, Eye } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 /** 매핑 결과를 엑셀 파일로 내보내기 */
@@ -211,11 +211,77 @@ async function exportToExcel(data, isTypoMode = false) {
     }
 }
 
+function renderInlineDiff(originalText, correctionText) {
+    const orig = String(originalText || '').trim();
+    const corr = String(correctionText || '').trim();
+    if (!orig || !corr || orig === corr) {
+        return <span style={{ color: 'var(--text-primary)' }}>{corr || orig}</span>;
+    }
+
+    const origWords = orig.split(/\s+/);
+    const corrWords = corr.split(/\s+/);
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center', lineHeight: '1.5' }}>
+                <span style={{ fontSize: '11px', color: '#f87171', fontWeight: 800, background: 'rgba(239,68,68,0.1)', padding: '1px 5px', borderRadius: '4px' }}>원문</span>
+                {origWords.map((w, i) => {
+                    const isDiff = !corrWords.includes(w);
+                    return isDiff ? (
+                        <del key={i} style={{ color: '#f87171', background: 'rgba(239, 68, 68, 0.2)', padding: '1px 5px', borderRadius: '4px', textDecoration: 'line-through', fontWeight: 700 }}>
+                            {w}
+                        </del>
+                    ) : (
+                        <span key={i} style={{ color: 'var(--text-secondary)' }}>{w}</span>
+                    );
+                })}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center', lineHeight: '1.5' }}>
+                <span style={{ fontSize: '11px', color: '#34d399', fontWeight: 800, background: 'rgba(16,185,129,0.1)', padding: '1px 5px', borderRadius: '4px' }}>교정</span>
+                {corrWords.map((w, i) => {
+                    const isDiff = !origWords.includes(w);
+                    return isDiff ? (
+                        <ins key={i} style={{ color: '#34d399', fontWeight: 800, background: 'rgba(16, 185, 129, 0.2)', padding: '1px 5px', borderRadius: '4px', textDecoration: 'none' }}>
+                            {w}
+                        </ins>
+                    ) : (
+                        <span key={i} style={{ color: 'var(--text-primary)' }}>{w}</span>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
 export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
     if (!data) return null;
 
+    const [copiedToast, setCopiedToast] = useState(false);
+    const [showCompareModal, setShowCompareModal] = useState(false);
     const displayScore = isNaN(data.score) || data.score === undefined || data.score === null ? 0 : Math.round(Number(data.score));
     const typosList = data.typos || [];
+
+    // 교정 완료본 클립보드 복사 핸들러
+    const handleCopyFullCorrectedText = () => {
+        const textToCopy = data.correctedFullText || (typosList.length > 0 
+            ? typosList.map((t, idx) => `${idx + 1}. [${t.page || '위치'}] ${t.correction || t.originalText}`).join('\n')
+            : '교정 사항 없음');
+        
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            setCopiedToast(true);
+            setTimeout(() => setCopiedToast(false), 2500);
+        }).catch(() => {
+            alert('클립보드 복사에 실패했습니다.');
+        });
+    };
+
+    // 교정 완료본 텍스트 파일 다운로드 핸들러
+    const handleDownloadCorrectedFile = () => {
+        const textToDownload = data.correctedFullText || '';
+        const blob = new Blob([textToDownload], { type: 'text/markdown;charset=utf-8' });
+        const fileName = `${(data.artifactFileName || '문서').replace(/\.[^.]+$/, '')}_교정완료본.md`;
+        saveAs(blob, fileName);
+    };
 
     return (
         <div className="glass-panel animate-fade-in" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '24px', gap: '24px', overflowY: 'auto' }}>
@@ -245,18 +311,18 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                                 color: typosList.length > 0 ? 'var(--danger-color)' : 'var(--success-color)',
                                 border: `1px solid ${typosList.length > 0 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`
                             }}>
-                                {typosList.length > 0 ? `발견된 결함: ${typosList.length}건` : '특이 결함 없음 (완벽)'}
+                                {typosList.length > 0 ? `발견된 결함: ${typosList.length}건 (100% 전수 스캔)` : '특이 결함 없음 (완벽)'}
                             </span>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                             {data.summary && (data.summary.includes('Gemini 검증 실패') || data.summary.includes('소진되었습니다')) && onRetry && (
                                 <button
                                     onClick={onRetry}
                                     className="interactive pulse-text"
                                     style={{
                                         display: 'flex', alignItems: 'center', gap: '8px',
-                                        padding: '10px 16px', fontSize: '14px', fontWeight: 700,
+                                        padding: '10px 16px', fontSize: '13.5px', fontWeight: 700,
                                         background: 'rgba(59, 130, 246, 0.15)', color: 'var(--accent-blue)',
                                         border: '2px solid var(--accent-blue)', borderRadius: '10px', cursor: 'pointer',
                                     }}
@@ -265,12 +331,49 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                                     <span>재시도</span>
                                 </button>
                             )}
+
+                            {/* 원클릭 교정 완성본 복사 버튼 */}
+                            <button
+                                onClick={handleCopyFullCorrectedText}
+                                className="interactive"
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px',
+                                    padding: '10px 16px', fontSize: '13.5px', fontWeight: 700,
+                                    background: copiedToast ? 'rgba(34, 197, 94, 0.2)' : 'rgba(168, 85, 247, 0.15)',
+                                    color: copiedToast ? 'var(--success-color)' : 'var(--accent-purple)',
+                                    border: `1px solid ${copiedToast ? 'var(--success-color)' : 'rgba(168, 85, 247, 0.4)'}`,
+                                    borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s ease'
+                                }}
+                            >
+                                {copiedToast ? <Check size={16} /> : <Copy size={16} />}
+                                <span>{copiedToast ? '✅ 복사 완료!' : '📋 교정 완성본 복사'}</span>
+                            </button>
+
+                            {/* 교정본 파일 다운로드 */}
+                            {data.correctedFullText && (
+                                <button
+                                    onClick={handleDownloadCorrectedFile}
+                                    className="interactive"
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                        padding: '10px 16px', fontSize: '13.5px', fontWeight: 700,
+                                        background: 'rgba(59, 130, 246, 0.12)',
+                                        color: 'var(--accent-blue)',
+                                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                                        borderRadius: '10px', cursor: 'pointer'
+                                    }}
+                                >
+                                    <FileText size={16} />
+                                    <span>💾 교정본(.md) 다운로드</span>
+                                </button>
+                            )}
+
                             <button
                                 onClick={() => exportToExcel(data, true)}
                                 className="interactive"
                                 style={{
                                     display: 'flex', alignItems: 'center', gap: '8px',
-                                    padding: '10px 18px', fontSize: '14px', fontWeight: 700,
+                                    padding: '10px 18px', fontSize: '13.5px', fontWeight: 700,
                                     background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                                     color: '#ffffff', border: 'none', borderRadius: '10px',
                                     cursor: 'pointer', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
@@ -284,22 +387,21 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
 
                     {/* 전체 요약 문구 */}
                     <div style={{ padding: '14px 18px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid var(--accent-blue)' }}>
-                        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>📋 종합 교열 의견</span>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>📋 종합 교열 의견 및 전수 점검 요약</span>
                         <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.6', color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
                             {data.summary || '분석이 완료되었습니다.'}
                         </p>
                     </div>
 
-                    {/* 오탈자 결과 명확 표시 테이블 */}
+                    {/* 오탈자 결과 명확 표시 테이블 (인라인 Diff 하이라이트 적용) */}
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.03)' }}>
                                     <th style={{ padding: '14px 16px', fontWeight: 600, width: '60px' }}>순번</th>
-                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '15%' }}>위치/페이지</th>
-                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '35%' }}>원문 문장 전체 (오류 하이라이트)</th>
-                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '35%' }}>수정 제안 문장 (올바른 교정)</th>
-                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '15%' }}>오류 유형/사유</th>
+                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '12%' }}>위치/페이지</th>
+                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '60%' }}>원문 vs 교정 제안 (인라인 단어 Diff)</th>
+                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '22%' }}>오류 유형/사유</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -310,11 +412,11 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                                             <td style={{ padding: '14px 16px', color: 'var(--warning-color)', fontWeight: 600 }}>
                                                 {typo.page || typo.location || typo.type || typo.section || '1페이지'}
                                             </td>
-                                            <td style={{ padding: '14px 16px', color: '#f87171', background: 'rgba(239, 68, 68, 0.05)', borderRadius: '4px' }}>
-                                                {typo.originalText || typo.original || typo.errorText || typo.before || typo.wrong || ''}
-                                            </td>
-                                            <td style={{ padding: '14px 16px', color: '#34d399', fontWeight: 700, background: 'rgba(16, 185, 129, 0.05)', borderRadius: '4px' }}>
-                                                {typo.correction || typo.correct || typo.after || typo.suggestion || ''}
+                                            <td style={{ padding: '14px 16px' }}>
+                                                {renderInlineDiff(
+                                                    typo.originalText || typo.original || typo.errorText || typo.before || typo.wrong || '',
+                                                    typo.correction || typo.correct || typo.after || typo.suggestion || ''
+                                                )}
                                             </td>
                                             <td style={{ padding: '14px 16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
                                                 {typo.errorType || typo.reason || typo.context || '[표현 품질] 교정'}
@@ -323,7 +425,7 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={5} style={{ padding: '30px', textAlign: 'center', color: 'var(--success-color)', fontSize: '15px', fontWeight: 600 }}>
+                                        <td colSpan={4} style={{ padding: '30px', textAlign: 'center', color: 'var(--success-color)', fontSize: '15px', fontWeight: 600 }}>
                                             ✅ 지적할 오탈자, 띄어쓰기 및 표현 결함이 발견되지 않은 깨끗한 산출물입니다.
                                         </td>
                                     </tr>
