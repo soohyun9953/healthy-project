@@ -120,7 +120,8 @@ export async function analyzePptxSections(fileInput) {
                 startSlide: slide.slideNum,
                 endSlide: totalSlides,
                 slideCount: 1,
-                previewText: slide.previewText
+                previewText: slide.previewText,
+                selected: true
             };
         }
     }
@@ -145,7 +146,8 @@ export async function analyzePptxSections(fileInput) {
                 startSlide: s,
                 endSlide: e,
                 slideCount: e - s + 1,
-                previewText: leaderSlide.previewText
+                previewText: leaderSlide.previewText,
+                selected: true
             });
         }
     }
@@ -337,15 +339,17 @@ export async function createSubPptx(originalBuffer, startSlide, endSlide) {
 }
 
 /**
- * 모든 섹션을 각각 분할하여 ZIP 파일로 압축 다운로드
+ * 지정된 섹션들을 각각 분할하여 ZIP 파일로 압축 다운로드
  * @param {ArrayBuffer} originalBuffer 
  * @param {string} originalFileName 
  * @param {Array<{ id: number, title: string, startSlide: number, endSlide: number }>} sections 
  * @param {function(string, number): void} onProgress 
+ * @param {string} fileNamePrefix
  */
-export async function downloadAllSectionsAsZip(originalBuffer, originalFileName, sections, onProgress) {
+export async function downloadAllSectionsAsZip(originalBuffer, originalFileName, sections, onProgress, fileNamePrefix = '[분할]') {
     const zipArchive = new JSZip();
     const baseName = originalFileName.replace(/\.[^.]+$/, '');
+    const prefix = fileNamePrefix ? `${fileNamePrefix.trim()}_` : '';
 
     for (let i = 0; i < sections.length; i++) {
         const sec = sections[i];
@@ -356,15 +360,15 @@ export async function downloadAllSectionsAsZip(originalBuffer, originalFileName,
         const subBlob = await createSubPptx(originalBuffer, sec.startSlide, sec.endSlide);
         const subArrayBuffer = await subBlob.arrayBuffer();
 
-        // 파일명 포맷: [01]_섹션명_원본파일명.pptx
+        // 파일명 포맷: [접두사]_[01]_섹션명_원본파일명.pptx
         const cleanTitle = (sec.title || `섹션_${sec.id}`).replace(/[\\/:*?"<>|]/g, '_').trim();
-        const subFileName = `[${String(i + 1).padStart(2, '0')}]_${cleanTitle}_${baseName}.pptx`;
+        const subFileName = `${prefix}[${String(i + 1).padStart(2, '0')}]_${cleanTitle}_${baseName}.pptx`;
         zipArchive.file(subFileName, subArrayBuffer);
     }
 
     if (onProgress) onProgress('ZIP 압축 파일 생성 중...', 99);
     const zipBlob = await zipArchive.generateAsync({ type: 'blob' });
-    const zipFileName = `[목차분할]_${baseName}.zip`;
+    const zipFileName = `${prefix}[목차분할]_${baseName}.zip`;
     saveAs(zipBlob, zipFileName);
     if (onProgress) onProgress('다운로드 완료!', 100);
 }
