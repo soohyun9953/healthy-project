@@ -1,17 +1,128 @@
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
+// 로마자 숫자 매핑 테이블 (I..X, Ⅰ..Ⅹ)
+const ROMAN_MAP = {
+    'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5,
+    'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10,
+    'XI': 11, 'XII': 12, 'XIII': 13, 'XIV': 14, 'XV': 15,
+    'Ⅰ': 1, 'Ⅱ': 2, 'Ⅲ': 3, 'Ⅳ': 4, 'Ⅴ': 5,
+    'Ⅵ': 6, 'Ⅶ': 7, 'Ⅷ': 8, 'Ⅸ': 9, 'Ⅹ': 10,
+    'Ⅺ': 11, 'Ⅻ': 12
+};
+
+/**
+ * 텍스트에서 대목차(1, 2, 3 / I, II, III / 제1장 등) 및 중목차(1.1, 1.2 등) 정보를 정밀 추출
+ * @param {string} text 
+ * @returns {object|null}
+ */
+export function parseChapterInfo(text) {
+    if (!text || typeof text !== 'string') return null;
+    const clean = text.trim();
+    if (!clean) return null;
+
+    // 1. 로마자 대목차 패턴 (예: I. 사업 개요, Ⅰ. 현황 분석, 제I장, I-1. 추진방향)
+    const romanMatch = clean.match(/^\s*(?:제\s*)?([IVXLCDMⅠ-Ⅹ]+)(?:\s*장|\s*부|\s*편|[\.\:\-\]\)\s])\s*(.*)$/i);
+    if (romanMatch) {
+        const romStr = romanMatch[1].toUpperCase();
+        if (ROMAN_MAP[romStr]) {
+            const num = ROMAN_MAP[romStr];
+            const rest = (romanMatch[2] || '').trim();
+            // 로마자 하위 (예: I-1. 세부사항)
+            const subMatch = rest.match(/^[0-9]+[\.\:\-\)]\s*(.*)$/);
+            const subRest = subMatch ? subMatch[1] : rest;
+            return {
+                type: 'roman',
+                majorNum: num,
+                majorKey: `R_${num}`,
+                majorLabel: `${romStr}. ${rest || '섹션'}`,
+                midNum: subMatch ? parseInt(rest, 10) : null,
+                midKey: subMatch ? `R_${num}_${parseInt(rest, 10)}` : `R_${num}`,
+                midLabel: rest ? `${romStr}. ${rest}` : `${romStr}`,
+                rawTitle: clean
+            };
+        }
+    }
+
+    // 2. 한국어 장/부/Part 패턴 (예: 제1장 사업 개요, 제 2 부 현황, PART 1. 착수, 1장)
+    const koreanMatch = clean.match(/^\s*(?:제\s*0*([1-9][0-9]?)\s*[장부편]|(?:PART|CHAPTER|SECTION)\s*0*([1-9][0-9]?)|0*([1-9][0-9]?)\s*[장부편])[\.\:\-\]\)\s]*(.*)$/i);
+    if (koreanMatch) {
+        const num = parseInt(koreanMatch[1] || koreanMatch[2] || koreanMatch[3], 10);
+        const rest = (koreanMatch[4] || '').trim();
+        return {
+            type: 'korean_chapter',
+            majorNum: num,
+            majorKey: `K_${num}`,
+            majorLabel: `제${num}장 ${rest}`.trim(),
+            midNum: null,
+            midKey: `K_${num}`,
+            midLabel: `제${num}장 ${rest}`.trim(),
+            rawTitle: clean
+        };
+    }
+
+    // 3. 숫자 계층 목차 패턴 (예: 1.1.2 세부기능, 1.1 추진배경, 1. 사업개요, [1] 개요, 01. 개요, 1-1.)
+    const numMatch = clean.match(/^\s*\[?\s*0*([1-9][0-9]?)(?:[\.\-]([0-9]+)(?:[\.\-]([0-9]+))?)?\s*[\.\:\-\]\)\s]\s*(.*)$/);
+    if (numMatch) {
+        const major = parseInt(numMatch[1], 10);
+        const mid = numMatch[2] ? parseInt(numMatch[2], 10) : null;
+        const sub = numMatch[3] ? parseInt(numMatch[3], 10) : null;
+        const rest = (numMatch[4] || '').trim();
+
+        // 1.1.x 형태는 대목차 1, 중목차 1.1로 맵핑
+        const majorLabel = mid !== null 
+            ? `${major}. 목차 ${major}` 
+            : `${major}. ${rest || `대목차 ${major}`}`;
+
+        const midLabel = mid !== null
+            ? `${major}.${mid} ${rest || `중목차 ${major}.${mid}`}`
+            : majorLabel;
+
+        return {
+            type: 'numeric',
+            majorNum: major,
+            majorKey: `N_${major}`,
+            majorLabel: majorLabel,
+            midNum: mid,
+            midKey: mid !== null ? `N_${major}_${mid}` : `N_${major}`,
+            midLabel: midLabel,
+            subNum: sub,
+            rawTitle: clean
+        };
+    }
+
+    // 4. 단독 목차 키워드 (예: "1. 사업개요", "2. 현황분석" 등의 단순 넘버링)
+    const simpleNumMatch = clean.match(/^0*([1-9][0-9]?)\s+([^\n]+)$/);
+    if (simpleNumMatch && simpleNumMatch[2].length <= 30) {
+        const major = parseInt(simpleNumMatch[1], 10);
+        const rest = simpleNumMatch[2].trim();
+        return {
+            type: 'numeric_simple',
+            majorNum: major,
+            majorKey: `N_${major}`,
+            majorLabel: `${major}. ${rest}`,
+            midNum: null,
+            midKey: `N_${major}`,
+            midLabel: `${major}. ${rest}`,
+            rawTitle: clean
+        };
+    }
+
+    return null;
+}
+
 /**
  * PPTX 파일의 슬라이드 구조 및 목차(대주제, 장, 간지) 자동 분석 함수
  * @param {File|ArrayBuffer} fileInput 
- * @returns {Promise<{ totalSlides: number, sections: Array<{ id: number, title: string, startSlide: number, endSlide: number, slideCount: number, previewText: string }>, slidesInfo: Array<{ slideNum: number, title: string, fullText: string, isMajor: boolean }> }>}
+ * @param {string} splitLevel 'major' (대목차: 1, 2, 3) | 'mid' (중목차: 1.1, 1.2)
+ * @returns {Promise<{ totalSlides: number, sections: Array<{ id: number, title: string, startSlide: number, endSlide: number, slideCount: number, previewText: string, selected: boolean }>, slidesInfo: Array<object>, tocItems: Array<object> }>}
  */
-export async function analyzePptxSections(fileInput) {
+export async function analyzePptxSections(fileInput, splitLevel = 'major') {
     const arrayBuffer = fileInput instanceof ArrayBuffer ? fileInput : await fileInput.arrayBuffer();
     const zip = await JSZip.loadAsync(arrayBuffer);
     const parser = new DOMParser();
 
-    // 1. 슬라이드 파일 목록 추출 및 순서 정렬
+    // 1. 슬라이드 파일 목록 추출 및 번호 순서 정렬
     const slideEntries = Object.keys(zip.files).filter(path => 
         path.startsWith('ppt/slides/slide') && path.endsWith('.xml') && !path.includes('_rels')
     );
@@ -28,24 +139,22 @@ export async function analyzePptxSections(fileInput) {
     }
 
     const slidesInfo = [];
+    const tocItems = []; // 목차 슬라이드에서 발견된 전체 항목들
 
-    // 대주제/장/간지 패턴 정규식
-    const romanMajorRegex = /^\s*(?:제\s*([0-9IVXLCDM]+)\s*장|([IVXLCDM]+)\s*[\.\:\-\)]|\b([0-9]+)\s*장\b)/i;
-    const numMajorRegex = /^\s*([0-9]+)\s*[\.\:\-\)]\s*([^\n]+)/;
-
+    // 2. 전체 슬라이드 텍스트 및 제목 파싱
     for (let i = 0; i < slideEntries.length; i++) {
         const slidePath = slideEntries[i];
         const slideNum = i + 1;
         const slideXmlStr = await zip.file(slidePath).async('text');
         const xmlDoc = parser.parseFromString(slideXmlStr, 'application/xml');
 
-        // 텍스트 추출 (p 단위)
+        // 슬라이드 내 모든 p 노드 텍스트 수집
         const pNodes = xmlDoc.getElementsByTagName('a:p');
         const paragraphs = [];
-        let slideTitle = '';
+        let explicitTitle = '';
         let isTitleFound = false;
 
-        // Title Placeholder 찾기
+        // Title Placeholder 찾기 (p:ph type="title" or "ctrTitle")
         const spNodes = xmlDoc.getElementsByTagName('p:sp');
         for (let j = 0; j < spNodes.length; j++) {
             const sp = spNodes[j];
@@ -61,13 +170,13 @@ export async function analyzePptxSections(fileInput) {
 
             if (spText) {
                 if ((phType === 'title' || phType === 'ctrTitle') && !isTitleFound) {
-                    slideTitle = spText;
+                    explicitTitle = spText;
                     isTitleFound = true;
                 }
             }
         }
 
-        // 전체 슬라이드 텍스트 수집
+        // 전체 단락 텍스트 조합
         for (let pIdx = 0; pIdx < pNodes.length; pIdx++) {
             const pEl = pNodes[pIdx];
             const tEls = pEl.getElementsByTagName('a:t');
@@ -77,51 +186,104 @@ export async function analyzePptxSections(fileInput) {
             }
             if (pStr.trim()) {
                 paragraphs.push(pStr.trim());
-                if (!slideTitle && pStr.trim().length > 1) {
-                    slideTitle = pStr.trim();
+                if (!explicitTitle && pStr.trim().length > 1 && pIdx === 0) {
+                    explicitTitle = pStr.trim();
                 }
             }
         }
 
         const fullText = paragraphs.join('\n');
-        const cleanedTitle = (slideTitle || `슬라이드 ${slideNum}`).replace(/[\\/:*?"<>|]/g, '').trim();
+        const slideTitle = (explicitTitle || `슬라이드 ${slideNum}`).replace(/[\\/:*?"<>|]/g, '').trim();
 
-        // 대주제 여부 판별 (로마자/장 번호/간지 형태)
-        const isMajor = romanMajorRegex.test(cleanedTitle) || 
-                       (slideNum === 1) || 
-                       (paragraphs.length <= 3 && cleanedTitle.length < 30 && (numMajorRegex.test(cleanedTitle) || cleanedTitle.includes('개요') || cleanedTitle.includes('목표') || cleanedTitle.includes('설계') || cleanedTitle.includes('분석') || cleanedTitle.includes('전략')));
+        // 목차 정보 분석 시도 (타이틀 우선 -> 첫 3개 단락 순회)
+        let chapterInfo = parseChapterInfo(slideTitle);
+        if (!chapterInfo) {
+            for (const p of paragraphs.slice(0, 4)) {
+                chapterInfo = parseChapterInfo(p);
+                if (chapterInfo) break;
+            }
+        }
+
+        // 목차(TOC) 슬라이드 여부 감지
+        const isTocSlide = (slideTitle.includes('목차') || slideTitle.includes('CONTENTS') || slideTitle.includes('INDEX') || slideTitle.includes('차례')) && slideNum <= 5;
+        if (isTocSlide) {
+            // 목차 슬라이드의 각 단락에서 목차 항목 추출
+            paragraphs.forEach(p => {
+                const info = parseChapterInfo(p);
+                if (info) tocItems.push(info);
+            });
+        }
 
         slidesInfo.push({
             slideNum,
-            title: cleanedTitle || `슬라이드 ${slideNum}`,
+            title: slideTitle,
             fullText,
             previewText: paragraphs.slice(0, 3).join(' / ') || '텍스트 없음',
-            isMajor
+            chapterInfo,
+            isTocSlide
         });
     }
 
-    // 2. 목차/섹션 군집화 (자동 분할 구역 생성)
-    const rawSections = [];
+    // 3. 목차(대목차/중목차) 기준 클러스터링 및 분할 구역 생성
+    const sections = [];
     let currentSection = null;
+    let activeMajorKey = null;
+    let activeMidKey = null;
+
+    // 첫 슬라이드가 표지/목차인 경우 첫 번째 대목차가 나타나기 전까지의 범위 식별
+    const firstChapterSlide = slidesInfo.find(s => s.chapterInfo && (splitLevel === 'mid' ? s.chapterInfo.midKey : s.chapterInfo.majorKey));
+    const firstChapterSlideNum = firstChapterSlide ? firstChapterSlide.slideNum : 1;
+
+    // 1번 슬라이드부터 첫 대목차 전까지 표지/목차 그룹 생성 (첫 대목차가 2페이지 이상 뒤에 있을 때)
+    if (firstChapterSlideNum > 1) {
+        sections.push({
+            id: 1,
+            title: '표지 및 목차',
+            startSlide: 1,
+            endSlide: firstChapterSlideNum - 1,
+            slideCount: firstChapterSlideNum - 1,
+            previewText: slidesInfo[0]?.previewText || '표지 및 목차 슬라이드',
+            selected: true,
+            isIntro: true
+        });
+    }
 
     for (let i = 0; i < slidesInfo.length; i++) {
         const slide = slidesInfo[i];
-        
-        // 새로운 섹션 시작 조건: 첫 슬라이드 또는 대주제로 감지된 슬라이드
-        if (i === 0 || (slide.isMajor && i > 0)) {
+        if (slide.slideNum < firstChapterSlideNum) continue;
+
+        const info = slide.chapterInfo;
+        const targetKey = splitLevel === 'mid' 
+            ? (info?.midKey || activeMidKey) 
+            : (info?.majorKey || activeMajorKey);
+
+        const targetLabel = splitLevel === 'mid'
+            ? (info?.midLabel || slide.title)
+            : (info?.majorLabel || slide.title);
+
+        const isNewMajor = info && (splitLevel === 'mid' ? (info.midKey !== activeMidKey) : (info.majorKey !== activeMajorKey));
+
+        if (isNewMajor || (!currentSection && slide.slideNum >= firstChapterSlideNum)) {
+            // 기존 열려있는 섹션 마감
             if (currentSection) {
                 currentSection.endSlide = slide.slideNum - 1;
                 currentSection.slideCount = currentSection.endSlide - currentSection.startSlide + 1;
-                rawSections.push(currentSection);
+                sections.push(currentSection);
             }
+
+            activeMajorKey = info?.majorKey || `UNKNOWN_${slide.slideNum}`;
+            activeMidKey = info?.midKey || `UNKNOWN_${slide.slideNum}`;
+
+            // 새로운 섹션 생성
             currentSection = {
-                id: rawSections.length + 1,
-                title: slide.title,
+                id: sections.length + 1,
+                title: targetLabel || `목차 ${sections.length + 1}`,
                 startSlide: slide.slideNum,
                 endSlide: totalSlides,
                 slideCount: 1,
                 previewText: slide.previewText,
-                selected: true
+                selected: true,
+                chapterInfo: info
             };
         }
     }
@@ -129,33 +291,51 @@ export async function analyzePptxSections(fileInput) {
     if (currentSection) {
         currentSection.endSlide = totalSlides;
         currentSection.slideCount = currentSection.endSlide - currentSection.startSlide + 1;
-        rawSections.push(currentSection);
+        sections.push(currentSection);
     }
 
-    // 섹션이 1개만 도출되었거나 감지가 부족한 경우: 10장 단위 또는 기본 분할 보강
-    let finalSections = rawSections;
-    if (finalSections.length <= 1 && totalSlides > 15) {
-        finalSections = [];
-        const chunkSize = Math.ceil(totalSlides / 4);
-        for (let s = 1; s <= totalSlides; s += chunkSize) {
-            const e = Math.min(s + chunkSize - 1, totalSlides);
-            const leaderSlide = slidesInfo[s - 1];
-            finalSections.push({
-                id: finalSections.length + 1,
-                title: leaderSlide.title || `${s}장~${e}장`,
-                startSlide: s,
-                endSlide: e,
-                slideCount: e - s + 1,
-                previewText: leaderSlide.previewText,
-                selected: true
-            });
+    // 만약 문서 전체에서 명시적 목차 번호(1., 1.1, I. 등)가 하나도 발견되지 않은 경우에만
+    // 슬라이드 제목 변화 기반 또는 간지 슬라이드로 분할 (균등 분할 대신 제목 기반)
+    if (sections.length <= 1) {
+        sections.length = 0; // 초기화
+        let fallbackSec = null;
+        for (let i = 0; i < slidesInfo.length; i++) {
+            const slide = slidesInfo[i];
+            const isTitleSlide = (i === 0) || (slide.title && slide.fullText.length < 80);
+            if (isTitleSlide || !fallbackSec) {
+                if (fallbackSec) {
+                    fallbackSec.endSlide = slide.slideNum - 1;
+                    fallbackSec.slideCount = fallbackSec.endSlide - fallbackSec.startSlide + 1;
+                    sections.push(fallbackSec);
+                }
+                fallbackSec = {
+                    id: sections.length + 1,
+                    title: slide.title || `섹션 ${sections.length + 1}`,
+                    startSlide: slide.slideNum,
+                    endSlide: totalSlides,
+                    slideCount: 1,
+                    previewText: slide.previewText,
+                    selected: true
+                };
+            }
+        }
+        if (fallbackSec) {
+            fallbackSec.endSlide = totalSlides;
+            fallbackSec.slideCount = fallbackSec.endSlide - fallbackSec.startSlide + 1;
+            sections.push(fallbackSec);
         }
     }
 
+    // 섹션 ID 재부여
+    sections.forEach((sec, idx) => {
+        sec.id = idx + 1;
+    });
+
     return {
         totalSlides,
-        sections: finalSections,
-        slidesInfo
+        sections,
+        slidesInfo,
+        tocItems
     };
 }
 
@@ -221,7 +401,7 @@ export async function createSubPptx(originalBuffer, startSlide, endSlide) {
     const originalFileKeys = Object.keys(zip.files);
     for (const key of originalFileKeys) {
         if (key.startsWith('ppt/slides/slide') || key.startsWith('ppt/slides/_rels/slide')) {
-            continue; // 슬라이드 본문 및 관계는 아래에서 별도 추가
+            continue;
         }
         if (!zip.files[key].dir) {
             const fileData = await zip.file(key).async('uint8array');
@@ -308,7 +488,6 @@ export async function createSubPptx(originalBuffer, startSlide, endSlide) {
         const typesRoot = ctDoc.getElementsByTagName('Types')[0];
         if (typesRoot) {
             const overrideNodes = Array.from(typesRoot.getElementsByTagName('Override'));
-            // 기존 slide{N}.xml Override 제거
             overrideNodes.forEach(node => {
                 const partName = node.getAttribute('PartName') || '';
                 if (partName.startsWith('/ppt/slides/slide') && partName.endsWith('.xml')) {
@@ -316,7 +495,6 @@ export async function createSubPptx(originalBuffer, startSlide, endSlide) {
                 }
             });
 
-            // 새로운 slide{1..K}.xml Override 추가
             for (let k = 1; k <= keepSlideIndices.length; k++) {
                 const newOverride = ctDoc.createElement('Override');
                 newOverride.setAttribute('PartName', `/ppt/slides/slide${k}.xml`);

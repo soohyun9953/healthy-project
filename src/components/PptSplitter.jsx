@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo } from 'react';
 import { 
     Split, Upload, FileText, Download, CheckCircle2, AlertCircle, 
     RefreshCw, Layers, Plus, Trash2, Edit3, Save, FileArchive, ArrowRight,
-    Sliders, Check, FolderDown, CheckSquare, Square, MinusSquare
+    Sliders, Check, FolderDown, CheckSquare, Square, Bookmark, ListFilter
 } from 'lucide-react';
 import { analyzePptxSections, createSubPptx, downloadAllSectionsAsZip } from '../utils/pptSplitter';
 import { saveAs } from 'file-saver';
@@ -14,7 +14,8 @@ export default function PptSplitter() {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isSplitting, setIsSplitting] = useState(false);
     const [splitProgress, setSplitProgress] = useState({ text: '', percent: 0 });
-    const [analysisResult, setAnalysisResult] = useState(null); // { totalSlides, sections, slidesInfo }
+    const [splitLevel, setSplitLevel] = useState('major'); // 'major' (1, 2, 3..) | 'mid' (1.1, 1.2..)
+    const [analysisResult, setAnalysisResult] = useState(null); // { totalSlides, sections, slidesInfo, tocItems }
     const [sections, setSections] = useState([]);
     const [fileNamePrefix, setFileNamePrefix] = useState('[분할]');
     const [statusMessage, setStatusMessage] = useState(null);
@@ -29,7 +30,7 @@ export default function PptSplitter() {
     const isSomeSelected = selectedSections.length > 0 && selectedSections.length < sections.length;
 
     // 파일 선택 및 분석 시작
-    const handleFile = async (uploadedFile) => {
+    const handleFile = async (uploadedFile, currentLevel = splitLevel) => {
         if (!uploadedFile) return;
         if (!uploadedFile.name.toLowerCase().endsWith('.pptx')) {
             alert('PPTX 형식의 파워포인트 파일만 지원됩니다.');
@@ -46,14 +47,16 @@ export default function PptSplitter() {
             const buffer = await uploadedFile.arrayBuffer();
             setFileBuffer(buffer);
 
-            const result = await analyzePptxSections(buffer);
+            const result = await analyzePptxSections(buffer, currentLevel);
             setAnalysisResult(result);
             // 모든 섹션 기본 선택 상태로 초기화
             const initializedSections = result.sections.map(s => ({ ...s, selected: true }));
             setSections(initializedSections);
+            
+            const modeText = currentLevel === 'major' ? '대목차(1, 2, 3 / I, II, III)' : '중목차(1.1, 1.2)';
             setStatusMessage({
                 type: 'success',
-                text: `총 ${result.totalSlides}장의 슬라이드에서 ${result.sections.length}개의 주요 목차(섹션)를 자동 감지하였습니다. 분할할 목차를 선택 후 다운로드하세요.`
+                text: `총 ${result.totalSlides}장의 슬라이드에서 ${modeText} 기준으로 ${result.sections.length}개의 목차를 감지하였습니다. 분할할 목차를 선택 후 다운로드하세요.`
             });
         } catch (err) {
             console.error('PPTX 목차 분석 실패:', err);
@@ -63,6 +66,28 @@ export default function PptSplitter() {
             });
         } finally {
             setIsAnalyzing(false);
+        }
+    };
+
+    // 분할 단위(대목차 vs 중목차) 변경 시 즉시 재분석
+    const handleSplitLevelChange = async (newLevel) => {
+        setSplitLevel(newLevel);
+        if (fileBuffer) {
+            setIsAnalyzing(true);
+            try {
+                const result = await analyzePptxSections(fileBuffer, newLevel);
+                setAnalysisResult(result);
+                setSections(result.sections.map(s => ({ ...s, selected: true })));
+                const modeText = newLevel === 'major' ? '대목차(1, 2, 3 / I, II, III)' : '중목차(1.1, 1.2)';
+                setStatusMessage({
+                    type: 'success',
+                    text: `${modeText} 기준으로 ${result.sections.length}개의 분할 목차가 재구성되었습니다.`
+                });
+            } catch (err) {
+                console.error('목차 재분석 실패:', err);
+            } finally {
+                setIsAnalyzing(false);
+            }
         }
     };
 
@@ -175,7 +200,7 @@ export default function PptSplitter() {
         try {
             const subBlob = await createSubPptx(fileBuffer, sec.startSlide, sec.endSlide);
             const baseName = file.name.replace(/\.[^.]+$/, '');
-            const cleanTitle = (sec.title || `섹션_${sec.id}`).replace(/[\/:*?"<>|]/g, '_').trim();
+            const cleanTitle = (sec.title || `섹션_${sec.id}`).replace(/[\\/:*?"<>|]/g, '_').trim();
             const prefix = fileNamePrefix ? `${fileNamePrefix.trim()}_` : '';
             const downloadName = `${prefix}[${String(index + 1).padStart(2, '0')}]_${cleanTitle}_${baseName}.pptx`;
             saveAs(subBlob, downloadName);
@@ -238,11 +263,11 @@ export default function PptSplitter() {
             }}>
                 <div>
                     <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '22px', fontWeight: 800, margin: 0 }}>
-                        <Split size={26} color="#a855f7" /> PPT 목차 분석 기반 하위 파일 선택 분리 생성
+                        <Split size={26} color="#a855f7" /> PPT 목차 분석 기반 하위 파일 분리 생성
                     </h2>
                     <p style={{ margin: '8px 0 0 0', fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                        대용량 PPTX 파일을 업로드하면 내부 목차(대주제/장/간지)를 AI 및 구조 분석 엔진이 자동 감지합니다.<br />
-                        <strong>분할을 원하는 목차만 체크박스로 선택하여 독립 PPTX 파일들로 무손실 분할 생성 및 일괄 ZIP 다운로드</strong>할 수 있습니다.
+                        대용량 PPTX 파일을 업로드하면 <strong>1.1.X 등의 하위 슬라이드를 상위 대목차(1, 2, 3 / I, II, III / 제1장, 제2장) 단위로 자동 그룹화</strong>하여 분할합니다.<br />
+                        분할을 원하는 목차만 체크박스로 선택하여 <strong>서식과 마스터 슬라이드 손실 없이 독립 PPTX 파일들로 무손실 분할 생성 및 ZIP 다운로드</strong>할 수 있습니다.
                     </p>
                 </div>
                 {file && (
@@ -258,6 +283,50 @@ export default function PptSplitter() {
                         <RefreshCw size={15} /> 새로 올리기
                     </button>
                 )}
+            </div>
+
+            {/* 분할 기준 옵션 선택 (대목차 1,2,3 vs 중목차 1.1, 1.2) */}
+            <div style={{
+                background: 'var(--panel-bg)', border: '1px solid var(--panel-border)',
+                borderRadius: '14px', padding: '16px 20px', display: 'flex', alignItems: 'center',
+                justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <ListFilter size={18} color="var(--accent-purple)" />
+                    <span style={{ fontSize: '14px', fontWeight: 700 }}>목차 분할 기준 단위:</span>
+                    <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                        (1.1.X 하위 슬라이드는 상위 대목차 1, 2, 3 단위로 자동 묶입니다)
+                    </span>
+                </div>
+
+                <div style={{ display: 'flex', background: 'rgba(0,0,0,0.25)', padding: '4px', borderRadius: '10px', gap: '4px', border: '1px solid var(--panel-border)' }}>
+                    <button
+                        onClick={() => handleSplitLevelChange('major')}
+                        className="interactive"
+                        style={{
+                            padding: '7px 16px', borderRadius: '7px', fontSize: '13px', fontWeight: 700,
+                            border: 'none', cursor: 'pointer', transition: 'all 0.2s ease',
+                            background: splitLevel === 'major' ? 'linear-gradient(135deg, #a855f7, #6366f1)' : 'transparent',
+                            color: splitLevel === 'major' ? '#ffffff' : 'var(--text-secondary)',
+                            boxShadow: splitLevel === 'major' ? '0 2px 8px rgba(168, 85, 247, 0.3)' : 'none'
+                        }}
+                    >
+                        🌟 대목차 기준 (1, 2, 3 / I, II, III / 제1장...)
+                    </button>
+                    <button
+                        onClick={() => handleSplitLevelChange('mid')}
+                        className="interactive"
+                        style={{
+                            padding: '7px 16px', borderRadius: '7px', fontSize: '13px', fontWeight: 700,
+                            border: 'none', cursor: 'pointer', transition: 'all 0.2s ease',
+                            background: splitLevel === 'mid' ? 'linear-gradient(135deg, #a855f7, #6366f1)' : 'transparent',
+                            color: splitLevel === 'mid' ? '#ffffff' : 'var(--text-secondary)',
+                            boxShadow: splitLevel === 'mid' ? '0 2px 8px rgba(168, 85, 247, 0.3)' : 'none'
+                        }}
+                    >
+                        중목차 기준 (1.1, 1.2, 2.1...)
+                    </button>
+                </div>
             </div>
 
             {/* 메인 파일 업로드 영역 (파일이 없을 때) */}
@@ -284,7 +353,7 @@ export default function PptSplitter() {
 
                     <div>
                         <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: 700 }}>
-                            {isAnalyzing ? 'PPTX 목차 및 슬라이드 구조 분석 중...' : '분할할 PPTX 파일을 여기에 끌어다 놓으세요'}
+                            {isAnalyzing ? 'PPTX 목차 계층(1, 2, 3..) 분석 중...' : '분할할 PPTX 파일을 여기에 끌어다 놓으세요'}
                         </h3>
                         <p style={{ margin: 0, fontSize: '13.5px', color: 'var(--text-secondary)' }}>
                             또는 클릭하여 컴퓨터에서 파일 선택 (.pptx)
@@ -448,7 +517,7 @@ export default function PptSplitter() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                 <Layers size={18} color="var(--accent-purple)" />
                                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>
-                                    분할 대상 목차 목록 ({sections.length}개 감지됨)
+                                    분할 대상 목차 목록 ({sections.length}개 그룹화됨)
                                 </h3>
                             </div>
                             
