@@ -1616,8 +1616,14 @@ export async function processPptBatch(pptFile, options) {
                     }
                 }
                 
-                // 💡 [XML 안전 가드] pPr이 이미 구체적으로 정의되어 있고, 기존 eaLnBrk 속성이 없는 경우에만 한글 줄바꿈 보정을 수행합니다.
-                if (pPr && !pPr.hasAttribute('eaLnBrk')) {
+                // 💡 pPr이 없는 단락(기본 속성만 사용하는 일반 텍스트 단락)에는 새로 생성해 적용합니다.
+                if (!pPr) {
+                    pPr = xmlDoc.createElementNS(nsA, 'a:pPr');
+                    if (el.firstChild) el.insertBefore(pPr, el.firstChild);
+                    else el.appendChild(pPr);
+                }
+
+                if (!pPr.hasAttribute('eaLnBrk')) {
                     pPr.setAttribute('eaLnBrk', '0');
                     pPr.setAttribute('latinLnBrk', '0');
                     totalWordWrapPrevented++;
