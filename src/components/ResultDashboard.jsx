@@ -253,13 +253,102 @@ function renderInlineDiff(originalText, correctionText) {
     );
 }
 
-export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
-    if (!data) return null;
+// orig/corr 문자열의 공통 접두사·접미사를 제거해 실제로 달라진 핵심 구간만 좁혀낸다.
+// (예: "새호 구성된"/"새로 구성된" -> 실제 차이는 "호"/"로" 한 글자뿐)
+function extractCoreDiff(orig, corr) {
+    const minLen = Math.min(orig.length, corr.length);
+    let start = 0;
+    while (start < minLen && orig[start] === corr[start]) start++;
 
+    let endOrig = orig.length;
+    let endCorr = corr.length;
+    while (endOrig > start && endCorr > start && orig[endOrig - 1] === corr[endCorr - 1]) {
+        endOrig--;
+        endCorr--;
+    }
+    if (start >= endOrig && start >= endCorr) return null; // 완전히 동일
+
+    return { start, endOrig, origCore: orig.slice(start, endOrig), corrCore: corr.slice(start, endCorr) };
+}
+
+// 원문 전체에서 각 교정 항목이 실제로 등장하는 위치를 찾아 취소선(원문)/삽입(교정) 구간으로 분해한다.
+// 원문에 정확히 일치하지 않는 항목(문맥 요약 등)은 억지로 추정하지 않고 건너뛴다 - 잘못된 위치 강조가
+// 오히려 신뢰를 해칠 수 있기 때문이다. 건너뛴 항목도 기존 표(위 섹션)에는 그대로 남아 확인할 수 있다.
+//
+// 사전 기반 검출은 같은 줄에 여러 오탈자가 있어도 각 항목의 originalText가 "줄 전체"로 동일하게 잡히므로
+// (예: 새호->새로, 컨텐츠->콘텐츠가 한 줄에 있으면 두 항목 모두 원문이 그 줄 전체), 같은 원문을 공유하는
+// 항목들을 그룹으로 묶어 그 줄 안에서 서로 다른 치환 구간을 함께 찾아낸다.
+function buildFullDocumentTrackChanges(originalFullText, typosList) {
+    if (!originalFullText) return null;
+
+    const candidates = (typosList || [])
+        .map(t => ({
+            orig: String(t.originalText || t.original || t.errorText || t.before || t.wrong || '').trim(),
+            corr: String(t.correction || t.correct || t.after || t.suggestion || '').trim()
+        }))
+        .filter(t => t.orig && t.corr && t.orig !== t.corr);
+
+    const groups = new Map(); // orig(원문 문장/구절) -> [corr, ...]
+    candidates.forEach(({ orig, corr }) => {
+        if (!groups.has(orig)) groups.set(orig, []);
+        groups.get(orig).push(corr);
+    });
+
+    // 긴 문장부터 처리해 짧은 문장이 다른 문장 내부에 우연히 걸리는 것을 방지
+    const origList = [...groups.keys()].sort((a, b) => b.length - a.length);
+
+    const usedRanges = [];
+    const matches = [];
+
+    origList.forEach((orig) => {
+        const spans = groups.get(orig)
+            .map((corr) => extractCoreDiff(orig, corr))
+            .filter(Boolean);
+        if (spans.length === 0) return;
+
+        let searchFrom = 0;
+        let lineIdx = -1;
+        while (searchFrom <= originalFullText.length) {
+            const idx = originalFullText.indexOf(orig, searchFrom);
+            if (idx === -1) break;
+            const end = idx + orig.length;
+            const overlaps = usedRanges.some(([s, e]) => idx < e && end > s);
+            if (!overlaps) { lineIdx = idx; break; }
+            searchFrom = idx + 1;
+        }
+        if (lineIdx === -1) return; // 문서 내에서 해당 문장을 찾지 못하면 건너뜀
+
+        spans.forEach((sp) => {
+            matches.push({ start: lineIdx + sp.start, end: lineIdx + sp.endOrig, orig: sp.origCore, corr: sp.corrCore });
+        });
+        usedRanges.push([lineIdx, lineIdx + orig.length]);
+    });
+
+    matches.sort((a, b) => a.start - b.start);
+
+    const segments = [];
+    let cursor = 0;
+    matches.forEach((m) => {
+        if (m.start < cursor) return; // 안전장치: 겹치는 구간은 건너뜀
+        if (m.start > cursor) segments.push({ type: 'text', content: originalFullText.slice(cursor, m.start) });
+        segments.push({ type: 'change', orig: m.orig, corr: m.corr });
+        cursor = m.end;
+    });
+    if (cursor < originalFullText.length) segments.push({ type: 'text', content: originalFullText.slice(cursor) });
+
+    return { segments, matchedCount: matches.length, totalCandidates: candidates.length };
+}
+
+export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
     const [copiedToast, setCopiedToast] = useState(false);
     const [showCompareModal, setShowCompareModal] = useState(false);
+
+    if (!data) return null;
+
     const displayScore = isNaN(data.score) || data.score === undefined || data.score === null ? 0 : Math.round(Number(data.score));
     const typosList = data.typos || [];
+    const styleIssues = data.styleIssues || [];
+    const trackChanges = isTypoMode && data.originalFullText ? buildFullDocumentTrackChanges(data.originalFullText, typosList) : null;
 
     // 교정 완료본 클립보드 복사 핸들러
     const handleCopyFullCorrectedText = () => {
@@ -433,6 +522,71 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                             </tbody>
                         </table>
                     </div>
+                </section>
+            )}
+
+            {/* 문체 일관성 검토 (합니다체/해요체 혼용 감지 - 자동교정이 아닌 검토 권고) */}
+            {isTypoMode && styleIssues.length > 0 && (
+                <section className="glass-panel animate-slide-up" style={{ padding: '24px', borderLeft: '5px solid #a855f7' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                        <AlertTriangle size={20} color="#a855f7" />
+                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>문체 일관성 검토</h3>
+                        <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, background: 'rgba(168, 85, 247, 0.15)', color: '#a855f7', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
+                            {styleIssues.length}건
+                        </span>
+                    </div>
+                    <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                        문서는 주로 <strong style={{ color: 'var(--text-primary)' }}>{styleIssues[0]?.dominantStyle}</strong>로 작성되었으나, 아래 문장은 다른 문체로 되어 있어 통일이 필요합니다.
+                        문체 변경은 문장 구조 재작성이 필요해 자동으로 고치지 않으니 직접 검토해 주세요.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {styleIssues.map((issue, idx) => (
+                            <div key={idx} style={{ padding: '12px 14px', background: 'rgba(168, 85, 247, 0.06)', border: '1px solid rgba(168, 85, 247, 0.15)', borderRadius: '8px' }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px', fontSize: '12px' }}>
+                                    <span style={{ color: 'var(--text-muted)' }}>{issue.page}</span>
+                                    <span style={{ color: '#a855f7', fontWeight: 700 }}>{issue.currentStyle}</span>
+                                    <span style={{ color: 'var(--text-muted)' }}>→ {issue.dominantStyle}로 통일 권장</span>
+                                </div>
+                                <div style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{issue.sentence}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {/* 원문 전체 대조 보기 (인라인 트랙체인지) */}
+            {isTypoMode && trackChanges && trackChanges.matchedCount > 0 && (
+                <section className="glass-panel animate-slide-up" style={{ padding: '24px' }}>
+                    <div
+                        onClick={() => setShowCompareModal(v => !v)}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                    >
+                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Eye size={20} color="var(--accent-color)" />
+                            원문 전체 대조 보기
+                            <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)' }}>
+                                (교정 {trackChanges.matchedCount}/{trackChanges.totalCandidates}건 표시)
+                            </span>
+                        </h3>
+                        <span style={{ fontSize: '13px', color: 'var(--accent-color)', fontWeight: 600 }}>
+                            {showCompareModal ? '접기 ▲' : '펼치기 ▼'}
+                        </span>
+                    </div>
+                    {showCompareModal && (
+                        <div className="animate-fade-in" style={{
+                            marginTop: '16px', padding: '20px', background: 'rgba(0,0,0,0.2)', borderRadius: '10px',
+                            maxHeight: '480px', overflowY: 'auto', fontSize: '14.5px', lineHeight: '2', whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+                        }}>
+                            {trackChanges.segments.map((seg, idx) => seg.type === 'text' ? (
+                                <span key={idx} style={{ color: 'var(--text-secondary)' }}>{seg.content}</span>
+                            ) : (
+                                <span key={idx}>
+                                    <del style={{ color: '#f87171', background: 'rgba(239, 68, 68, 0.15)', padding: '1px 4px', borderRadius: '4px', textDecoration: 'line-through' }}>{seg.orig}</del>
+                                    <ins style={{ color: '#34d399', background: 'rgba(16, 185, 129, 0.15)', padding: '1px 4px', borderRadius: '4px', textDecoration: 'none', fontWeight: 700, marginLeft: '2px' }}>{seg.corr}</ins>
+                                </span>
+                            ))}
+                        </div>
+                    )}
                 </section>
             )}
 

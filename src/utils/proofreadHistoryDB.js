@@ -33,6 +33,8 @@ class ProofreadHistoryDB {
             summary: String(result.summary || ''),
             typos: Array.isArray(result.typos) ? result.typos : [],
             correctedFullText: String(result.correctedFullText || ''),
+            originalFullText: String(result.originalFullText || ''),
+            styleIssues: Array.isArray(result.styleIssues) ? result.styleIssues : [],
             createdAt: Date.now()
         };
 

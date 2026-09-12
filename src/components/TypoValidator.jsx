@@ -3,10 +3,11 @@ import { ArrowRight, Loader2, PenTool, RotateCcw, History, Trash2, X, BookPlus, 
 import InputSection from './InputSection';
 import ResultDashboard from './ResultDashboard';
 import { analyzeDocumentsWithLLM, apply_typos_to_text } from '../llmAnalyzer';
-import { extract_dictionary_typos } from '../utils/typoDictionary';
+import { extract_dictionary_typos, extract_dict_pairs_from_glossary } from '../utils/typoDictionary';
 import { proofreadHistoryDB } from '../utils/proofreadHistoryDB';
 import { getCustomDictionary, addCustomTerm, deleteCustomTerm, clearCustomDictionary } from '../utils/customTypoDictionary';
 import { processFile, ALL_ACCEPT } from '../utils/fileExtractor';
+import { detect_style_inconsistency } from '../utils/styleConsistency';
 
 let batchIdCounter = 0;
 
@@ -76,6 +77,8 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
       omissions: [],
       typos: record.typos,
       correctedFullText: record.correctedFullText,
+      originalFullText: record.originalFullText,
+      styleIssues: record.styleIssues || [],
       artifactFileName: record.fileName
     });
     setShowHistory(false);
@@ -87,7 +90,11 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
 
   // 단일 문서에 대한 사전+AI 교정교열 핵심 로직. 단일 분석(handleAnalyze)과 일괄 처리(runBatch)가 공유한다.
   const runCoreAnalysis = useCallback(async (artifact, inspectionScope, glossary, artifactFileName, onProgress) => {
-    const staticTypos = extract_dictionary_typos(artifact, customDict);
+    // 용어 사전 탭에 화살표(→) 형식으로 명시된 지침 용어를 사용자 사전과 병합해 1단계 스캔에 반영
+    const glossaryDict = extract_dict_pairs_from_glossary(glossary);
+    const effectiveDict = { ...customDict, ...glossaryDict };
+    const staticTypos = extract_dictionary_typos(artifact, effectiveDict);
+    const styleIssues = detect_style_inconsistency(artifact);
 
     try {
       if (llmProvider === 'omniroute' || (apiKey && apiKey.match(/^(AIza|AQ\.)/))) {
@@ -99,7 +106,7 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
           "",
           llmProvider,
           omniRouteModel,
-          customDict
+          effectiveDict
         );
 
         // 정적 사전 결과와 AI 결과 병합
@@ -113,7 +120,7 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
         });
 
         const correctedFullText = apply_typos_to_text(artifact, result.typos || []);
-        return { ...result, correctedFullText, artifactFileName };
+        return { ...result, correctedFullText, originalFullText: artifact, styleIssues, artifactFileName };
       }
 
       // API Key가 등록되지 않은 경우: 사전 기반 전수 검출 결과 우선 반환
@@ -129,6 +136,8 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
         omissions: [],
         typos: staticTypos,
         correctedFullText,
+        originalFullText: artifact,
+        styleIssues,
         artifactFileName
       };
     } catch (e) {
@@ -143,6 +152,8 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
         omissions: [],
         typos: staticTypos,
         correctedFullText,
+        originalFullText: artifact,
+        styleIssues,
         artifactFileName
       };
     }

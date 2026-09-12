@@ -144,6 +144,38 @@ export function validate_typo_match(fullText, typo) {
   return true;
 }
 
+// "용어 사전" 탭에 업로드/입력된 지침·용어집 텍스트에서 화살표(→, ->, ⇒, ➜, =>) 형식으로
+// 명시된 "오류 → 올바른 표현" 쌍만 안전하게 추출한다. 애매한 서술형 문장은 무시하여 오탐을 방지하고,
+// 명확한 지침 용어만 1단계 사전 스캔(API 키 없이도 동작)에 즉시 반영되도록 한다.
+export function extract_dict_pairs_from_glossary(glossaryText) {
+  const result = {};
+  if (!glossaryText) return result;
+
+  const lines = String(glossaryText).split('\n');
+  const ARROW_PATTERN = /^(.{1,40}?)\s*(?:→|->|⇒|➜|=>)\s*(.{1,40}?)$/;
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const match = trimmed.match(ARROW_PATTERN);
+    if (!match) return;
+
+    const wrong = match[1].trim().replace(/^[-•·*\d.)\s]+/, '');
+    const correct = match[2].trim();
+    if (!wrong || !correct || wrong === correct) return;
+    // 문장 전체가 아닌 짧은 용어 쌍만 신뢰 (오탐 방지)
+    if (wrong.length > 30 || correct.length > 30) return;
+
+    result[wrong] = {
+      correction: correct,
+      desc: `지침(용어 사전) 등록 용어: '${wrong}' → '${correct}'`,
+      type: '지침 용어'
+    };
+  });
+
+  return result;
+}
+
 // 텍스트 전체에서 사전 기반 오탈자를 100% 전수 검출하는 함수
 export function extract_dictionary_typos(text, customDict = {}) {
   if (!text) return [];
