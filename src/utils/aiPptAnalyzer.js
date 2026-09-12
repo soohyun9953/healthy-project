@@ -80,7 +80,40 @@ const systemPrompt = `당신은 최고 수준의 프레젠테이션 기획자이
   ]
 }`;
 
-export async function analyzePptContent(inputText, emphasisText, inputSlideCount, apiKey, onProgress) {
+const MAX_CHARS_PER_CALL = 30000;
+// 문단(빈 줄) 경계를 우선으로, 없으면 줄바꿈 경계로 텍스트를 분할해 문장이 중간에 잘리는 것을 방지한다.
+function splitTextIntoChunks(text, maxChunkSize = MAX_CHARS_PER_CALL) {
+    if (!text || text.length <= maxChunkSize) return [text];
+
+    const chunks = [];
+    let cursor = 0;
+    while (cursor < text.length) {
+        let end = Math.min(cursor + maxChunkSize, text.length);
+        if (end < text.length) {
+            const paraBreak = text.lastIndexOf('\n\n', end);
+            const lineBreak = text.lastIndexOf('\n', end);
+            const breakPoint = paraBreak > cursor + maxChunkSize * 0.5 ? paraBreak
+                : lineBreak > cursor + maxChunkSize * 0.5 ? lineBreak
+                : -1;
+            if (breakPoint !== -1) end = breakPoint;
+        }
+        chunks.push(text.slice(cursor, end));
+        cursor = end;
+    }
+    return chunks;
+}
+
+// 슬라이드 장수 제약을 각 청크의 텍스트 분량에 비례해 배분한다 (합계가 원래 목표치와 정확히 일치하도록 마지막 청크에서 나머지를 보정).
+function distributeSlideCounts(totalSlideCount, chunkLengths) {
+    if (!totalSlideCount || totalSlideCount <= 0) return chunkLengths.map(() => 0);
+    const totalLength = chunkLengths.reduce((a, b) => a + b, 0) || 1;
+    const counts = chunkLengths.map(len => Math.max(1, Math.round((len / totalLength) * totalSlideCount)));
+    const diff = totalSlideCount - counts.reduce((a, b) => a + b, 0);
+    counts[counts.length - 1] = Math.max(1, counts[counts.length - 1] + diff);
+    return counts;
+}
+
+async function analyzeChunk(chunkText, emphasisText, targetSlideCount, apiKey, onProgress, chunkInfo) {
     const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
     if (keys.length === 0) {
         throw new Error("유효한 API 키가 제공되지 않았습니다.");
@@ -90,11 +123,18 @@ export async function analyzePptContent(inputText, emphasisText, inputSlideCount
     let currentModelIndex = 0;
 
     const emphasisSection = emphasisText ? `\n\n[사용자 특별 강조 요청사항]\n다음 내용을 레이아웃 구성과 색상 및 키워드 선정 시 최우선으로 반영하고 눈에 띄게 강조하세요:\n${emphasisText}` : '';
-    const slideConstraint = inputSlideCount > 0 ? `\n\n[중요: 슬라이드 장수 제약]\n원본 문서의 슬라이드 개수가 ${inputSlideCount}장입니다. **반드시 결과물도 정확히 ${inputSlideCount}장**이 되도록 구조화하세요.\n특히 1장일 경우, 모든 텍스트를 나열하지 말고 단 1장의 대시보드/인포그래픽 형태로 압축하여, 흐름도(PROCESS_FLOW)나 구조도(ARCHITECTURE_LAYER) 중심의 초고밀도 시각화 슬라이드를 완성하세요.` : '';
-    
-    const userInput = `[시스템 지시사항]\n${systemPrompt}${emphasisSection}${slideConstraint}\n\n[분석할 원본 내용]\n${inputText.substring(0, 30000)}`;
+    const slideConstraint = targetSlideCount > 0 ? `\n\n[중요: 슬라이드 장수 제약]\n이 구간의 결과물은 정확히 ${targetSlideCount}장이 되도록 구조화하세요.\n특히 1장일 경우, 모든 텍스트를 나열하지 말고 단 1장의 대시보드/인포그래픽 형태로 압축하여, 흐름도(PROCESS_FLOW)나 구조도(ARCHITECTURE_LAYER) 중심의 초고밀도 시각화 슬라이드를 완성하세요.` : '';
+    const continuationSection = chunkInfo && chunkInfo.total > 1
+        ? `\n\n[중요: 분할 처리 안내]\n이 내용은 긴 문서를 ${chunkInfo.total}개 구간으로 나눈 것 중 ${chunkInfo.index}/${chunkInfo.total}번째 구간입니다. ${chunkInfo.index > 1 ? '이전 구간에서 이미 전체 문서의 도입부를 다뤘으므로, 이 구간에서는 TITLE 타입 슬라이드를 생성하지 말고 본문 내용으로만 구성하세요.' : '전체 문서의 도입부이므로 TITLE 슬라이드로 시작하세요.'} 다른 구간과 이어지는 내용이니 문맥이 끊기지 않도록 자연스럽게 구성하세요.`
+        : '';
 
-    if (onProgress) onProgress("입력된 내용의 시각화 흐름 및 구조 분석 중...");
+    const userInput = `[시스템 지시사항]\n${systemPrompt}${emphasisSection}${slideConstraint}${continuationSection}\n\n[분석할 원본 내용]\n${chunkText}`;
+
+    if (onProgress) {
+        onProgress(chunkInfo && chunkInfo.total > 1
+            ? `문서가 길어 ${chunkInfo.total}개 구간으로 나누어 분석 중입니다 (${chunkInfo.index}/${chunkInfo.total}구간)...`
+            : "입력된 내용의 시각화 흐름 및 구조 분석 중...");
+    }
 
     const fetchWithRetry = async (maxModelRetries = FALLBACK_MODELS.length) => {
         let modelRetries = 0;
@@ -181,4 +221,34 @@ export async function analyzePptContent(inputText, emphasisText, inputSlideCount
         }
         throw new Error(`PPT 구조화 실패: ${e.message}`);
     }
+}
+
+// 30,000자를 초과하는 긴 문서는 문단 경계로 분할해 구간별로 순차 분석한 뒤 하나의 결과로 병합한다.
+// (기존에는 30,000자 초과분이 그냥 잘려나가 뒷부분 내용이 분석에서 누락되었음 - 이를 방지)
+export async function analyzePptContent(inputText, emphasisText, inputSlideCount, apiKey, onProgress) {
+    const safeText = String(inputText || '');
+    const chunks = splitTextIntoChunks(safeText);
+
+    if (chunks.length <= 1) {
+        return analyzeChunk(safeText, emphasisText, inputSlideCount, apiKey, onProgress, null);
+    }
+
+    const slideCounts = distributeSlideCounts(inputSlideCount, chunks.map(c => c.length));
+    const results = [];
+    for (let i = 0; i < chunks.length; i++) {
+        if (i > 0) {
+            // Rate Limit 방지를 위한 구간 간 소폭 대기
+            await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+        const result = await analyzeChunk(chunks[i], emphasisText, slideCounts[i], apiKey, onProgress, { index: i + 1, total: chunks.length });
+        results.push(result);
+    }
+
+    if (onProgress) onProgress("전체 구간 분석 결과 병합 중...");
+
+    return {
+        theme: results[0]?.theme,
+        _overallContextAnalysis: results[0]?._overallContextAnalysis,
+        slides: results.flatMap(r => Array.isArray(r?.slides) ? r.slides : [])
+    };
 }
