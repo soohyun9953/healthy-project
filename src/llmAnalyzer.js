@@ -21,6 +21,35 @@ async function fetch_with_timeout(resource, options = {}) {
 
 const sleep_delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Gemini generateContent 호출 공통 래퍼.
+// 1차: 서버 프록시(/api/gemini-proxy)로 요청해 API 키를 헤더로만 전달(URL 노출 차단).
+// 2차: 프록시가 배포되지 않은 환경(로컬 vite dev 등)에서는 x-goog-api-key 헤더 기반 직접 호출로 폴백.
+// 어느 경로든 키를 URL 쿼리스트링에 싣지 않는다.
+async function call_gemini_generate(modelId, activeKey, userInput, timeout = 25000, temperature = 0.1) {
+    const contents = [{ role: "user", parts: [{ text: userInput }] }];
+    const generationConfig = { temperature };
+
+    try {
+        const proxyRes = await fetch_with_timeout('/api/gemini-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey: activeKey, modelId, contents, generationConfig }),
+            timeout
+        });
+        if (proxyRes.status !== 404) return proxyRes;
+    } catch (_proxyErr) {
+        // 프록시 미배포/네트워크 오류 시 아래 직접 호출로 폴백
+    }
+
+    const directUrl = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent`;
+    return fetch_with_timeout(directUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': activeKey },
+        body: JSON.stringify({ contents, generationConfig }),
+        timeout
+    });
+}
+
 function split_text_into_chunks(text, max_chunk_size = 15000) {
     if (!text) return [];
     if (text.length <= max_chunk_size) return [text];
@@ -762,16 +791,6 @@ ${ragContext ? `\n${ragContext}` : ''}
                 const keyLabel = `키${currentKeyIndex + 1}(${activeKey.substring(0, 8)}...)`;
                 const modelId = FALLBACK_MODELS[currentModelIndex];
                 const modelLabel = modelId.split('/').pop();
-                const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent?key=${activeKey}`;
-                
-                const fetchOptions = {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contents: [{ role: "user", parts: [{ text: userInput }] }],
-                        generationConfig: { temperature: 0.1 }
-                    })
-                };
 
                 if (onProgress) {
                     const keyInfo = keys.length > 1 ? ` (키 ${currentKeyIndex + 1}/${keys.length} 사용 중)` : '';
@@ -780,7 +799,7 @@ ${ragContext ? `\n${ragContext}` : ''}
 
                 let response;
                 try {
-                    response = await fetch_with_timeout(fetchUrl, { ...fetchOptions, timeout: 25000 });
+                    response = await call_gemini_generate(modelId, activeKey, userInput, 25000);
                 } catch (fetchErr) {
                     const reason = fetchErr.name === 'AbortError' ? '25초 타임아웃 초과' : `네트워크 오류(${fetchErr.message})`;
                     error_log.push(`[${modelLabel} / ${keyLabel}] ${reason}`);
@@ -946,7 +965,6 @@ async function call_gemini_or_omniroute_chat(systemPrompt, userInput, apiKey, on
         const keyLabel = `키${currentKeyIndex + 1}(${activeKey.substring(0, 8)}...)`;
         const modelId = FALLBACK_MODELS[currentModelIndex];
         const modelLabel = modelId.split('/').pop();
-        const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent?key=${activeKey}`;
 
         if (onProgress) {
             const keyInfo = keys.length > 1 ? ` (키 ${currentKeyIndex + 1}/${keys.length} 사용 중)` : '';
@@ -955,15 +973,7 @@ async function call_gemini_or_omniroute_chat(systemPrompt, userInput, apiKey, on
 
         let response;
         try {
-            response = await fetch_with_timeout(fetchUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userInput}` }] }],
-                    generationConfig: { temperature: 0.7 }
-                }),
-                timeout: 25000
-            });
+            response = await call_gemini_generate(modelId, activeKey, `${systemPrompt}\n\n${userInput}`, 25000, 0.7);
         } catch (fetchErr) {
             const reason = fetchErr.name === 'AbortError' ? '25초 타임아웃 초과' : `네트워크 연결 지연(${fetchErr.message})`;
             error_log.push(`[${modelLabel} / ${keyLabel}] ${reason}`);

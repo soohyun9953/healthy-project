@@ -1,16 +1,50 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { ArrowRight, Loader2, PenTool, RotateCcw } from 'lucide-react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { ArrowRight, Loader2, PenTool, RotateCcw, History, Trash2, X } from 'lucide-react';
 import InputSection from './InputSection';
 import ResultDashboard from './ResultDashboard';
 import { analyzeDocumentsWithLLM, apply_typos_to_text } from '../llmAnalyzer';
 import { extract_dictionary_typos } from '../utils/typoDictionary';
+import { proofreadHistoryDB } from '../utils/proofreadHistoryDB';
 
 function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto' }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStage, setAnalysisStage] = useState(0); // 1: 추출, 2: 심층분석
   const [retryStatus, setRetryStatus] = useState(null); // API 재시도 상태 메시지
   const [resultData, setResultData] = useState(null);
+  const [historyList, setHistoryList] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
   const lastParams = useRef(null);
+
+  const refreshHistory = useCallback(() => {
+    proofreadHistoryDB.getAll().then(setHistoryList).catch(err => console.error('교정 이력 로드 실패:', err));
+  }, []);
+
+  useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
+
+  const persistToHistory = useCallback((result) => {
+    proofreadHistoryDB.saveRecord(result).then(refreshHistory).catch(err => console.error('교정 이력 저장 실패:', err));
+  }, [refreshHistory]);
+
+  const handleLoadHistory = (record) => {
+    setResultData({
+      score: record.score,
+      inspectionScope: null,
+      summary: record.summary,
+      rtm: [],
+      requirementMapping: [],
+      omissions: [],
+      typos: record.typos,
+      correctedFullText: record.correctedFullText,
+      artifactFileName: record.fileName
+    });
+    setShowHistory(false);
+  };
+
+  const handleDeleteHistory = (id) => {
+    proofreadHistoryDB.deleteRecord(id).then(refreshHistory).catch(err => console.error('교정 이력 삭제 실패:', err));
+  };
 
   const handleAnalyze = useCallback(async (ignoredGuideline, artifact, inspectionScope, glossary, artifactFileName) => {
     lastParams.current = { artifact, inspectionScope, glossary, artifactFileName };
@@ -49,14 +83,16 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
         });
 
         const correctedFullText = apply_typos_to_text(artifact, result.typos || []);
-        setResultData({ ...result, correctedFullText, artifactFileName });
+        const finalResult = { ...result, correctedFullText, artifactFileName };
+        setResultData(finalResult);
+        persistToHistory(finalResult);
       } else {
         // API Key가 등록되지 않은 경우: 사전 기반 전수 검출 결과 우선 반환
         const correctedFullText = apply_typos_to_text(artifact, staticTypos);
-        setResultData({
+        const finalResult = {
           score: staticTypos.length > 0 ? Math.max(60, 100 - staticTypos.length * 5) : 100,
           inspectionScope: inspectionScope || null,
-          summary: staticTypos.length > 0 
+          summary: staticTypos.length > 0
             ? `[사전 기반 100% 전수 검출 완료]\n문서 전체에서 ${staticTypos.length}건의 오탈자, 외래어 표기법 오류 및 순화 대상 단어를 빠짐없이 도출하였습니다. Gemini API Key를 등록하시면 5대 차원 문맥 심층 분석이 추가 적용됩니다.`
             : `[사전 기반 전수 검출 완료]\n기본 내장 사전(1만+ 규칙) 검사 결과 지적할 기계적 오탈자가 발견되지 않았습니다. 문맥상 미세한 결함 점검을 위해 Gemini API Key를 등록해 주세요.`,
           rtm: [],
@@ -65,12 +101,14 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
           typos: staticTypos,
           correctedFullText,
           artifactFileName
-        });
+        };
+        setResultData(finalResult);
+        persistToHistory(finalResult);
       }
     } catch (e) {
         console.error('[TypoValidator] 교정교열 오류:', e);
         const correctedFullText = apply_typos_to_text(artifact, staticTypos);
-        setResultData({
+        const finalResult = {
             score: staticTypos.length > 0 ? Math.max(60, 100 - staticTypos.length * 5) : 0,
             inspectionScope: inspectionScope || null,
             summary: `교정교열 과정에서 일부 오류가 발생했으나, 사전 기반 전수 검사를 통해 ${staticTypos.length}건의 결함을 도출하였습니다: ${e?.message || '알 수 없는 오류'}`,
@@ -80,13 +118,15 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
             typos: staticTypos,
             correctedFullText,
             artifactFileName
-        });
+        };
+        setResultData(finalResult);
+        persistToHistory(finalResult);
     } finally {
         setIsAnalyzing(false);
         setAnalysisStage(0);
         setRetryStatus(null);
     }
-  }, [apiKey, llmProvider, omniRouteModel]);
+  }, [apiKey, llmProvider, omniRouteModel, persistToHistory]);
 
   const handleRetry = () => {
     if (lastParams.current) {
@@ -105,6 +145,25 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', gap: '24px', minHeight: 0, overflow: 'hidden' }}>
       <InputSection onAnalyze={handleAnalyze} isAnalyzing={isAnalyzing} isTypoMode={true} onReset={handleReset} />
+
+      <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {!isAnalyzing && (
+        <button
+          onClick={() => setShowHistory(v => !v)}
+          className="interactive"
+          style={{
+            position: 'absolute', top: '24px', left: '24px', zIndex: 15,
+            background: showHistory ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.08)',
+            border: '1px solid var(--glass-border)',
+            padding: '8px 16px', borderRadius: '10px',
+            color: showHistory ? 'var(--accent-blue)' : 'var(--text-secondary)',
+            fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '8px', backdropFilter: 'blur(8px)'
+          }}
+        >
+          <History size={16} /> 교정 이력{historyList.length > 0 ? ` (${historyList.length})` : ''}
+        </button>
+      )}
 
       {isAnalyzing ? (
         <div className="glass-panel animate-fade-in" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', padding: '40px' }}>
@@ -190,6 +249,83 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
           </div>
         </div>
       )}
+
+      {showHistory && (
+        <div className="animate-fade-in" style={{
+          position: 'absolute', inset: 0, zIndex: 20, borderRadius: '16px',
+          background: 'rgba(15, 15, 22, 0.94)', backdropFilter: 'blur(10px)',
+          padding: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <History size={20} color="var(--accent-blue)" /> 교정 이력 (최근 {historyList.length}건, 세션 간 유지)
+            </h3>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {historyList.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (window.confirm('저장된 교정 이력을 모두 삭제하시겠습니까?')) {
+                      proofreadHistoryDB.clearAll().then(refreshHistory);
+                    }
+                  }}
+                  className="interactive"
+                  style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: 'var(--danger-color)', borderRadius: '10px', padding: '8px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Trash2 size={14} /> 전체 삭제
+                </button>
+              )}
+              <button
+                onClick={() => setShowHistory(false)}
+                className="interactive"
+                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', borderRadius: '10px', padding: '8px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {historyList.length === 0 ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>
+                아직 저장된 교정 이력이 없습니다. 분석을 완료하면 자동으로 이력이 쌓입니다.
+              </div>
+            ) : (
+              historyList.map((record) => (
+                <div key={record.id} className="interactive" style={{
+                  display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px',
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '12px'
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {record.fileName}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                      <span>{new Date(record.createdAt).toLocaleString('ko-KR')}</span>
+                      <span>결함 {record.typoCount}건</span>
+                      {typeof record.score === 'number' && <span>점수 {record.score}점</span>}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleLoadHistory(record)}
+                    className="interactive"
+                    style={{ background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.3)', color: 'var(--accent-blue)', borderRadius: '8px', padding: '8px 14px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    불러오기
+                  </button>
+                  <button
+                    onClick={() => handleDeleteHistory(record.id)}
+                    className="interactive"
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, padding: '6px' }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   );
 }
