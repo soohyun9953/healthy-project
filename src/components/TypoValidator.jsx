@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { ArrowRight, Loader2, PenTool, RotateCcw, History, Trash2, X } from 'lucide-react';
+import { ArrowRight, Loader2, PenTool, RotateCcw, History, Trash2, X, BookPlus, Plus } from 'lucide-react';
 import InputSection from './InputSection';
 import ResultDashboard from './ResultDashboard';
 import { analyzeDocumentsWithLLM, apply_typos_to_text } from '../llmAnalyzer';
 import { extract_dictionary_typos } from '../utils/typoDictionary';
 import { proofreadHistoryDB } from '../utils/proofreadHistoryDB';
+import { getCustomDictionary, addCustomTerm, deleteCustomTerm, clearCustomDictionary } from '../utils/customTypoDictionary';
 
 function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto' }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -13,7 +14,38 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
   const [resultData, setResultData] = useState(null);
   const [historyList, setHistoryList] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showDictionary, setShowDictionary] = useState(false);
+  const [customDict, setCustomDict] = useState(() => getCustomDictionary());
+  const [newTermWrong, setNewTermWrong] = useState('');
+  const [newTermCorrect, setNewTermCorrect] = useState('');
+  const [newTermDesc, setNewTermDesc] = useState('');
+  const [dictError, setDictError] = useState('');
   const lastParams = useRef(null);
+
+  const handleAddCustomTerm = (e) => {
+    e.preventDefault();
+    try {
+      const updated = addCustomTerm(newTermWrong, newTermCorrect, newTermDesc);
+      setCustomDict(updated);
+      setNewTermWrong('');
+      setNewTermCorrect('');
+      setNewTermDesc('');
+      setDictError('');
+    } catch (err) {
+      setDictError(err.message);
+    }
+  };
+
+  const handleDeleteCustomTerm = (wrong) => {
+    setCustomDict(deleteCustomTerm(wrong));
+  };
+
+  const handleClearCustomDict = () => {
+    if (window.confirm('등록된 사용자 정의 교정 용어를 모두 삭제하시겠습니까?')) {
+      clearCustomDictionary();
+      setCustomDict({});
+    }
+  };
 
   const refreshHistory = useCallback(() => {
     proofreadHistoryDB.getAll().then(setHistoryList).catch(err => console.error('교정 이력 로드 실패:', err));
@@ -52,9 +84,11 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
     setResultData(null);
     setRetryStatus(null);
     setAnalysisStage(1);
+    setShowHistory(false);
+    setShowDictionary(false);
 
-    // 1단계: 사전 기반 1차 100% 전수 검출 즉시 실행
-    const staticTypos = extract_dictionary_typos(artifact);
+    // 1단계: 사전 기반 1차 100% 전수 검출 즉시 실행 (사용자 정의 커스텀 사전 포함)
+    const staticTypos = extract_dictionary_typos(artifact, customDict);
 
     // 시각적 연출을 위한 지연 (UX 목적)
     await new Promise(resolve => setTimeout(resolve, 1500));
@@ -69,7 +103,8 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
           false,
           "",
           llmProvider,
-          omniRouteModel
+          omniRouteModel,
+          customDict
         );
 
         // 정적 사전 결과와 AI 결과 병합
@@ -126,7 +161,7 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
         setAnalysisStage(0);
         setRetryStatus(null);
     }
-  }, [apiKey, llmProvider, omniRouteModel, persistToHistory]);
+  }, [apiKey, llmProvider, omniRouteModel, persistToHistory, customDict]);
 
   const handleRetry = () => {
     if (lastParams.current) {
@@ -148,21 +183,36 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
 
       <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       {!isAnalyzing && (
-        <button
-          onClick={() => setShowHistory(v => !v)}
-          className="interactive"
-          style={{
-            position: 'absolute', top: '24px', left: '24px', zIndex: 15,
-            background: showHistory ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.08)',
-            border: '1px solid var(--glass-border)',
-            padding: '8px 16px', borderRadius: '10px',
-            color: showHistory ? 'var(--accent-blue)' : 'var(--text-secondary)',
-            fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '8px', backdropFilter: 'blur(8px)'
-          }}
-        >
-          <History size={16} /> 교정 이력{historyList.length > 0 ? ` (${historyList.length})` : ''}
-        </button>
+        <div style={{ position: 'absolute', top: '24px', left: '24px', zIndex: 15, display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => { setShowHistory(v => !v); setShowDictionary(false); }}
+            className="interactive"
+            style={{
+              background: showHistory ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid var(--glass-border)',
+              padding: '8px 16px', borderRadius: '10px',
+              color: showHistory ? 'var(--accent-blue)' : 'var(--text-secondary)',
+              fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '8px', backdropFilter: 'blur(8px)'
+            }}
+          >
+            <History size={16} /> 교정 이력{historyList.length > 0 ? ` (${historyList.length})` : ''}
+          </button>
+          <button
+            onClick={() => { setShowDictionary(v => !v); setShowHistory(false); }}
+            className="interactive"
+            style={{
+              background: showDictionary ? 'rgba(168, 85, 247, 0.18)' : 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid var(--glass-border)',
+              padding: '8px 16px', borderRadius: '10px',
+              color: showDictionary ? 'var(--accent-purple)' : 'var(--text-secondary)',
+              fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '8px', backdropFilter: 'blur(8px)'
+            }}
+          >
+            <BookPlus size={16} /> 사용자 사전{Object.keys(customDict).length > 0 ? ` (${Object.keys(customDict).length})` : ''}
+          </button>
+        </div>
       )}
 
       {isAnalyzing ? (
@@ -314,6 +364,108 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
                   </button>
                   <button
                     onClick={() => handleDeleteHistory(record.id)}
+                    className="interactive"
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, padding: '6px' }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {showDictionary && (
+        <div className="animate-fade-in" style={{
+          position: 'absolute', inset: 0, zIndex: 20, borderRadius: '16px',
+          background: 'rgba(15, 15, 22, 0.94)', backdropFilter: 'blur(10px)',
+          padding: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <BookPlus size={20} color="var(--accent-purple)" /> 사용자 정의 교정 사전 ({Object.keys(customDict).length}건)
+            </h3>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {Object.keys(customDict).length > 0 && (
+                <button
+                  onClick={handleClearCustomDict}
+                  className="interactive"
+                  style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: 'var(--danger-color)', borderRadius: '10px', padding: '8px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Trash2 size={14} /> 전체 삭제
+                </button>
+              )}
+              <button
+                onClick={() => setShowDictionary(false)}
+                className="interactive"
+                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', borderRadius: '10px', padding: '8px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+
+          <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+            여기에 등록한 용어는 API 키 없이도 작동하는 1단계 사전 스캔에 즉시 반영되며, 기관·사업별 표준 용어를 빠짐없이 검출하는 데 활용됩니다.
+          </p>
+
+          <form onSubmit={handleAddCustomTerm} style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+            <input
+              value={newTermWrong}
+              onChange={(e) => setNewTermWrong(e.target.value)}
+              placeholder="오류 표현 (예: 리스트관리)"
+              style={{ flex: '1 1 160px', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.2)', color: 'var(--text-primary)', outline: 'none', fontSize: '13px' }}
+            />
+            <input
+              value={newTermCorrect}
+              onChange={(e) => setNewTermCorrect(e.target.value)}
+              placeholder="올바른 표현 (예: 리스크관리)"
+              style={{ flex: '1 1 160px', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.2)', color: 'var(--text-primary)', outline: 'none', fontSize: '13px' }}
+            />
+            <input
+              value={newTermDesc}
+              onChange={(e) => setNewTermDesc(e.target.value)}
+              placeholder="사유 (선택)"
+              style={{ flex: '1 1 160px', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.2)', color: 'var(--text-primary)', outline: 'none', fontSize: '13px' }}
+            />
+            <button
+              type="submit"
+              className="interactive"
+              style={{ background: 'rgba(168, 85, 247, 0.15)', border: '1px solid rgba(168, 85, 247, 0.4)', color: 'var(--accent-purple)', borderRadius: '8px', padding: '10px 16px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
+            >
+              <Plus size={16} /> 추가
+            </button>
+          </form>
+          {dictError && (
+            <div style={{ marginBottom: '12px', padding: '8px 12px', fontSize: '12px', background: 'rgba(239, 68, 68, 0.08)', color: 'var(--danger-color)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
+              {dictError}
+            </div>
+          )}
+
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {Object.keys(customDict).length === 0 ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>
+                등록된 사용자 정의 용어가 없습니다. 위 입력창에서 자주 틀리는 기관/사업 용어를 등록해 보세요.
+              </div>
+            ) : (
+              Object.entries(customDict).map(([wrong, info]) => (
+                <div key={wrong} className="interactive" style={{
+                  display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px',
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '12px'
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      <span style={{ color: '#f87171' }}>{wrong}</span>
+                      <span style={{ margin: '0 8px', color: 'var(--text-muted)' }}>→</span>
+                      <span style={{ color: '#34d399' }}>{info.correction}</span>
+                    </div>
+                    {info.desc && (
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>{info.desc}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDeleteCustomTerm(wrong)}
                     className="interactive"
                     style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, padding: '6px' }}
                   >

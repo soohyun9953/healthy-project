@@ -574,7 +574,7 @@ export function apply_typos_to_text(originalText, typosList) {
     return modified;
 }
 
-export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', omniRouteModel = 'auto') {
+export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', omniRouteModel = 'auto', customDict = {}) {
     const keys = String(apiKey || '').split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
     // OmniRoute는 API 키 불필요
     if (llmProvider !== 'omniroute' && keys.length === 0) {
@@ -598,14 +598,14 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
                         await sleep_delay(1500);
                     }
                     
-                    const res = await analyzeDocumentsWithLLM("", chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, omniRouteModel);
+                    const res = await analyzeDocumentsWithLLM("", chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, omniRouteModel, customDict);
                     results.push(res);
                 }
                 if (onProgress) onProgress("전체 구간 분석 결과 병합 중...");
                 const mergedRes = merge_multiple_results(results, true);
-                
-                // 정적 사전 결합
-                const dictTypos = extract_dictionary_typos(artifactText);
+
+                // 정적 사전 결합 (사용자 정의 커스텀 사전 포함)
+                const dictTypos = extract_dictionary_typos(artifactText, customDict);
                 const seenSig = new Set((mergedRes.typos || []).map(t => `${t.page}_${t.originalText}_${t.correction}`));
                 dictTypos.forEach(dt => {
                     const sig = `${dt.page}_${dt.originalText}_${dt.correction}`;
