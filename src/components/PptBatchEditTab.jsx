@@ -187,7 +187,6 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                   (add_space_before_parenthesis && (modifiedBlob.totalTitleSpacesAdded || 0) > 0) ||
                                   ((textColorRules && textColorRules.trim()) && (modifiedBlob.totalTextColorReplaced || 0) > 0) ||
                                   (preventWordWrap && (modifiedBlob.totalWordWrapPrevented || 0) > 0) ||
-                                  clearAltText;
                                   clearAltText ||
                                   (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
 
