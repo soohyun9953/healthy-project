@@ -215,6 +215,7 @@ function parseInlineTokens(tokens, options, theme) {
                     link: token.href,
                 }));
             } catch (e) {
+                console.warn(`하이퍼링크 생성 실패, 일반 텍스트로 대체: ${e.message}`);
                 runs.push(new TextRun({
                     text: token.text || token.href,
                     font: font,

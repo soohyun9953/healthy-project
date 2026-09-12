@@ -502,7 +502,7 @@ export async function fusePptToHwpxTemplate(pptxFile, hwpxTemplateFile, mergeMod
 
     const requirementsMap = new Map();
     const requirementsOrder = [];
-    const idPattern = /^[A-Za-z0-9]+[\-_][A-Za-z0-9]+$/;
+    const idPattern = /^[A-Za-z0-9]+[-_][A-Za-z0-9]+$/;
     const cleanPattern = /^(.*?)\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/; // (1/2) 괄호 검출 정규식
 
     for (const slidePath of slideFiles) {
@@ -1027,7 +1027,7 @@ export async function fusePptToHwpxListTemplate(pptxFile, hwpxListTemplateFile) 
 
     const requirementsMap = new Map();
     const requirementsOrder = [];
-    const idPattern = /^[A-Za-z0-9]+[\-_][A-Za-z0-9]+$/;
+    const idPattern = /^[A-Za-z0-9]+[-_][A-Za-z0-9]+$/;
     const cleanPattern = /^(.*?)\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/; // (1/2) 중복 제거
 
     for (const slidePath of slideFiles) {
@@ -1165,7 +1165,6 @@ export async function fusePptToHwpxListTemplate(pptxFile, hwpxListTemplateFile) 
 
     const headerXmlStr = await hwpxZip.files['Contents/header.xml'].async('text');
     const headerDoc = parser.parseFromString(headerXmlStr, 'application/xml');
-    const registry = new HwpxCharPrRegistry(headerDoc);
 
     const sectionXmlStr = await hwpxZip.files['Contents/section0.xml'].async('text');
     const sectionDoc = parser.parseFromString(sectionXmlStr, 'application/xml');

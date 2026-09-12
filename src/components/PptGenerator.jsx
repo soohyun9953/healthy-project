@@ -8,7 +8,7 @@ import {
     parseExcelData, generatePptFromTemplate, processPptBatch, 
     addSmartAnimationsToPpt, saveFileWithLocationPicker, getPptSlideCount 
 } from '../utils/pptExporter';
-import { convertPptxToHwpx, fusePptToHwpxTemplate, fusePptToHwpxListTemplate } from '../utils/hwpxConverter';
+import { fusePptToHwpxTemplate, fusePptToHwpxListTemplate } from '../utils/hwpxConverter';
 import HwpxConverter from './HwpxConverter.jsx';
 import MdToDocxConverter from './MdToDocxConverter.jsx';
 import PptSplitter from './PptSplitter.jsx';
@@ -24,8 +24,8 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
     const [templateLabel, setTemplateLabel] = useState('');
     const [isParsing, setIsParsing] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
-    const [generationMode, setGenerationMode] = useState('single');
-    const [chunkSize, setChunkSize] = useState(10);
+    // 향후 분할 생성 모드 확장을 위한 값 - 현재는 UI 토글이 없어 'single' 고정
+    const [generationMode] = useState('single');
     const [isDraggingExcel, setIsDraggingExcel] = useState(false);
     const [isDraggingTemplate, setIsDraggingTemplate] = useState(false);
     const excelInputRef = useRef(null);
@@ -36,7 +36,7 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
     const [replaceRules, setReplaceRules] = useState(() => {
         try {
             return localStorage.getItem('ppt_replace_rules') || '';
-        } catch (e) {
+        } catch {
             return '';
         }
     });
@@ -56,14 +56,14 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
     const [textColorRules, setTextColorRules] = useState(() => {
         try {
             return localStorage.getItem('ppt_textcolor_rules') || '';
-        } catch (e) {
+        } catch {
             return '';
         }
     }); // 옵션 H: 글자 색상 매핑 변경
     const [preventWordWrap, setPreventWordWrap] = useState(() => {
         try {
             return localStorage.getItem('ppt_prevent_word_wrap') === 'true';
-        } catch (e) {
+        } catch {
             return false;
         }
     }); // 옵션 I: 단락 한글 단어 잘림 방지
@@ -80,13 +80,6 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
     const [useGrouping, setUseGrouping] = useState(true); 
     const [slideAnimations, setSlideAnimations] = useState([]); // [{ enabled: true, type: 'transition', useGrouping: true }, ...]
     const animInputRef = useRef(null);
-
-    // PPT ➜ HWPX 스마트 변환 관련 State
-    const [hwpxPptFile, setHwpxPptFile] = useState(null);
-    const [isConvertingHwpx, setIsConvertingHwpx] = useState(false);
-    const [isDraggingHwpx, setIsDraggingHwpx] = useState(false);
-    const [hwpxResultStats, setHwpxResultStats] = useState(null);
-    const hwpxInputRef = useRef(null);
 
     // PPT ➜ HWPX 양식 융합 관련 State
     const [hwpxFusionPptFile, setHwpxFusionPptFile] = useState(null);
@@ -113,15 +106,6 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
     const [is_dragging_pdf, set_is_dragging_pdf] = useState(false);
     const pdf_input_ref = useRef(null);
 
-    // PDF → PPT 변환 관련 State
-    const [pdf_to_ppt_file, set_pdf_to_ppt_file] = useState(null);
-    const [is_converting_pdf_to_ppt, set_is_converting_pdf_to_ppt] = useState(false);
-    const [pdf_to_ppt_progress, set_pdf_to_ppt_progress] = useState({ current: 0, total: 0 });
-    const [pdf_to_ppt_dpi_scale, set_pdf_to_ppt_dpi_scale] = useState(2);
-    const [pdf_to_ppt_mode, set_pdf_to_ppt_mode] = useState('text'); // 'text' (편집 가능한 텍스트 추출), 'hybrid', 'image' (통이미지)
-    const [is_dragging_pdf_to_ppt, set_is_dragging_pdf_to_ppt] = useState(false);
-    const pdf_to_ppt_input_ref = useRef(null);
-
     // 로컬 헬퍼 서버 상태 실시간 감지 (3초 주기 폴링)
     useEffect(() => {
         const check_server_status = async () => {
@@ -135,7 +119,7 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
                     }
                 }
                 set_is_server_connected(false);
-            } catch (err) {
+            } catch {
                 set_is_server_connected(false);
             }
         };
@@ -233,366 +217,6 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
             setErrorMsg('로컬 서버와의 통신에 실패했습니다. 서버가 구동 중인지 확인해주세요.');
         } finally {
             set_is_converting(false);
-        }
-    };
-
-    // PDF → PPT 변환 핸들러 (편집 가능한 텍스트 상자 분리 지원)
-    const handle_pdf_to_ppt = async (file_input) => {
-        const file = file_input || pdf_to_ppt_file;
-        if (!file) {
-            setErrorMsg('PDF 파일을 선택하거나 드래그해 주세요.');
-            return;
-        }
-
-        setErrorMsg(null);
-        setSuccessMsg(null);
-        set_is_converting_pdf_to_ppt(true);
-        set_pdf_to_ppt_progress({ current: 0, total: 0 });
-
-        try {
-            // 1. pdfjs-dist 로드
-            const pdfjsLib = await import('pdfjs-dist');
-            pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-                'pdfjs-dist/build/pdf.worker.mjs',
-                import.meta.url
-            ).toString();
-
-            // 2. PDF 파일 로드
-            const array_buffer = await file.arrayBuffer();
-            const pdf_doc = await pdfjsLib.getDocument({ data: array_buffer }).promise;
-            const total_pages = pdf_doc.numPages;
-            set_pdf_to_ppt_progress({ current: 0, total: total_pages });
-
-            // 3. 첫 페이지로 슬라이드 크기 결정 (72 points = 1 inch)
-            const first_page = await pdf_doc.getPage(1);
-            const first_viewport = first_page.getViewport({ scale: 1 });
-            const page_width_inch = first_viewport.width / 72;
-            const page_height_inch = first_viewport.height / 72;
-
-            // 4. pptxgenjs 로 슬라이드 생성
-            const PptxGenJS = (await import('pptxgenjs')).default;
-            const pptx = new PptxGenJS();
-            pptx.defineLayout({
-                name: 'PDF_LAYOUT',
-                width: page_width_inch,
-                height: page_height_inch
-            });
-            pptx.layout = 'PDF_LAYOUT';
-
-            // 5. 각 페이지별 변환 작업
-            for (let page_num = 1; page_num <= total_pages; page_num++) {
-                const page = await pdf_doc.getPage(page_num);
-                const viewport = page.getViewport({ scale: 1 }); // 1.0 기본 스케일 좌표계
-                const slide = pptx.addSlide();
-
-                // 모드가 'image' 또는 'hybrid' 인 경우 배경 이미지 생성 및 추가
-                if (pdf_to_ppt_mode === 'image' || pdf_to_ppt_mode === 'hybrid') {
-                    const img_viewport = page.getViewport({ scale: pdf_to_ppt_dpi_scale });
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img_viewport.width;
-                    canvas.height = img_viewport.height;
-                    const ctx = canvas.getContext('2d');
-
-                    await page.render({ canvasContext: ctx, viewport: img_viewport }).promise;
-                    const img_data = canvas.toDataURL('image/png');
-
-                    slide.addImage({
-                        data: img_data,
-                        x: 0,
-                        y: 0,
-                        w: page_width_inch,
-                        h: page_height_inch
-                    });
-                }
-
-                // 모드가 'text' 또는 'hybrid' 인 경우 텍스트 및 위치 추출 후 PPTX 텍스트 상자 추가
-                if (pdf_to_ppt_mode === 'text' || pdf_to_ppt_mode === 'hybrid') {
-                    const text_content = await page.getTextContent();
-                    const raw_items = text_content.items || [];
-
-                    // 텍스트 아이템 위치 및 폰트 계산 데이터 구성
-                    const parsed_items = [];
-                    for (const item of raw_items) {
-                        if (!item.str || item.str.trim() === '') continue;
-
-                        const tx = item.transform; // [scaleX, skewY, skewX, scaleY, translateX, translateY]
-                        const pdfX = tx[4];
-                        const pdfY = tx[5];
-
-                        // 폰트 크기 계산 (pt 단위)
-                        const font_height = Math.hypot(tx[0], tx[1]);
-                        const font_size = Math.max(7, Math.min(72, Math.round(font_height * 0.9)));
-
-                        // PDF 좌표(좌하단 원점) -> PPT 좌표(인치, 좌상단 원점)
-                        const x_inch = Math.max(0, pdfX / 72);
-                        const y_inch = Math.max(0, (first_viewport.height - pdfY - font_height) / 72);
-                        const item_w_inch = (item.width || (item.str.length * font_height * 0.5)) / 72;
-
-                        parsed_items.push({
-                            str: item.str,
-                            x: x_inch,
-                            y: y_inch,
-                            w: Math.max(0.2, item_w_inch),
-                            h: (font_height * 1.3) / 72,
-                            fontSize: font_size,
-                            yPt: first_viewport.height - pdfY
-                        });
-                    }
-
-                    // Y 좌표가 비슷한 항목들을 행(Line) 단위로 클러스터링 (tolerance: 4pt)
-                    const lines = [];
-                    parsed_items.sort((a, b) => a.yPt - b.yPt);
-
-                    for (const item of parsed_items) {
-                        let matched_line = lines.find(l => Math.abs(l.yPt - item.yPt) <= 4);
-                        if (matched_line) {
-                            matched_line.items.push(item);
-                        } else {
-                            lines.push({
-                                yPt: item.yPt,
-                                items: [item]
-                            });
-                        }
-                    }
-
-                    // 각 행 내의 아이템을 X좌표 오름차순 정렬 후 인접 셀/컬럼 그룹핑
-                    lines.forEach(line => {
-                        line.items.sort((a, b) => a.x - b.x);
-                        const cols = [];
-                        let curCol = null;
-                        for (const item of line.items) {
-                            if (!curCol) {
-                                curCol = { minX: item.x, maxX: item.x + item.w, items: [item] };
-                            } else {
-                                const gap = item.x - curCol.maxX;
-                                if (gap < 0.25) { // 0.25inch 미만 간격은 동일 셀 항목으로 결합
-                                    curCol.maxX = Math.max(curCol.maxX, item.x + item.w);
-                                    curCol.items.push(item);
-                                } else {
-                                    cols.push(curCol);
-                                    curCol = { minX: item.x, maxX: item.x + item.w, items: [item] };
-                                }
-                            }
-                        }
-                        if (curCol) cols.push(curCol);
-                        line.cols = cols;
-                    });
-
-                    // ----------------------------------------------------
-                    // 1. PDF 내 표 구간 통합 감지 (Consolidated Table Detection)
-                    // ----------------------------------------------------
-                    const rawTableLineIndices = [];
-                    for (let i = 0; i < lines.length; i++) {
-                        if (lines[i].cols.length >= 2) {
-                            rawTableLineIndices.push(i);
-                        }
-                    }
-
-                    const tableLineIndices = new Set();
-                    if (rawTableLineIndices.length >= 2) {
-                        const minIdx = rawTableLineIndices[0];
-                        const maxIdx = rawTableLineIndices[rawTableLineIndices.length - 1];
-                        for (let i = minIdx; i <= maxIdx; i++) {
-                            tableLineIndices.add(i);
-                        }
-                    }
-
-                    const tableLines = lines.filter((_, idx) => tableLineIndices.has(idx));
-
-                    // ----------------------------------------------------
-                    // 2. 2D Grid Matrix 기반 정밀 표(Table) 객체 구축
-                    // ----------------------------------------------------
-                    if (tableLines.length >= 2) {
-                        // (1) 전역 수직 열 (Master Columns X 좌표) 구하기
-                        const allMinXs = [];
-                        tableLines.forEach(l => l.cols.forEach(c => allMinXs.push(c.minX)));
-                        allMinXs.sort((a, b) => a - b);
-
-                        const masterCols = [];
-                        for (const x of allMinXs) {
-                            let matched = masterCols.find(mc => Math.abs(mc - x) <= 0.65);
-                            if (!matched) masterCols.push(x);
-                        }
-                        masterCols.sort((a, b) => a - b);
-
-                        if (masterCols.length >= 2) {
-                            // (2) 대표 행 (Master Rows Y 좌표) 경계 도출
-                            // 첫 컬럼(Col 0) 부근의 핵심 레이블 텍스트 위치를 바탕으로 Row 경계를 정의
-                            const rowBorders = []; // [{ yPt, label }]
-                            
-                            // 상단 2개 행은 헤더로 고정 (Row 0: 대분류, Row 1: 중분류)
-                            if (tableLines.length >= 1) rowBorders.push({ yPt: tableLines[0].yPt, isHeader: true });
-                            if (tableLines.length >= 2 && Math.abs(tableLines[1].yPt - tableLines[0].yPt) > 8) {
-                                rowBorders.push({ yPt: tableLines[1].yPt, isHeader: true });
-                            }
-
-                            // 헤더 이후의 라인들 중 Col 0 근처에 새로운 의미 단위 항목이 시작되는 Y위치 수집
-                            const keyLabelRegex = /구분|도메인|주소|근거|오픈|일자|접속자|대상|시스템/i;
-                            
-                            for (let i = (rowBorders.length >= 2 ? 2 : 1); i < tableLines.length; i++) {
-                                const line = tableLines[i];
-                                const col0 = line.cols.find(c => Math.abs(c.minX - masterCols[0]) <= 0.5);
-                                const hasCol0Text = col0 && col0.items.some(it => it.str.trim());
-                                const isKeyLabel = col0 && col0.items.some(it => keyLabelRegex.test(it.str));
-
-                                const lastBorderY = rowBorders[rowBorders.length - 1].yPt;
-                                const yGap = line.yPt - lastBorderY;
-
-                                // 핵심 키워드가 있거나, 이전 Row 경계로부터 25pt 이상 떨어졌을 때 새로운 행 경계 추가
-                                if ((hasCol0Text && isKeyLabel && yGap > 12) || yGap >= 28) {
-                                    rowBorders.push({ yPt: line.yPt, isHeader: false });
-                                }
-                            }
-
-                            // 2D 표 매트릭스 배열 초기화 [RowIdx][ColIdx]
-                            const numRows = rowBorders.length;
-                            const numCols = masterCols.length;
-                            const tableMatrix = Array.from({ length: numRows }, () => Array(numCols).fill(''));
-
-                            // (3) 모든 PDF 텍스트 아이템을 해당 2D (Row, Col) 셀 위치로 매핑
-                            tableLines.forEach(line => {
-                                // 이 라인이 속하는 가장 적절한 Master Row 찾기
-                                let bestRowIdx = 0;
-                                let minDistY = 999;
-                                rowBorders.forEach((rb, rIdx) => {
-                                    const distY = Math.abs(line.yPt - rb.yPt);
-                                    if (distY < minDistY) {
-                                        minDistY = distY;
-                                        bestRowIdx = rIdx;
-                                    }
-                                });
-
-                                // 라인 내 아이템들을 Col 위치에 매핑
-                                line.cols.forEach(col => {
-                                    let bestColIdx = 0;
-                                    let minDistX = 999;
-                                    masterCols.forEach((mcX, cIdx) => {
-                                        const distX = Math.abs(col.minX - mcX);
-                                        if (distX < minDistX) {
-                                            minDistX = distX;
-                                            bestColIdx = cIdx;
-                                        }
-                                    });
-
-                                    const textChunk = col.items.map(it => it.str).join(' ').trim();
-                                    if (textChunk) {
-                                        const prevVal = tableMatrix[bestRowIdx][bestColIdx];
-                                        tableMatrix[bestRowIdx][bestColIdx] = prevVal 
-                                            ? (prevVal + '\n' + textChunk) 
-                                            : textChunk;
-                                    }
-                                });
-                            });
-
-                            // (4) pptxgenjs용 2D tableData 구성
-                            const tableData = tableMatrix.map((rowCells, rIdx) => {
-                                const isHeader = rowBorders[rIdx]?.isHeader || rIdx <= 1;
-                                return rowCells.map(text => ({
-                                    text: text || ' ',
-                                    options: {
-                                        fill: isHeader ? { color: '1E293B' } : (rIdx % 2 === 1 ? { color: 'F8FAFC' } : { color: 'FFFFFF' }),
-                                        color: isHeader ? 'FFFFFF' : '0F172A',
-                                        fontFace: '맑은 고딕',
-                                        fontSize: isHeader ? 10 : 8.5,
-                                        bold: isHeader,
-                                        align: 'center',
-                                        valign: 'middle'
-                                    }
-                                }));
-                            });
-
-                            // (5) 표 위치 및 슬라이드 정렬
-                            const tableX = Math.max(0.4, masterCols[0]);
-                            const tableY = Math.max(0.4, tableLines[0].items[0].y);
-                            const lastLine = tableLines[tableLines.length - 1];
-                            const lastY = lastLine.items[0].y + (lastLine.items[0].h || 0.3);
-                            const tableW = Math.min(page_width_inch - tableX - 0.4, masterCols.length * 1.45);
-                            const tableH = Math.max(1.5, lastY - tableY + 0.4);
-
-                            // 단 1개의 완벽하게 정돈된 표 생성
-                            slide.addTable(tableData, {
-                                x: tableX,
-                                y: tableY,
-                                w: tableW,
-                                h: tableH,
-                                border: { pt: 1, color: 'CBD5E1' }
-                            });
-                        }
-                    }
-
-                    // ----------------------------------------------------
-                    // 3. 표가 아닌 일반 텍스트는 텍스트 박스(Text Frame)로 추가
-                    // ----------------------------------------------------
-                    const nonTableLines = lines.filter((_, idx) => !tableLineIndices.has(idx));
-                    const text_blocks = [];
-
-                    for (const line of nonTableLines) {
-                        let current_block = null;
-                        for (const item of line.items) {
-                            if (!current_block) {
-                                current_block = {
-                                    str: item.str,
-                                    x: item.x,
-                                    y: item.y,
-                                    w: item.w,
-                                    h: item.h,
-                                    fontSize: item.fontSize
-                                };
-                            } else {
-                                const gap = item.x - (current_block.x + current_block.w);
-                                if (gap < 0.5) {
-                                    const space = gap > 0.05 ? ' ' : '';
-                                    current_block.str += space + item.str;
-                                    current_block.w = (item.x + item.w) - current_block.x;
-                                    current_block.fontSize = Math.max(current_block.fontSize, item.fontSize);
-                                } else {
-                                    text_blocks.push(current_block);
-                                    current_block = {
-                                        str: item.str,
-                                        x: item.x,
-                                        y: item.y,
-                                        w: item.w,
-                                        h: item.h,
-                                        fontSize: item.fontSize
-                                    };
-                                }
-                            }
-                        }
-                        if (current_block) text_blocks.push(current_block);
-                    }
-
-                    for (const block of text_blocks) {
-                        slide.addText(block.str, {
-                            x: block.x,
-                            y: block.y,
-                            w: Math.max(1.0, block.w + 0.3),
-                            h: Math.max(0.3, block.h + 0.1),
-                            fontSize: block.fontSize,
-                            fontFace: '맑은 고딕',
-                            color: pdf_to_ppt_mode === 'hybrid' ? '1E293B' : '0F172A',
-                            valign: 'top',
-                            align: 'left',
-                            margin: 1,
-                            wrap: true
-                        });
-                    }
-                }
-
-                set_pdf_to_ppt_progress({ current: page_num, total: total_pages });
-            }
-
-            // 6. PPTX 다운로드
-            const mode_suffix = pdf_to_ppt_mode === 'text' ? '_text_extracted' : (pdf_to_ppt_mode === 'hybrid' ? '_hybrid' : '_image');
-            const output_name = file.name.replace(/\.pdf$/i, '') + `${mode_suffix}.pptx`;
-            await pptx.writeFile({ fileName: output_name });
-
-            setSuccessMsg(`변환 완료! 편집 가능한 PPTX 파일이 다운로드되었습니다: '${output_name}' (전체 ${total_pages}페이지)`);
-            set_pdf_to_ppt_file(null);
-        } catch (err) {
-            console.error('[PDF→PPT]', err);
-            setErrorMsg(`변환 중 오류가 발생했습니다: ${err.message}`);
-        } finally {
-            set_is_converting_pdf_to_ppt(false);
         }
     };
 
@@ -720,7 +344,7 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
         setIsGenerating(true);
         await new Promise(r => setTimeout(r, 800));
         try {
-            await generatePptFromTemplate(pptTemplate, excelDataPreview, generationMode, chunkSize);
+            await generatePptFromTemplate(pptTemplate, excelDataPreview, generationMode);
             setSuccessMsg('성공적으로 PPT 파일이 생성되어 다운로드되었습니다.');
             setExcelFile(null);
             setPptTemplate(null);
@@ -801,35 +425,6 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
             next[index] = { ...next[index], ...updates };
             return next;
         });
-    };
-
-    const handleHwpxConversion = async () => {
-        if (!hwpxPptFile) return;
-        setIsConvertingHwpx(true);
-        setErrorMsg(null);
-        setSuccessMsg(null);
-        setHwpxResultStats(null);
-        try {
-            const hwpxBlob = await convertPptxToHwpx(hwpxPptFile);
-            
-            const defaultFileName = `변환_${hwpxPptFile.name.replace(/\.[^/.]+$/, "")}.hwpx`;
-            const saved = await saveFileWithLocationPicker(hwpxBlob, defaultFileName);
-            
-            if (saved) {
-                setSuccessMsg(`성공적으로 HWPX 한글 표준 문서로 스마트 변환 및 저장을 마쳤습니다!`);
-                setHwpxResultStats({
-                    slidesCount: hwpxBlob.totalSlidesCount,
-                    paragraphsCount: hwpxBlob.totalParagraphsCount,
-                    tablesCount: hwpxBlob.totalTablesCount,
-                    imagesCount: hwpxBlob.totalImagesCount
-                });
-            }
-        } catch (err) {
-            console.error("HWPX 변환 실패:", err);
-            setErrorMsg(`HWPX 변환에 실패했습니다: ${err.message || 'PPT 내부 구조 분석 오류'}`);
-        } finally {
-            setIsConvertingHwpx(false);
-        }
     };
 
     const handleHwpxFusion = async () => {
@@ -1408,7 +1003,7 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
                     </button>
                     <button 
                         id="tab-pdf-to-ppt"
-                        onClick={() => { setActiveTab('pdf_to_ppt'); setErrorMsg(null); setSuccessMsg(null); set_pdf_to_ppt_file(null); set_pdf_to_ppt_progress({ current: 0, total: 0 }); }}
+                        onClick={() => { setActiveTab('pdf_to_ppt'); setErrorMsg(null); setSuccessMsg(null); }}
                         className="interactive"
                         style={{
                             padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',

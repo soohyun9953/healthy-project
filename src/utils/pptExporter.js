@@ -145,7 +145,6 @@ function duplicateSlides(zip, count, chunkSize) {
     // 2-2. 원래 slide1.xml을 가리키는 Relationship의 rId와 Target 추출 (Type 기준 검색으로 대소문자/경로 스타일 편차 완벽 우회)
     const slide1RelMatch = presRelsXml.match(/<Relationship [^>]*Id="([^"]+)"[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/slide"[^>]*Target="([^"]*)"[^>]*\/>/i);
     const slide1RId = slide1RelMatch ? slide1RelMatch[1] : "rId2";
-    const slide1Target = slide1RelMatch ? slide1RelMatch[2] : "slides/slide1.xml";
 
     // 2-3. 원래 slide1.xml의 sldIdLst 내 p:sldId 엘리먼트 추출
     let slide1SldIdTag = "";
@@ -246,7 +245,7 @@ function duplicateSlides(zip, count, chunkSize) {
 /**
  * PPT 템플릿과 데이터를 머지하여 PPT를 생성합니다.
  */
-export async function generatePptFromTemplate(pptTemplateFile, dataRows, generationMode = 'single', chunkSizeArg = 10) {
+export async function generatePptFromTemplate(pptTemplateFile, dataRows, generationMode = 'single') {
     const templateArrayBuffer = await pptTemplateFile.arrayBuffer();
 
     if (generationMode === 'single') {
@@ -295,13 +294,6 @@ export async function generatePptFromTemplate(pptTemplateFile, dataRows, generat
     } else {
         // 분할 모드 등 (필요시 duplicateSlidesV15 적용)
     }
-}
-
-async function createAndDownloadZip(files, zipFileName) {
-    const zip = new JSZip();
-    for (const file of files) zip.file(file.name, file.blob);
-    const content = await zip.generateAsync({ type: 'blob' });
-    saveAs(content, zipFileName);
 }
 
 /**
@@ -364,7 +356,7 @@ export async function applyTextDesignToPpt(pptFile, targetText) {
                         }
                     }
                 } catch (e) {
-                    // 무시
+                    console.warn(`슬라이드 텍스트 파싱 실패 (${fp}): ${e.message}`);
                 }
             });
 
@@ -692,7 +684,7 @@ function clean_all_vertical_tabs(zip_archive) {
         // XML 및 관계(rels) 관련 파일 등 텍스트 포맷의 파일만 정밀하게 타격
         if (file_path.endsWith('.xml') || file_path.endsWith('.rels')) {
             let file_content = current_file.asText();
-            const vertical_tab_pattern = /[\v\u000b\x0b]/g;
+            const vertical_tab_pattern = /\v/g;
             
             if (vertical_tab_pattern.test(file_content)) {
                 const match_count = (file_content.match(vertical_tab_pattern) || []).length;
@@ -751,7 +743,7 @@ function parseColorToHex(colorStr) {
 /**
  * [신규] 엘리먼트(r, fld, br, endParaRPr, defRPr)의 실질적인 폰트 크기(sz)를 상속 관계를 고려하여 정밀 추적합니다.
  */
-function getEffectiveFontSize(el, xmlDoc) {
+function getEffectiveFontSize(el) {
     if (!el) return null;
     let sz = el.getAttribute ? el.getAttribute('sz') : null;
     if (sz) return parseInt(sz);
@@ -1152,7 +1144,9 @@ export async function processPptBatch(pptFile, options) {
                             const localName = allNodes[i].localName || allNodes[i].tagName.split(':').pop();
                             if (localName === 't') slideText += allNodes[i].textContent;
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.warn(`슬라이드 텍스트 파싱 실패 (${fp}): ${e.message}`);
+                    }
                 });
 
                 if (slideText.replace(/\s+/g, '').includes(rawTarget)) {
@@ -1176,10 +1170,10 @@ export async function processPptBatch(pptFile, options) {
         
         // [선제 조치] XML 파싱 에러를 유발하는 수직 탭(\x0b, \u000b) 제어문자를 일반 개행(\n)으로 먼저 문자열 치환
         if (clean_vertical_tab) {
-            const vt_count = (slideXmlStr.match(/[\v\u000b\x0b]/g) || []).length;
+            const vt_count = (slideXmlStr.match(/\v/g) || []).length;
             if (vt_count > 0) {
                 totalSpecialCharsCleaned += vt_count;
-                slideXmlStr = slideXmlStr.replace(/[\v\u000b\x0b]/g, '\n');
+                slideXmlStr = slideXmlStr.replace(/\v/g, '\n');
                 fileChanged = true;
                 hasChanges = true;
             }
@@ -1190,10 +1184,9 @@ export async function processPptBatch(pptFile, options) {
         
         // [테이블 디자인] 순수 문자열(regex) 기반 처리 - DOM 방식 완전 폐기
         // DOM XMLSerializer가 삽입하는 중복 xmlns:a 네임스페이스가 PowerPoint OpenXML 파서를 파손하는 문제를 원천 차단
-        if ((applyTableDesign || applyFirstRowHeaderStyle) && slidePath.startsWith('ppt/slides/slide')) {
+        if ((applyTableDesign || applyFirstRowHeaderStyle) && isActualSlide) {
             const useHeaderStyle = applyFirstRowHeaderStyle !== false;
             let xmlStr = slideXmlStr; // 현재 슬라이드 XML 문자열
-            let strChanged = false;
 
             // 테이블을 하나씩 찾아 처리 (그룹 도형 내 표 및 속성 포함 <a:tbl ...> 블록까지 100% 포착)
             const processTables = (xml) => {
@@ -1491,7 +1484,7 @@ export async function processPptBatch(pptFile, options) {
                         }
                     }
                     
-                    const effectiveSz = getEffectiveFontSize(el, xmlDoc);
+                    const effectiveSz = getEffectiveFontSize(el);
                     
                     for (const rule of fontSizeRules) {
                         const newSzVal = Math.round(rule.newSize * 100).toString();
@@ -1540,7 +1533,7 @@ export async function processPptBatch(pptFile, options) {
 
                 // 2. 단락 기본 및 종료 스타일 처리 (defRPr, endParaRPr)
                 if (localName === 'defRPr' || localName === 'endParaRPr') {
-                    const effectiveSz = getEffectiveFontSize(el, xmlDoc);
+                    const effectiveSz = getEffectiveFontSize(el);
                     
                     for (const rule of fontSizeRules) {
                         const newSzVal = Math.round(rule.newSize * 100).toString();
@@ -1610,7 +1603,7 @@ export async function processPptBatch(pptFile, options) {
             }
 
             // 4. 단락 한글 단어 잘림 방지 (eaLnBrk="0", latinLnBrk="0")
-            if (preventWordWrap && localName === 'p' && slidePath.startsWith('ppt/slides/slide')) {
+            if (preventWordWrap && localName === 'p' && isActualSlide) {
                 let pPr = null;
                 for (let j = 0; j < el.childNodes.length; j++) {
                     const child = el.childNodes[j];
@@ -1634,7 +1627,7 @@ export async function processPptBatch(pptFile, options) {
             }
 
             // 5. 텍스트 디자인 일괄 변경 (초심 복원: 100% 안전한 오리지널 DOM 가공 엔진)
-            if (applyDesign && slidePath.startsWith('ppt/slides/slide') && designTargetFilesSet.has(slidePath)) {
+            if (applyDesign && isActualSlide && designTargetFilesSet.has(slidePath)) {
                 if (localName === 'r') {
                     // 💡 [규격 무결성 가드] 조상 노드에 fld(슬라이드 번호/날짜 필드), defRPr, endParaRPr 등이 있으면 a:ln 주입 시 OpenXML 파손이 발생하므로 안전하게 건너뜁니다.
                     let parentNode = el.parentNode;
@@ -1785,7 +1778,7 @@ export async function processPptBatch(pptFile, options) {
         }
 
             // 💡 [옵션 E: 테이블 디자인 및 헤더/첫열 가공] DOM 기반 규격 100% 준수 안전 파이프라인
-            if (applyTableDesign && slidePath.startsWith('ppt/slides/slide')) {
+            if (applyTableDesign && isActualSlide) {
                 const allTbls = Array.from(xmlDoc.getElementsByTagNameNS('*', 'tbl'))
                     .concat(Array.from(xmlDoc.getElementsByTagName('a:tbl')))
                     .concat(Array.from(xmlDoc.getElementsByTagName('tbl')));
