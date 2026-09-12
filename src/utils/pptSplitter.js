@@ -26,7 +26,7 @@ function extractCanonicalChapters(slidesData) {
 
         // 형태 A: "1. 목표모델 수립 개요", "2. 정보화 비전 및 전략 수립", "3. 개선과제 상세화", "4. 목표모델 설계"
         for (const p of ps) {
-            const m = p.match(/^\s*0*([1-9][0-9]?)\.\s+([^\d\.\-\s].*)$/);
+            const m = p.match(/^\s*0*([1-9][0-9]?)\.\s+([^\d.\-\s].*)$/);
             if (m) {
                 const cNum = parseInt(m[1], 10);
                 const rawTitle = m[2].trim();
@@ -43,7 +43,7 @@ function extractCanonicalChapters(slidesData) {
             }
 
             // 형태 B: 로마자 "I. 사업 개요", "Ⅱ. 현황 분석", "Ⅲ. 목표 모델 수립"
-            const romM = p.match(/^\s*(?:제\s*)?([IVXLCDMⅠ-Ⅹ]+)[\.\:\-\s]\s*(.+)$/i);
+            const romM = p.match(/^\s*(?:제\s*)?([IVXLCDMⅠ-Ⅹ]+)[.:\-\s]\s*(.+)$/i);
             if (romM) {
                 const romStr = romM[1].toUpperCase();
                 if (ROMAN_MAP[romStr]) {
@@ -63,7 +63,7 @@ function extractCanonicalChapters(slidesData) {
             }
 
             // 형태 C: "제1장 ...", "제2장 ..."
-            const korM = p.match(/^\s*제\s*0*([1-9][0-9]?)\s*장\s*[\.\:\-\s]*(.*)$/i);
+            const korM = p.match(/^\s*제\s*0*([1-9][0-9]?)\s*장\s*[.:\-\s]*(.*)$/i);
             if (korM) {
                 const cNum = parseInt(korM[1], 10);
                 const rawTitle = korM[2].trim();
@@ -109,7 +109,7 @@ function extractCanonicalChapters(slidesData) {
         for (let sIdx = 0; sIdx < slidesData.length; sIdx++) {
             const ps = slidesData[sIdx].paragraphs;
             for (const p of ps.slice(0, 5)) {
-                const m = p.match(/^\s*0*([1-9][0-9]?)\.\s+([^\d\.\-\s].*)$/);
+                const m = p.match(/^\s*0*([1-9][0-9]?)\.\s+([^\d.\-\s].*)$/);
                 if (m) {
                     const cNum = parseInt(m[1], 10);
                     const rawTitle = m[2].trim();
@@ -239,7 +239,7 @@ export async function analyzePptxSections(fileInput, splitLevel = 'major') {
 
         // 3순위: 한국어/로마자 단독 넘버링
         for (const p of ps.slice(0, 3)) {
-            const korM = p.match(/^\s*제\s*0*([1-9][0-9]?)\s*장\s*[\.\:\-\s]*(.*)$/);
+            const korM = p.match(/^\s*제\s*0*([1-9][0-9]?)\s*장\s*[.:\-\s]*(.*)$/);
             if (korM) {
                 const num = parseInt(korM[1], 10);
                 if (curMajor === null || num >= curMajor) {

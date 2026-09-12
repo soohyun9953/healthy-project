@@ -26,7 +26,7 @@ const systemPrompt = `당신은 최고 수준의 프레젠테이션 기획자이
 
 [출력 형식 제한 및 주의사항]
 1. 반드시 다음 JSON 형식으로만 응답해야 합니다. 다른 설명이나 텍스트를 절대 포함하지 마세요.
-2. JSON 내부의 문자열 값(Value) 안에 큰따옴표(")를 사용할 경우 반드시 이스케이프(\") 처리하거나 홑따옴표(')로 대체하세요.
+2. JSON 내부의 문자열 값(Value) 안에 큰따옴표(")를 사용할 경우 반드시 이스케이프(\\") 처리하거나 홑따옴표(')로 대체하세요.
 3. 문자열 내부의 줄바꿈은 실제 엔터가 아닌 \n 으로만 작성해야 합니다. (JSON 파싱 오류 방지)
 
 {
@@ -168,9 +168,9 @@ export async function analyzePptContent(inputText, emphasisText, inputSlideCount
         let content = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
         
         let jsonStr = content.trim();
-        if (jsonStr.includes("\`\`\`")) {
-            jsonStr = jsonStr.replace(/^[\s\S]*?\`\`\`(?:json|JSON)?\s*/, '');
-            jsonStr = jsonStr.replace(/\s*\`\`\`[\s\S]*$/, '');
+        if (jsonStr.includes("```")) {
+            jsonStr = jsonStr.replace(/^[\s\S]*?```(?:json|JSON)?\s*/, '');
+            jsonStr = jsonStr.replace(/\s*```[\s\S]*$/, '');
         }
 
         return JSON.parse(jsonStr);
