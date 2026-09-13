@@ -278,6 +278,46 @@ const find_pii_matches = (text) => {
   return found;
 };
 
+// ── 괄호 짝 불일치 검출 헬퍼 ─────────────────────────
+// 한 문단/문장 내에서 "(" 와 ")" 개수가 다른 경우, 스택 기반으로 정확히
+// 어느 괄호가 짝을 이루지 못했는지 위치와 주변 문맥을 찾아 반환한다.
+const find_paren_mismatches = (text) => {
+  if (!text.includes('(') && !text.includes(')')) return [];
+  const openCount = (text.match(/\(/g) || []).length;
+  const closeCount = (text.match(/\)/g) || []).length;
+  if (openCount === closeCount) return [];
+
+  const unmatched = [];
+  const stack = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '(') {
+      stack.push(i);
+    } else if (ch === ')') {
+      if (stack.length > 0) {
+        stack.pop();
+      } else {
+        unmatched.push({ index: i, char: ')' });
+      }
+    }
+  }
+  stack.forEach(idx => unmatched.push({ index: idx, char: '(' }));
+  unmatched.sort((a, b) => a.index - b.index);
+
+  return unmatched.map(({ index, char }) => {
+    const start = Math.max(0, index - 15);
+    const end = Math.min(text.length, index + 16);
+    const context = (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
+    return {
+      char,
+      context,
+      guide: char === '('
+        ? `여는 괄호 "("에 대응하는 닫는 괄호 ")"를 찾지 못했습니다.`
+        : `닫는 괄호 ")"에 대응하는 여는 괄호 "("를 찾지 못했습니다.`
+    };
+  });
+};
+
 // AI 맞춤법 검사 1회 호출당 허용하는 최대 문자 수. 이를 초과하는 대용량 문서는
 // 슬라이드 단위로 청크 분할해 순차 호출 후 결과를 병합한다 (긴 문서에서 뒷부분
 // 슬라이드가 토큰 한도 초과로 조용히 누락되는 것을 방지).
@@ -518,6 +558,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
   const [checkPII, setCheckPII] = useState(true);
   const [checkOverflow, setCheckOverflow] = useState(true);
   const [checkFontConsistency, setCheckFontConsistency] = useState(true);
+  const [checkParenMismatch, setCheckParenMismatch] = useState(true);
 
   // 결과 데이터 저장
   const [typoResults, setTypoResults] = useState([]);
@@ -532,6 +573,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
   const [piiResults, setPiiResults] = useState([]);
   const [overflowResults, setOverflowResults] = useState([]);
   const [fontResults, setFontResults] = useState([]);
+  const [parenResults, setParenResults] = useState([]);
   const [fileStats, setFileStats] = useState([]); // [{ name: '', typos: 0, numberingErrors: 0, altTextErrors: 0, forbiddenErrors: 0, engKoMixedErrors: 0, duplicateErrors: 0, startPage: 1, endPage: 1, totalSlides: 1 }]
   const [showHistory, setShowHistory] = useState(false);
   const [historyList, setHistoryList] = useState([]);
@@ -723,6 +765,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
     setPiiResults([]);
     setOverflowResults([]);
     setFontResults([]);
+    setParenResults([]);
     setFileStats([]);
   };
 
@@ -751,6 +794,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
     setPiiResults(record.piiResults || []);
     setOverflowResults(record.overflowResults || []);
     setFontResults(record.fontResults || []);
+    setParenResults(record.parenResults || []);
     setFileStats(record.stats || []);
     setIsValidated(true);
     setActiveResultTab('summary');
@@ -787,8 +831,8 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
   // PPTX 검증 핵심 프로세스
   const handleValidate = async () => {
     if (pptFiles.length === 0) return;
-    if (!checkTypos && !checkNumbering && !checkAltText && !checkForbiddenWords && !checkEngKoMixed && !check_duplicate_words && !checkPageRange && !checkPII && !checkOverflow && !checkFontConsistency) {
-      alert('오탈자, 넘버링, 대체텍스트, 특정 단어, 영어/한글 혼용 단어, 동일 단어 중복, 페이지 범위, 개인정보 패턴, 텍스트 잘림, 폰트 통일성 분석 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
+    if (!checkTypos && !checkNumbering && !checkAltText && !checkForbiddenWords && !checkEngKoMixed && !check_duplicate_words && !checkPageRange && !checkPII && !checkOverflow && !checkFontConsistency && !checkParenMismatch) {
+      alert('오탈자, 넘버링, 대체텍스트, 특정 단어, 영어/한글 혼용 단어, 동일 단어 중복, 페이지 범위, 개인정보 패턴, 텍스트 잘림, 폰트 통일성, 괄호 짝 불일치 분석 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
       return;
     }
     setIsProcessing(true);
@@ -804,6 +848,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
     const allPii = [];
     const allOverflows = [];
     const allFontIssues = [];
+    const allParenMismatches = [];
     const stats = [];
     const userDict = parseUserDictionary();
     const mergedDict = generate_conjugation_rules({ ...TYPO_DICTIONARY, ...userDict });
@@ -820,6 +865,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
         let filePiiCount = 0;
         let fileOverflowCount = 0;
         let fileFontIssueCount = 0;
+        let fileParenCount = 0;
         const fileFontUsages = []; // 폰트 통일성 검사용: 이 파일에서 발견된 {slideNum, shapeName, typeface, text} 누적
 
         const slides_text_map = {};
@@ -925,6 +971,30 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                         guide
                       });
                       filePiiCount++;
+                    }
+                  });
+                }
+
+                // 2-2) 괄호 짝 불일치 검출
+                if (checkParenMismatch) {
+                  find_paren_mismatches(text).forEach(({ char, context, guide }) => {
+                    const exists = allParenMismatches.some(e =>
+                      e.fileName === file.name &&
+                      e.slideNum === pNum &&
+                      e.sentence === text &&
+                      e.context === context &&
+                      e.char === char
+                    );
+                    if (!exists) {
+                      allParenMismatches.push({
+                        fileName: file.name,
+                        slideNum: pNum,
+                        sentence: text,
+                        char,
+                        context,
+                        guide
+                      });
+                      fileParenCount++;
                     }
                   });
                 }
@@ -1182,6 +1252,30 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                           guide
                         });
                         filePiiCount++;
+                      }
+                    });
+                  }
+
+                  // 2-2) 괄호 짝 불일치 검출
+                  if (checkParenMismatch) {
+                    find_paren_mismatches(paragraph_text).forEach(({ char, context, guide }) => {
+                      const exists = allParenMismatches.some(e =>
+                        e.fileName === file.name &&
+                        e.slideNum === slideNum &&
+                        e.sentence === paragraph_text &&
+                        e.context === context &&
+                        e.char === char
+                      );
+                      if (!exists) {
+                        allParenMismatches.push({
+                          fileName: file.name,
+                          slideNum,
+                          sentence: paragraph_text,
+                          char,
+                          context,
+                          guide
+                        });
+                        fileParenCount++;
                       }
                     });
                   }
@@ -1557,6 +1651,32 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                     guide
                   });
                   filePiiCount++;
+                }
+              });
+            });
+          }
+
+          // 3-3-2. 괄호 짝 불일치 검출
+          if (checkParenMismatch) {
+            shapes.forEach(shape => {
+              find_paren_mismatches(shape.text).forEach(({ char, context, guide }) => {
+                const exists = allParenMismatches.some(e =>
+                  e.fileName === file.name &&
+                  e.slideNum === slideNum &&
+                  e.sentence === shape.text &&
+                  e.context === context &&
+                  e.char === char
+                );
+                if (!exists) {
+                  allParenMismatches.push({
+                    fileName: file.name,
+                    slideNum,
+                    sentence: shape.text,
+                    char,
+                    context,
+                    guide
+                  });
+                  fileParenCount++;
                 }
               });
             });
@@ -2245,6 +2365,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
           piiErrors: filePiiCount,
           overflowErrors: fileOverflowCount,
           fontIssues: fileFontIssueCount,
+          parenErrors: fileParenCount,
           startPage: allPageRanges[allPageRanges.length - 1]?.startPage ?? 1,
           endPage: allPageRanges[allPageRanges.length - 1]?.endPage ?? 1,
           totalSlides: allPageRanges[allPageRanges.length - 1]?.totalSlides ?? 1,
@@ -2278,6 +2399,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
       const finalPii = addDisplayPageNum(allPii);
       const finalOverflows = addDisplayPageNum(allOverflows);
       const finalFontIssues = addDisplayPageNum(allFontIssues);
+      const finalParenMismatches = addDisplayPageNum(allParenMismatches);
 
       setTypoResults(finalTypos);
       setNumberingResults(finalNumberings);
@@ -2290,6 +2412,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
       setPiiResults(finalPii);
       setOverflowResults(finalOverflows);
       setFontResults(finalFontIssues);
+      setParenResults(finalParenMismatches);
       setFileStats(stats);
       setIsValidated(true);
       setActiveResultTab('summary');
@@ -2307,7 +2430,8 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
         macImageResults: finalMacImages,
         piiResults: finalPii,
         overflowResults: finalOverflows,
-        fontResults: finalFontIssues
+        fontResults: finalFontIssues,
+        parenResults: finalParenMismatches
       });
     } catch (err) {
       console.error('검증 중 오류 발생:', err);
@@ -2330,7 +2454,8 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
       macImageResults.length === 0 &&
       piiResults.length === 0 &&
       overflowResults.length === 0 &&
-      fontResults.length === 0
+      fontResults.length === 0 &&
+      parenResults.length === 0
     ) {
       alert('출력할 검증 결과 데이터가 존재하지 않습니다.');
       return;
@@ -2526,6 +2651,22 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
       XLSX.utils.book_append_sheet(workbook, fontSheet, '폰트통일성_점검결과');
     }
 
+    // 12. 괄호 짝 불일치 시트 데이터 구성
+    if (checkParenMismatch) {
+      const parenRows = parenResults.map((p, idx) => ({
+        '순번': idx + 1,
+        '대상 파일명': p.fileName,
+        '페이지수': `${p.slideNum} 페이지`,
+        '표시 페이지수': `${getSafeDisplayPage(p)} 페이지`,
+        '짝 없는 괄호': p.char,
+        '오류 발생 위치(주변 문맥)': p.context,
+        '가이드': p.guide,
+        '검출 문장(전체)': p.sentence
+      }));
+      const parenSheet = XLSX.utils.json_to_sheet(parenRows);
+      XLSX.utils.book_append_sheet(workbook, parenSheet, '괄호짝불일치_점검결과');
+    }
+
     // 엑셀 파일 다운로드 실행
     const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
     XLSX.writeFile(workbook, `PPT_산출물_검증결과_${dateStr}.xlsx`);
@@ -2601,7 +2742,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                   (record.altTextResults?.length || 0) + (record.forbiddenResults?.length || 0) +
                   (record.engKoMixedResults?.length || 0) + (record.duplicateResults?.length || 0) +
                   (record.macImageResults?.length || 0) + (record.piiResults?.length || 0) +
-                  (record.overflowResults?.length || 0) + (record.fontResults?.length || 0);
+                  (record.overflowResults?.length || 0) + (record.fontResults?.length || 0) + (record.parenResults?.length || 0);
                 return (
                   <div key={record.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', borderRadius: '10px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
@@ -3257,6 +3398,36 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>문서 내 가장 많이 쓰인 폰트(표준 폰트)와 다른 폰트가 사용된 위치를 검출</span>
                 </div>
               </div>
+
+              {/* 12. 괄호 짝 불일치 검출 */}
+              <div
+                onClick={() => setCheckParenMismatch(prev => !prev)}
+                style={{
+                  background: checkParenMismatch ? 'rgba(234, 179, 8, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                  border: checkParenMismatch ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checkParenMismatch}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setCheckParenMismatch(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#eab308' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>괄호 짝 불일치 검출</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>"(" 와 ")" 개수가 맞지 않는 문장을 찾아 정확히 어느 괄호가 짝이 안 맞는지 위치를 표시</span>
+                </div>
+              </div>
             </div>
 
             <button
@@ -3707,6 +3878,10 @@ TBD
               <span style={{ fontSize: '13px', color: checkFontConsistency ? '#c084fc' : 'var(--text-muted)', fontWeight: 600 }}>폰트 불일치 건수</span>
               <span style={{ fontSize: '24px', fontWeight: 900, color: checkFontConsistency ? '#a855f7' : 'var(--text-muted)' }}>{checkFontConsistency ? `${fontResults.length}건` : '비활성'}</span>
             </div>
+            <div style={{ background: checkParenMismatch ? 'rgba(234, 179, 8, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkParenMismatch ? '1px solid rgba(234, 179, 8, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: checkParenMismatch ? '#facc15' : 'var(--text-muted)', fontWeight: 600 }}>괄호 짝 불일치 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: checkParenMismatch ? '#eab308' : 'var(--text-muted)' }}>{checkParenMismatch ? `${parenResults.length}건` : '비활성'}</span>
+            </div>
           </div>
 
           {/* 결과 상세 확인 테이블 탭 */}
@@ -3947,6 +4122,26 @@ TBD
                   🔤 폰트 불일치 ({fontResults.length})
                 </button>
               )}
+              {checkParenMismatch && (
+                <button
+                  onClick={() => setActiveResultTab('paren')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'paren' ? 'rgba(234, 179, 8, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'paren' ? '#eab308' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  ( ) 괄호 짝 불일치 ({parenResults.length})
+                </button>
+              )}
             </div>
 
             {/* 탭 1: 파일별 점검 요약 */}
@@ -3966,6 +4161,7 @@ TBD
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>개인정보 패턴</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>텍스트 잘림 위험</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>폰트 불일치</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>괄호 짝 불일치</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>시작페이지</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>최종 페이지</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>총 페이지수</th>
@@ -3984,7 +4180,8 @@ TBD
                         (checkMacImages ? stat.macImageErrors : 0) +
                         (checkPII ? stat.piiErrors : 0) +
                         (checkOverflow ? stat.overflowErrors : 0) +
-                        (checkFontConsistency ? stat.fontIssues : 0);
+                        (checkFontConsistency ? stat.fontIssues : 0) +
+                        (checkParenMismatch ? stat.parenErrors : 0);
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }}>
                           <td style={{ padding: '14px 8px', fontWeight: 600 }}>
@@ -4037,6 +4234,9 @@ TBD
                           </td>
                           <td style={{ padding: '14px 8px', color: !checkFontConsistency ? 'var(--text-muted)' : stat.fontIssues > 0 ? '#a855f7' : 'var(--text-muted)', fontWeight: 700 }}>
                             {checkFontConsistency ? (stat.fontIssues > 0 ? `${stat.fontIssues}건` : '없음') : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !checkParenMismatch ? 'var(--text-muted)' : stat.parenErrors > 0 ? '#eab308' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {checkParenMismatch ? (stat.parenErrors > 0 ? `${stat.parenErrors}건` : '없음') : '비활성'}
                           </td>
                           <td style={{ padding: '14px 8px', color: !checkPageRange ? 'var(--text-muted)' : 'var(--text-secondary)', fontWeight: 600 }}>
                             {checkPageRange ? `${stat.startPage}p` : '비활성'}
@@ -4669,6 +4869,55 @@ TBD
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)' }}>
                               "{f.text}"
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeResultTab === 'paren' && (
+              <div style={{ marginTop: '16px' }}>
+                {parenResults.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 괄호 짝 불일치가 검출되지 않았습니다!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>슬라이드(물리)</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>표시 페이지</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>짝 없는 괄호</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '220px' }}>오류 발생 위치(주변 문맥)</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>검출 문장(전체)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parenResults.map((p, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={p.fileName}>
+                              {p.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {p.slideNum} 순서
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-primary)', fontWeight: 700 }}>
+                              {p.displayPageNum} 페이지
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#eab308', fontWeight: 900, fontFamily: 'monospace', fontSize: '16px' }}>
+                              {p.char}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#facc15', fontWeight: 600, fontFamily: 'monospace', lineBreak: 'anywhere' }}>
+                              {p.context}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineBreak: 'anywhere' }}>
+                              {p.sentence}
                             </td>
                           </tr>
                         ))}
