@@ -826,10 +826,11 @@ export async function processPptBatch(pptFile, options) {
         add_space_before_parenthesis = false,
         textColorRulesStr = '',
         preventWordWrap = false,
-        clearAltText = false
+        clearAltText = false,
+        fixLangErrFlags = false
     } = options;
-    
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText) {
+
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -888,7 +889,9 @@ export async function processPptBatch(pptFile, options) {
     let totalTitleSpacesAdded = 0;
     let totalTextColorReplaced = 0;
     let totalWordWrapPrevented = 0;
-    
+    let totalLangFixed = 0;
+    let totalErrFlagsCleared = 0;
+
     // 💡 [1단계: 모든 슬라이드 제목 괄호 앞 공백 전수 보정]
     // add_title_page_numbers 실행 여부나 동일 제목 반복 여부와 무관하게,
     // add_space_before_parenthesis가 켜져 있으면 모든 슬라이드의 제목 Shape을 순회하며 '글자(내용)' -> '글자 (내용)'으로 100% 보정
@@ -1632,6 +1635,54 @@ export async function processPptBatch(pptFile, options) {
                 }
             }
 
+            // 4-1. 언어 태그(lang) 및 맞춤법 오류 표시(err) 보정
+            // AI 생성 등으로 한글 텍스트런이 lang="en-US"로 잘못 태깅되면, PowerPoint 영어
+            // 맞춤법 검사기가 정상 한글을 오탈자로 오인해 빨간 밑줄(err="1")로 표시합니다.
+            if (fixLangErrFlags && localName === 'r' && isActualSlide) {
+                let tEl = null;
+                for (let j = 0; j < el.childNodes.length; j++) {
+                    const child = el.childNodes[j];
+                    if (child.nodeType === 1) {
+                        const childLocalName = child.localName || child.tagName.split(':').pop();
+                        if (childLocalName === 't') {
+                            tEl = child;
+                            break;
+                        }
+                    }
+                }
+
+                if (tEl) {
+                    const runText = tEl.textContent || '';
+                    const hasHangul = /[가-힣ᄀ-ᇿ㄰-㆏]/.test(runText);
+
+                    let rPr = null;
+                    for (let j = 0; j < el.childNodes.length; j++) {
+                        const child = el.childNodes[j];
+                        if (child.nodeType === 1) {
+                            const childLocalName = child.localName || child.tagName.split(':').pop();
+                            if (childLocalName === 'rPr') {
+                                rPr = child;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (hasHangul && rPr && rPr.getAttribute('lang') !== 'ko-KR') {
+                        rPr.setAttribute('lang', 'ko-KR');
+                        totalLangFixed++;
+                        fileChanged = true;
+                        hasChanges = true;
+                    }
+
+                    if (rPr && rPr.hasAttribute('err')) {
+                        rPr.removeAttribute('err');
+                        totalErrFlagsCleared++;
+                        fileChanged = true;
+                        hasChanges = true;
+                    }
+                }
+            }
+
             // 5. 텍스트 디자인 일괄 변경 (초심 복원: 100% 안전한 오리지널 DOM 가공 엔진)
             if (applyDesign && isActualSlide && designTargetFilesSet.has(slidePath)) {
                 if (localName === 'r') {
@@ -2067,6 +2118,8 @@ export async function processPptBatch(pptFile, options) {
     blob.totalTitleSpacesAdded = totalTitleSpacesAdded;
     blob.totalTextColorReplaced = totalTextColorReplaced;
     blob.totalWordWrapPrevented = totalWordWrapPrevented;
+    blob.totalLangFixed = totalLangFixed;
+    blob.totalErrFlagsCleared = totalErrFlagsCleared;
 
     return blob;
 }

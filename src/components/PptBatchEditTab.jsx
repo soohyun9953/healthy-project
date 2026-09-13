@@ -41,6 +41,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
         }
     }); // 옵션 I: 단락 한글 단어 잘림 방지
     const [clearAltText, setClearAltText] = useState(false); // 옵션 J: 대체 텍스트 일괄 제거 여부
+    const [fixLangErrFlags, setFixLangErrFlags] = useState(false); // 옵션 K: 언어 태그/맞춤법 오류 표시 보정
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -109,7 +110,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             add_space_before_parenthesis,
             textColorRules,
             preventWordWrap,
-            clearAltText
+            clearAltText,
+            fixLangErrFlags
         } = options;
 
         const changes = [];
@@ -175,6 +177,12 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
         if (clearAltText) {
             changes.push(`대체 텍스트 일괄 제거 완료`);
         }
+        // 11. 언어 태그/맞춤법 오류 표시 보정
+        if (fixLangErrFlags) {
+            const langCount = modifiedBlob.totalLangFixed || 0;
+            const errCount = modifiedBlob.totalErrFlagsCleared || 0;
+            changes.push(`언어 태그 보정 ${langCount}개, 맞춤법 오류 표시 제거 ${errCount}개`);
+        }
 
         if (changes.length > 0) {
             // 실질적인 변경이 하나라도 존재하는지 확인 (표 없음 제외)
@@ -188,6 +196,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                   ((textColorRules && textColorRules.trim()) && (modifiedBlob.totalTextColorReplaced || 0) > 0) ||
                                   (preventWordWrap && (modifiedBlob.totalWordWrapPrevented || 0) > 0) ||
                                   clearAltText ||
+                                  (fixLangErrFlags && ((modifiedBlob.totalLangFixed || 0) > 0 || (modifiedBlob.totalErrFlagsCleared || 0) > 0)) ||
                                   (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
 
             if (hasRealChanges) {
@@ -269,8 +278,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText) {
-            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 또는 대체 텍스트 일괄 제거 중 하나 이상을 입력/선택해주세요.');
+        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags) {
+            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 대체 텍스트 일괄 제거, 또는 언어 태그/맞춤법 오류 표시 보정 중 하나 이상을 입력/선택해주세요.');
             return;
         }
 
@@ -307,7 +316,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         add_space_before_parenthesis: add_space_before_parenthesis,
                         textColorRulesStr: textColorRules,
                         preventWordWrap: preventWordWrap,
-                        clearAltText: clearAltText
+                        clearAltText: clearAltText,
+                        fixLangErrFlags: fixLangErrFlags
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -354,7 +364,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             add_space_before_parenthesis,
                             textColorRules,
                             preventWordWrap,
-                            clearAltText
+                            clearAltText,
+                            fixLangErrFlags
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -386,7 +397,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             add_space_before_parenthesis: add_space_before_parenthesis,
                             textColorRulesStr: textColorRules,
                             preventWordWrap: preventWordWrap,
-                            clearAltText: clearAltText
+                            clearAltText: clearAltText,
+                            fixLangErrFlags: fixLangErrFlags
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         const fileName = `수정_${file.name}`;
@@ -403,7 +415,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             add_space_before_parenthesis,
                             textColorRules,
                             preventWordWrap,
-                            clearAltText
+                            clearAltText,
+                            fixLangErrFlags
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -467,6 +480,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 set_clean_vertical_tab(true);
                 set_add_title_page_numbers(false);
                 set_add_space_before_parenthesis(true);
+                setFixLangErrFlags(false);
             } else {
                 setErrorMsg('처리된 파일이 없습니다. 변경 대상 텍스트나 디자인 요소가 존재하는지 확인해주세요.');
             }
@@ -973,6 +987,23 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         💡 PPTX 파일 내의 이미지, 도형, 표 등 모든 개체에 설정된 대체 텍스트 제목 및 설명(descr, title)을 일괄 삭제합니다.
                     </div>
                 </div>
+
+                {/* 옵션 K: 언어 태그/맞춤법 오류 표시 보정 */}
+                <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                        <input
+                            id="checkbox-option-k"
+                            type="checkbox"
+                            checked={fixLangErrFlags}
+                            onChange={(e) => setFixLangErrFlags(e.target.checked)}
+                            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
+                        />
+                        옵션 K: 언어 태그/맞춤법 오류 표시 보정
+                    </label>
+                    <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                        💡 한글 텍스트가 영어(en-US)로 잘못 태깅되어 PowerPoint 맞춤법 검사기가 빨간 밑줄로 표시하는 오탐을 제거합니다. 한글이 포함된 텍스트런의 언어 태그를 ko-KR로 보정하고, 저장된 맞춤법 오류 표시(err) 플래그를 모두 지웁니다.
+                    </div>
+                </div>
             </div>
 
             <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
@@ -980,17 +1011,17 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     id="btn-batch-process"
                     className="interactive"
                     onClick={handleBatchProcess}
-                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText)}
+                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags)}
                     style={{
                         width: '100%',
                         padding: '16px',
-                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText)) ? 'var(--text-muted)' : 'white',
+                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags)) ? 'var(--text-muted)' : 'white',
                         border: 'none',
                         borderRadius: '12px',
                         fontSize: '16px',
                         fontWeight: 700,
-                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText)) ? 'not-allowed' : 'pointer',
+                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags)) ? 'not-allowed' : 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                     }}
                 >
