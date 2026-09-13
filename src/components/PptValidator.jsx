@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import { extractStructuredFileContent } from '../utils/fileExtractor.js';
+import { pptValidatorHistoryDB } from '../utils/pptValidatorHistoryDB.js';
 import { 
   FileUp, 
   ShieldAlert, 
@@ -16,7 +17,9 @@ import {
   Info,
   Plus,
   Trash2,
-  Sparkles
+  Sparkles,
+  History,
+  X
 } from 'lucide-react';
 
 // 오탈자 내장 사전 정의
@@ -252,6 +255,27 @@ const roman_to_int = (roman) => {
     'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10
   };
   return map[roman.toUpperCase()] || null;
+};
+
+// ── 개인정보/민감정보 패턴 검출 헬퍼 ─────────────────────────
+// 문서 본문에 남아있으면 안 되는 대표적인 개인정보 패턴을 정규식으로 탐지한다.
+const PII_PATTERNS = [
+  { key: '주민등록번호', regex: /\b\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[-\s]?[1-4]\d{6}\b/g, guide: '주민등록번호로 의심되는 패턴이 발견되었습니다. 제출 산출물에 실제 개인정보가 노출되지 않도록 확인해 주세요.' },
+  { key: '휴대전화번호', regex: /\b01[016789][-\s]?\d{3,4}[-\s]?\d{4}\b/g, guide: '휴대전화번호로 의심되는 패턴이 발견되었습니다. 예시/샘플 데이터인지, 실제 개인 연락처인지 확인해 주세요.' },
+  { key: '일반전화번호', regex: /\b0(2|[3-6]\d)[-\s]\d{3,4}[-\s]\d{4}\b/g, guide: '유선전화번호로 의심되는 패턴이 발견되었습니다. 대표번호(기관 공식 연락처)가 아니라면 노출 여부를 확인해 주세요.' },
+  { key: '이메일주소', regex: /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g, guide: '이메일 주소가 발견되었습니다. 담당자 공식 연락처가 아닌 개인 이메일이 노출된 것은 아닌지 확인해 주세요.' }
+];
+
+// 한 문단(text)에서 PII 패턴을 모두 찾아 {key, matched, guide} 배열로 반환
+const find_pii_matches = (text) => {
+  const found = [];
+  PII_PATTERNS.forEach(({ key, regex, guide }) => {
+    const matches = text.match(regex);
+    if (matches) {
+      matches.forEach(matched => found.push({ key, matched, guide }));
+    }
+  });
+  return found;
 };
 
 // AI 맞춤법 검사 1회 호출당 허용하는 최대 문자 수. 이를 초과하는 대용량 문서는
@@ -491,7 +515,10 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
   const [check_duplicate_words, set_check_duplicate_words] = useState(true);
   const [checkPageRange, setCheckPageRange] = useState(true);
   const [checkMacImages, setCheckMacImages] = useState(true);
-  
+  const [checkPII, setCheckPII] = useState(true);
+  const [checkOverflow, setCheckOverflow] = useState(true);
+  const [checkFontConsistency, setCheckFontConsistency] = useState(true);
+
   // 결과 데이터 저장
   const [typoResults, setTypoResults] = useState([]);
   const [macImageResults, setMacImageResults] = useState([]);
@@ -502,8 +529,13 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
   // 동일 단어 중복 검증 결과 저장 (스네이크 케이스 규칙 적용)
   const [duplicate_results, set_duplicate_results] = useState([]);
   const [pageRangeResults, setPageRangeResults] = useState([]);
+  const [piiResults, setPiiResults] = useState([]);
+  const [overflowResults, setOverflowResults] = useState([]);
+  const [fontResults, setFontResults] = useState([]);
   const [fileStats, setFileStats] = useState([]); // [{ name: '', typos: 0, numberingErrors: 0, altTextErrors: 0, forbiddenErrors: 0, engKoMixedErrors: 0, duplicateErrors: 0, startPage: 1, endPage: 1, totalSlides: 1 }]
-  
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyList, setHistoryList] = useState([]);
+
   const [activeResultTab, setActiveResultTab] = useState('summary'); // summary, typo, numbering, altText, forbidden
   const [userDictText, setUserDictText] = useState(() => {
     return localStorage.getItem('ppt_validator_user_dict') || '';
@@ -688,7 +720,45 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
     set_duplicate_results([]);
     setPageRangeResults([]);
     setMacImageResults([]);
+    setPiiResults([]);
+    setOverflowResults([]);
+    setFontResults([]);
     setFileStats([]);
+  };
+
+  // ── 검증 이력 저장/재열람 ─────────────────────────
+  const refreshHistory = useCallback(() => {
+    pptValidatorHistoryDB.getAll().then(setHistoryList).catch(err => console.error('검증 이력 로드 실패:', err));
+  }, []);
+
+  useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
+
+  const persistValidationToHistory = useCallback((result) => {
+    pptValidatorHistoryDB.saveRecord(result).then(refreshHistory).catch(err => console.error('검증 이력 저장 실패:', err));
+  }, [refreshHistory]);
+
+  const handleLoadHistory = (record) => {
+    setTypoResults(record.typoResults || []);
+    setNumberingResults(record.numberingResults || []);
+    setAltTextResults(record.altTextResults || []);
+    setForbiddenResults(record.forbiddenResults || []);
+    setEngKoMixedResults(record.engKoMixedResults || []);
+    set_duplicate_results(record.duplicateResults || []);
+    setPageRangeResults(record.pageRangeResults || []);
+    setMacImageResults(record.macImageResults || []);
+    setPiiResults(record.piiResults || []);
+    setOverflowResults(record.overflowResults || []);
+    setFontResults(record.fontResults || []);
+    setFileStats(record.stats || []);
+    setIsValidated(true);
+    setActiveResultTab('summary');
+    setShowHistory(false);
+  };
+
+  const handleDeleteHistory = (id) => {
+    pptValidatorHistoryDB.deleteRecord(id).then(refreshHistory).catch(err => console.error('검증 이력 삭제 실패:', err));
   };
 
   // 사용자 정의 사전 파싱
@@ -717,8 +787,8 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
   // PPTX 검증 핵심 프로세스
   const handleValidate = async () => {
     if (pptFiles.length === 0) return;
-    if (!checkTypos && !checkNumbering && !checkAltText && !checkForbiddenWords && !checkEngKoMixed && !check_duplicate_words && !checkPageRange) {
-      alert('오탈자, 넘버링, 대체텍스트, 특정 단어, 영어/한글 혼용 단어, 동일 단어 중복, 페이지 범위 분석 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
+    if (!checkTypos && !checkNumbering && !checkAltText && !checkForbiddenWords && !checkEngKoMixed && !check_duplicate_words && !checkPageRange && !checkPII && !checkOverflow && !checkFontConsistency) {
+      alert('오탈자, 넘버링, 대체텍스트, 특정 단어, 영어/한글 혼용 단어, 동일 단어 중복, 페이지 범위, 개인정보 패턴, 텍스트 잘림, 폰트 통일성 분석 중 최소 하나 이상의 검증 옵션을 선택해야 합니다.');
       return;
     }
     setIsProcessing(true);
@@ -731,6 +801,9 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
     const all_duplicates = [];
     const allPageRanges = [];
     const allMacImageErrors = [];
+    const allPii = [];
+    const allOverflows = [];
+    const allFontIssues = [];
     const stats = [];
     const userDict = parseUserDictionary();
     const mergedDict = generate_conjugation_rules({ ...TYPO_DICTIONARY, ...userDict });
@@ -744,6 +817,10 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
         let fileEngKoMixedCount = 0;
         let file_duplicate_count = 0;
         let fileMacImageCount = 0;
+        let filePiiCount = 0;
+        let fileOverflowCount = 0;
+        let fileFontIssueCount = 0;
+        const fileFontUsages = []; // 폰트 통일성 검사용: 이 파일에서 발견된 {slideNum, shapeName, typeface, text} 누적
 
         const slides_text_map = {};
 
@@ -825,6 +902,29 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                         });
                         fileForbiddenCount++;
                       }
+                    }
+                  });
+                }
+
+                // 2-1) 개인정보/민감정보 패턴 검출
+                if (checkPII) {
+                  find_pii_matches(text).forEach(({ key, matched, guide }) => {
+                    const exists = allPii.some(e =>
+                      e.fileName === file.name &&
+                      e.slideNum === pNum &&
+                      e.sentence === text &&
+                      e.matched === matched
+                    );
+                    if (!exists) {
+                      allPii.push({
+                        fileName: file.name,
+                        slideNum: pNum,
+                        sentence: text,
+                        type: key,
+                        matched,
+                        guide
+                      });
+                      filePiiCount++;
                     }
                   });
                 }
@@ -1062,7 +1162,30 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                       }
                     });
                   }
-                  
+
+                  // 2-1) 개인정보/민감정보 패턴 검출
+                  if (checkPII) {
+                    find_pii_matches(paragraph_text).forEach(({ key, matched, guide }) => {
+                      const exists = allPii.some(e =>
+                        e.fileName === file.name &&
+                        e.slideNum === slideNum &&
+                        e.sentence === paragraph_text &&
+                        e.matched === matched
+                      );
+                      if (!exists) {
+                        allPii.push({
+                          fileName: file.name,
+                          slideNum,
+                          sentence: paragraph_text,
+                          type: key,
+                          matched,
+                          guide
+                        });
+                        filePiiCount++;
+                      }
+                    });
+                  }
+
                   // 3) 영어/한글 혼용 단어 검증
                   if (checkEngKoMixed) {
                     const words = paragraph_text.split(/\s+/);
@@ -1247,6 +1370,60 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                   slides_text_map[slideNum] = [];
                 }
                 slides_text_map[slideNum].push(textContent);
+
+                // 3-0-1. 텍스트 잘림(자동 축소) 위험 진단: PowerPoint가 도형에 텍스트가
+                // 넘칠 때 자동으로 기록하는 a:normAutofit의 fontScale 값을 감지
+                if (checkOverflow) {
+                  const bodyPrNodes = node.getElementsByTagName('a:bodyPr');
+                  const bodyPr = bodyPrNodes.length > 0 ? bodyPrNodes[0] : null;
+                  if (bodyPr) {
+                    const autofitNodes = bodyPr.getElementsByTagName('a:normAutofit');
+                    if (autofitNodes.length > 0) {
+                      const fontScaleAttr = autofitNodes[0].getAttribute('fontScale');
+                      if (fontScaleAttr) {
+                        const fontScalePct = Math.round(parseInt(fontScaleAttr, 10) / 1000);
+                        if (fontScalePct > 0 && fontScalePct < 100) {
+                          const exists = allOverflows.some(e =>
+                            e.fileName === file.name &&
+                            e.slideNum === slideNum &&
+                            e.shapeName === shapeName
+                          );
+                          if (!exists) {
+                            allOverflows.push({
+                              fileName: file.name,
+                              slideNum,
+                              shapeName: shapeName || '(이름 없음)',
+                              text: textContent.slice(0, 60),
+                              fontScalePct,
+                              guide: `PowerPoint가 이 도형의 글자 크기를 원래의 ${fontScalePct}%로 자동 축소했습니다. 텍스트가 도형 크기에 비해 많아 잘림/축소가 발생했을 가능성이 있습니다.`
+                            });
+                            fileOverflowCount++;
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+
+                // 3-0-2. 폰트 통일성 검사용 사용 폰트 수집 (문서 전체 분석 후 소수 폰트 판별)
+                if (checkFontConsistency) {
+                  const fontTypefaces = new Set();
+                  const eaNodes = node.getElementsByTagName('a:ea');
+                  for (let fi = 0; fi < eaNodes.length; fi++) {
+                    const tf = eaNodes[fi].getAttribute('typeface');
+                    if (tf && !tf.startsWith('+')) fontTypefaces.add(tf);
+                  }
+                  if (fontTypefaces.size === 0) {
+                    const latinNodes = node.getElementsByTagName('a:latin');
+                    for (let fi = 0; fi < latinNodes.length; fi++) {
+                      const tf = latinNodes[fi].getAttribute('typeface');
+                      if (tf && !tf.startsWith('+')) fontTypefaces.add(tf);
+                    }
+                  }
+                  fontTypefaces.forEach(typeface => {
+                    fileFontUsages.push({ slideNum, shapeName: shapeName || '(이름 없음)', typeface, text: textContent.slice(0, 40) });
+                  });
+                }
               }
             }
           }
@@ -1355,6 +1532,31 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                     });
                     fileForbiddenCount++;
                   }
+                }
+              });
+            });
+          }
+
+          // 3-3-1. 개인정보/민감정보 패턴 검출
+          if (checkPII) {
+            shapes.forEach(shape => {
+              find_pii_matches(shape.text).forEach(({ key, matched, guide }) => {
+                const exists = allPii.some(e =>
+                  e.fileName === file.name &&
+                  e.slideNum === slideNum &&
+                  e.sentence === shape.text &&
+                  e.matched === matched
+                );
+                if (!exists) {
+                  allPii.push({
+                    fileName: file.name,
+                    slideNum,
+                    sentence: shape.text,
+                    type: key,
+                    matched,
+                    guide
+                  });
+                  filePiiCount++;
                 }
               });
             });
@@ -1600,6 +1802,41 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                 detectedPages.push(parseInt(pageMatch[1], 10));
               }
             }
+          }
+        }
+
+        // 6. 폰트 통일성 분석: 파일 전체에서 사용된 폰트를 집계해, 다수 폰트(표준 폰트)와
+        // 다른 소수 폰트가 사용된 위치를 결과로 등록한다.
+        if (checkFontConsistency && fileFontUsages.length > 0) {
+          const fontCounts = {};
+          fileFontUsages.forEach(({ typeface }) => {
+            fontCounts[typeface] = (fontCounts[typeface] || 0) + 1;
+          });
+          const sortedFonts = Object.entries(fontCounts).sort((a, b) => b[1] - a[1]);
+          if (sortedFonts.length > 1) {
+            const dominantFont = sortedFonts[0][0];
+            fileFontUsages.forEach(({ slideNum, shapeName, typeface, text }) => {
+              if (typeface !== dominantFont) {
+                const exists = allFontIssues.some(e =>
+                  e.fileName === file.name &&
+                  e.slideNum === slideNum &&
+                  e.shapeName === shapeName &&
+                  e.typeface === typeface
+                );
+                if (!exists) {
+                  allFontIssues.push({
+                    fileName: file.name,
+                    slideNum,
+                    shapeName,
+                    typeface,
+                    dominantFont,
+                    text,
+                    guide: `이 문서에서 가장 많이 사용된 폰트는 "${dominantFont}"인데, 이 위치는 "${typeface}" 폰트를 사용하고 있습니다. 의도된 강조가 아니라면 폰트를 통일해 주세요.`
+                  });
+                  fileFontIssueCount++;
+                }
+              }
+            });
           }
         }
 
@@ -2005,6 +2242,9 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
           engKoMixedErrors: fileEngKoMixedCount,
           duplicateErrors: file_duplicate_count,
           macImageErrors: fileMacImageCount,
+          piiErrors: filePiiCount,
+          overflowErrors: fileOverflowCount,
+          fontIssues: fileFontIssueCount,
           startPage: allPageRanges[allPageRanges.length - 1]?.startPage ?? 1,
           endPage: allPageRanges[allPageRanges.length - 1]?.endPage ?? 1,
           totalSlides: allPageRanges[allPageRanges.length - 1]?.totalSlides ?? 1,
@@ -2035,6 +2275,9 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
       const finalEngKoMixed = addDisplayPageNum(allEngKoMixed);
       const finalDuplicates = addDisplayPageNum(all_duplicates);
       const finalMacImages = addDisplayPageNum(allMacImageErrors);
+      const finalPii = addDisplayPageNum(allPii);
+      const finalOverflows = addDisplayPageNum(allOverflows);
+      const finalFontIssues = addDisplayPageNum(allFontIssues);
 
       setTypoResults(finalTypos);
       setNumberingResults(finalNumberings);
@@ -2044,9 +2287,28 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
       set_duplicate_results(finalDuplicates);
       setPageRangeResults(allPageRanges);
       setMacImageResults(finalMacImages);
+      setPiiResults(finalPii);
+      setOverflowResults(finalOverflows);
+      setFontResults(finalFontIssues);
       setFileStats(stats);
       setIsValidated(true);
       setActiveResultTab('summary');
+
+      persistValidationToHistory({
+        fileNames: pptFiles.map(f => f.name),
+        stats,
+        typoResults: finalTypos,
+        numberingResults: finalNumberings,
+        altTextResults: finalAltTexts,
+        forbiddenResults: finalForbiddens,
+        engKoMixedResults: finalEngKoMixed,
+        duplicateResults: finalDuplicates,
+        pageRangeResults: allPageRanges,
+        macImageResults: finalMacImages,
+        piiResults: finalPii,
+        overflowResults: finalOverflows,
+        fontResults: finalFontIssues
+      });
     } catch (err) {
       console.error('검증 중 오류 발생:', err);
       alert(`검증 오류 발생: ${err.message}`);
@@ -2065,7 +2327,10 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
       engKoMixedResults.length === 0 &&
       duplicate_results.length === 0 &&
       pageRangeResults.length === 0 &&
-      macImageResults.length === 0
+      macImageResults.length === 0 &&
+      piiResults.length === 0 &&
+      overflowResults.length === 0 &&
+      fontResults.length === 0
     ) {
       alert('출력할 검증 결과 데이터가 존재하지 않습니다.');
       return;
@@ -2212,6 +2477,55 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
       XLSX.utils.book_append_sheet(workbook, macImageSheet, '맥이미지_누락결과');
     }
 
+    // 9. 개인정보/민감정보 패턴 시트 데이터 구성
+    if (checkPII) {
+      const piiRows = piiResults.map((p, idx) => ({
+        '순번': idx + 1,
+        '대상 파일명': p.fileName,
+        '페이지수': `${p.slideNum} 페이지`,
+        '표시 페이지수': `${getSafeDisplayPage(p)} 페이지`,
+        '유형': p.type,
+        '검출된 패턴': p.matched,
+        '가이드': p.guide,
+        '검출 문장(전체)': p.sentence
+      }));
+      const piiSheet = XLSX.utils.json_to_sheet(piiRows);
+      XLSX.utils.book_append_sheet(workbook, piiSheet, '개인정보_검출결과');
+    }
+
+    // 10. 텍스트 잘림(자동 축소) 시트 데이터 구성
+    if (checkOverflow) {
+      const overflowRows = overflowResults.map((o, idx) => ({
+        '순번': idx + 1,
+        '대상 파일명': o.fileName,
+        '페이지수': `${o.slideNum} 페이지`,
+        '표시 페이지수': `${getSafeDisplayPage(o)} 페이지`,
+        '도형명': o.shapeName,
+        '자동축소 비율(%)': o.fontScalePct,
+        '텍스트 일부': o.text,
+        '가이드': o.guide
+      }));
+      const overflowSheet = XLSX.utils.json_to_sheet(overflowRows);
+      XLSX.utils.book_append_sheet(workbook, overflowSheet, '텍스트잘림_진단결과');
+    }
+
+    // 11. 폰트 통일성 시트 데이터 구성
+    if (checkFontConsistency) {
+      const fontRows = fontResults.map((f, idx) => ({
+        '순번': idx + 1,
+        '대상 파일명': f.fileName,
+        '페이지수': `${f.slideNum} 페이지`,
+        '표시 페이지수': `${getSafeDisplayPage(f)} 페이지`,
+        '도형명': f.shapeName,
+        '표준 폰트': f.dominantFont,
+        '사용된 폰트': f.typeface,
+        '텍스트 일부': f.text,
+        '가이드': f.guide
+      }));
+      const fontSheet = XLSX.utils.json_to_sheet(fontRows);
+      XLSX.utils.book_append_sheet(workbook, fontSheet, '폰트통일성_점검결과');
+    }
+
     // 엑셀 파일 다운로드 실행
     const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
     XLSX.writeFile(workbook, `PPT_산출물_검증결과_${dateStr}.xlsx`);
@@ -2232,7 +2546,13 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
-          <button 
+          <button
+            onClick={() => setShowHistory(v => !v)}
+            style={{ padding: '10px 16px', background: showHistory ? 'rgba(225, 29, 72, 0.18)' : 'rgba(255,255,255,0.05)', color: showHistory ? '#fb7185' : 'var(--text-primary)', border: '1px solid var(--panel-border)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}
+          >
+            <History size={15} /> 검증 이력{historyList.length > 0 ? ` (${historyList.length})` : ''}
+          </button>
+          <button
             onClick={clearAllFiles}
             disabled={pptFiles.length === 0}
             style={{ padding: '10px 16px', background: 'rgba(255,255,255,0.05)', color: pptFiles.length > 0 ? 'var(--text-primary)' : 'var(--text-muted)', border: '1px solid var(--panel-border)', borderRadius: '8px', cursor: pptFiles.length > 0 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}
@@ -2241,6 +2561,78 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
           </button>
         </div>
       </div>
+
+      {/* 검증 이력 패널 */}
+      {showHistory && (
+        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', borderRadius: '16px', padding: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <History size={20} color="#e11d48" /> 검증 이력 (최근 {historyList.length}건, 세션 간 유지)
+            </h3>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {historyList.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (window.confirm('저장된 검증 이력을 모두 삭제하시겠습니까?')) {
+                      pptValidatorHistoryDB.clearAll().then(refreshHistory);
+                    }
+                  }}
+                  style={{ padding: '6px 12px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                >
+                  전체 삭제
+                </button>
+              )}
+              <button
+                onClick={() => setShowHistory(false)}
+                style={{ padding: '6px', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+          {historyList.length === 0 ? (
+            <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+              저장된 검증 이력이 없습니다. 검증을 실행하면 자동으로 이력이 저장됩니다.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '320px', overflowY: 'auto' }}>
+              {historyList.map((record) => {
+                const totalIssues = (record.typoResults?.length || 0) + (record.numberingResults?.length || 0) +
+                  (record.altTextResults?.length || 0) + (record.forbiddenResults?.length || 0) +
+                  (record.engKoMixedResults?.length || 0) + (record.duplicateResults?.length || 0) +
+                  (record.macImageResults?.length || 0) + (record.piiResults?.length || 0) +
+                  (record.overflowResults?.length || 0) + (record.fontResults?.length || 0);
+                return (
+                  <div key={record.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
+                      <span style={{ fontSize: '13.5px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={(record.fileNames || []).join(', ')}>
+                        {(record.fileNames || []).join(', ') || '(파일명 없음)'}
+                      </span>
+                      <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                        {new Date(record.createdAt).toLocaleString('ko-KR')} · 총 {totalIssues}건 검출
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                      <button
+                        onClick={() => handleLoadHistory(record)}
+                        style={{ padding: '6px 12px', background: 'rgba(225, 29, 72, 0.12)', color: '#fb7185', border: '1px solid rgba(225, 29, 72, 0.3)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}
+                      >
+                        불러오기
+                      </button>
+                      <button
+                        onClick={() => handleDeleteHistory(record.id)}
+                        style={{ padding: '6px', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 메인 콘텐츠 영역 (2열 레이아웃) */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
@@ -2775,6 +3167,96 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>맥 OS 파워포인트 저장 시 발생하는 일부 이미지(Media) 리소스 누락/깨짐 여부 검출</span>
                 </div>
               </div>
+
+              {/* 9. 개인정보/민감정보 패턴 검출 */}
+              <div
+                onClick={() => setCheckPII(prev => !prev)}
+                style={{
+                  background: checkPII ? 'rgba(244, 63, 94, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                  border: checkPII ? '1px solid rgba(244, 63, 94, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checkPII}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setCheckPII(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#f43f5e' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>개인정보/민감정보 패턴 검출</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>주민등록번호, 전화번호, 이메일 주소 등 문서에 남아있으면 안 되는 패턴 검출</span>
+                </div>
+              </div>
+
+              {/* 10. 텍스트 잘림(자동 축소) 위험 진단 - PPTX 전용 */}
+              <div
+                onClick={() => setCheckOverflow(prev => !prev)}
+                style={{
+                  background: checkOverflow ? 'rgba(249, 115, 22, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                  border: checkOverflow ? '1px solid rgba(249, 115, 22, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checkOverflow}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setCheckOverflow(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#f97316' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>텍스트 잘림(자동 축소) 위험 진단 <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(PPTX 전용)</span></span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>PowerPoint가 텍스트 초과로 도형 글자를 자동 축소한 위치를 검출 (텍스트 잘림 위험 신호)</span>
+                </div>
+              </div>
+
+              {/* 11. 폰트 통일성 검사 - PPTX 전용 */}
+              <div
+                onClick={() => setCheckFontConsistency(prev => !prev)}
+                style={{
+                  background: checkFontConsistency ? 'rgba(168, 85, 247, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                  border: checkFontConsistency ? '1px solid rgba(168, 85, 247, 0.4)' : '1px solid var(--panel-border)',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checkFontConsistency}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setCheckFontConsistency(e.target.checked);
+                  }}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#a855f7' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>폰트 통일성 검사 <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(PPTX 전용)</span></span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>문서 내 가장 많이 쓰인 폰트(표준 폰트)와 다른 폰트가 사용된 위치를 검출</span>
+                </div>
+              </div>
             </div>
 
             <button
@@ -3213,6 +3695,18 @@ TBD
               <span style={{ fontSize: '13px', color: checkMacImages ? '#34d399' : 'var(--text-muted)', fontWeight: 600 }}>맥 이미지 누락 건수</span>
               <span style={{ fontSize: '24px', fontWeight: 900, color: checkMacImages ? '#10b981' : 'var(--text-muted)' }}>{checkMacImages ? `${macImageResults.length}건` : '비활성'}</span>
             </div>
+            <div style={{ background: checkPII ? 'rgba(244, 63, 94, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkPII ? '1px solid rgba(244, 63, 94, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: checkPII ? '#fb7185' : 'var(--text-muted)', fontWeight: 600 }}>개인정보 패턴 검출 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: checkPII ? '#f43f5e' : 'var(--text-muted)' }}>{checkPII ? `${piiResults.length}건` : '비활성'}</span>
+            </div>
+            <div style={{ background: checkOverflow ? 'rgba(249, 115, 22, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkOverflow ? '1px solid rgba(249, 115, 22, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: checkOverflow ? '#fb923c' : 'var(--text-muted)', fontWeight: 600 }}>텍스트 잘림 위험 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: checkOverflow ? '#f97316' : 'var(--text-muted)' }}>{checkOverflow ? `${overflowResults.length}건` : '비활성'}</span>
+            </div>
+            <div style={{ background: checkFontConsistency ? 'rgba(168, 85, 247, 0.05)' : 'rgba(255, 255, 255, 0.01)', border: checkFontConsistency ? '1px solid rgba(168, 85, 247, 0.15)' : '1px solid var(--panel-border)', padding: '16px 20px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', color: checkFontConsistency ? '#c084fc' : 'var(--text-muted)', fontWeight: 600 }}>폰트 불일치 건수</span>
+              <span style={{ fontSize: '24px', fontWeight: 900, color: checkFontConsistency ? '#a855f7' : 'var(--text-muted)' }}>{checkFontConsistency ? `${fontResults.length}건` : '비활성'}</span>
+            </div>
           </div>
 
           {/* 결과 상세 확인 테이블 탭 */}
@@ -3393,6 +3887,66 @@ TBD
                   🖼️ 맥 이미지 누락 ({macImageResults.length})
                 </button>
               )}
+              {checkPII && (
+                <button
+                  onClick={() => setActiveResultTab('pii')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'pii' ? 'rgba(244, 63, 94, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'pii' ? '#f43f5e' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  🔒 개인정보 패턴 ({piiResults.length})
+                </button>
+              )}
+              {checkOverflow && (
+                <button
+                  onClick={() => setActiveResultTab('overflow')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'overflow' ? 'rgba(249, 115, 22, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'overflow' ? '#f97316' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  ✂️ 텍스트 잘림 위험 ({overflowResults.length})
+                </button>
+              )}
+              {checkFontConsistency && (
+                <button
+                  onClick={() => setActiveResultTab('font')}
+                  style={{
+                    padding: '8px 16px',
+                    background: activeResultTab === 'font' ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: activeResultTab === 'font' ? '#a855f7' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  🔤 폰트 불일치 ({fontResults.length})
+                </button>
+              )}
             </div>
 
             {/* 탭 1: 파일별 점검 요약 */}
@@ -3409,6 +3963,9 @@ TBD
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>영한 혼용 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>중복 단어 검출</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '140px' }}>맥 이미지 누락</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>개인정보 패턴</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>텍스트 잘림 위험</th>
+                      <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>폰트 불일치</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>시작페이지</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>최종 페이지</th>
                       <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>총 페이지수</th>
@@ -3424,7 +3981,10 @@ TBD
                         (checkForbiddenWords ? stat.forbiddenErrors : 0) +
                         (checkEngKoMixed ? stat.engKoMixedErrors : 0) +
                         (check_duplicate_words ? stat.duplicateErrors : 0) +
-                        (checkMacImages ? stat.macImageErrors : 0);
+                        (checkMacImages ? stat.macImageErrors : 0) +
+                        (checkPII ? stat.piiErrors : 0) +
+                        (checkOverflow ? stat.overflowErrors : 0) +
+                        (checkFontConsistency ? stat.fontIssues : 0);
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }}>
                           <td style={{ padding: '14px 8px', fontWeight: 600 }}>
@@ -3468,6 +4028,15 @@ TBD
                           </td>
                           <td style={{ padding: '14px 8px', color: !checkMacImages ? 'var(--text-muted)' : stat.macImageErrors > 0 ? '#10b981' : 'var(--text-muted)', fontWeight: 700 }}>
                             {checkMacImages ? (stat.macImageErrors > 0 ? `${stat.macImageErrors}건` : '없음') : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !checkPII ? 'var(--text-muted)' : stat.piiErrors > 0 ? '#f43f5e' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {checkPII ? (stat.piiErrors > 0 ? `${stat.piiErrors}건` : '없음') : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !checkOverflow ? 'var(--text-muted)' : stat.overflowErrors > 0 ? '#f97316' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {checkOverflow ? (stat.overflowErrors > 0 ? `${stat.overflowErrors}건` : '없음') : '비활성'}
+                          </td>
+                          <td style={{ padding: '14px 8px', color: !checkFontConsistency ? 'var(--text-muted)' : stat.fontIssues > 0 ? '#a855f7' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {checkFontConsistency ? (stat.fontIssues > 0 ? `${stat.fontIssues}건` : '없음') : '비활성'}
                           </td>
                           <td style={{ padding: '14px 8px', color: !checkPageRange ? 'var(--text-muted)' : 'var(--text-secondary)', fontWeight: 600 }}>
                             {checkPageRange ? `${stat.startPage}p` : '비활성'}
@@ -3948,6 +4517,158 @@ TBD
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                               {m.desc}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeResultTab === 'pii' && (
+              <div style={{ marginTop: '16px' }}>
+                {piiResults.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 개인정보/민감정보로 의심되는 패턴이 검출되지 않았습니다!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>슬라이드(물리)</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>표시 페이지</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '110px' }}>유형</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>검출된 패턴</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>검출 문장</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {piiResults.map((p, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={p.fileName}>
+                              {p.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {p.slideNum} 순서
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-primary)', fontWeight: 700 }}>
+                              {p.displayPageNum} 페이지
+                            </td>
+                            <td style={{ padding: '12px 8px' }}>
+                              <span style={{ background: 'rgba(244, 63, 94, 0.15)', color: '#fb7185', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700 }}>{p.type}</span>
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#f43f5e', fontWeight: 700, fontFamily: 'monospace' }}>
+                              {p.matched}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineBreak: 'anywhere' }}>
+                              {p.sentence}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeResultTab === 'overflow' && (
+              <div style={{ marginTop: '16px' }}>
+                {overflowResults.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 텍스트 잘림(자동 축소) 위험이 검출되지 않았습니다!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>슬라이드(물리)</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>표시 페이지</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>도형명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '100px' }}>자동축소 비율</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>텍스트 일부 / 설명</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overflowResults.map((o, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={o.fileName}>
+                              {o.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {o.slideNum} 순서
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-primary)', fontWeight: 700 }}>
+                              {o.displayPageNum} 페이지
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)' }}>
+                              {o.shapeName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#f97316', fontWeight: 700 }}>
+                              {o.fontScalePct}%
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                              "{o.text}"<br />
+                              <span style={{ fontSize: '11.5px' }}>{o.guide}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeResultTab === 'font' && (
+              <div style={{ marginTop: '16px' }}>
+                {fontResults.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                    🎉 폰트 불일치가 검출되지 않았습니다!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '180px' }}>파일명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>슬라이드(물리)</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '90px' }}>표시 페이지</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>도형명</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>표준 폰트</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '130px' }}>사용된 폰트</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>텍스트 일부</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fontResults.map((f, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--panel-border)' }} className="table-row-hover">
+                            <td style={{ padding: '12px 8px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={f.fileName}>
+                              {f.fileName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {f.slideNum} 순서
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-primary)', fontWeight: 700 }}>
+                              {f.displayPageNum} 페이지
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)' }}>
+                              {f.shapeName}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--success-color)', fontWeight: 700 }}>
+                              {f.dominantFont}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: '#a855f7', fontWeight: 700 }}>
+                              {f.typeface}
+                            </td>
+                            <td style={{ padding: '12px 8px', color: 'var(--text-secondary)' }}>
+                              "{f.text}"
                             </td>
                           </tr>
                         ))}
