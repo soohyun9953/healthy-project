@@ -1972,9 +1972,18 @@ export async function processPptBatch(pptFile, options) {
                                             const rClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
                                             rClr.setAttribute('val', 'FFFFFF');
                                             rFill.appendChild(rClr);
-                                            
-                                            if (rPr.firstChild) rPr.insertBefore(rFill, rPr.firstChild);
-                                            else rPr.appendChild(rFill);
+
+                                            // 💡 [XSD 규격 순서 엄수] a:ln(옵션 D 윤곽선)이 이미 존재하면 반드시 그 뒤에
+                                            // fill을 삽입해야 합니다. ln보다 앞에 오면 OpenXML 복구 팝업이 발생합니다.
+                                            const existingLnForFill = Array.from(rPr.childNodes).find(node => node.nodeType === 1 && (node.localName === 'ln' || node.tagName.endsWith(':ln')));
+                                            if (existingLnForFill) {
+                                                if (existingLnForFill.nextSibling) rPr.insertBefore(rFill, existingLnForFill.nextSibling);
+                                                else rPr.appendChild(rFill);
+                                            } else if (rPr.firstChild) {
+                                                rPr.insertBefore(rFill, rPr.firstChild);
+                                            } else {
+                                                rPr.appendChild(rFill);
+                                            }
 
                                             // 💡 2. 첫 행 헤더 폰트에 사용자 지정 "KoPubDotum Bold" 명시적 폰트 노드 주입
                                             const fontName = 'KoPubDotum Bold';
@@ -2059,9 +2068,18 @@ export async function processPptBatch(pptFile, options) {
                                             const rClr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
                                             rClr.setAttribute('val', '000000');
                                             rFill.appendChild(rClr);
-                                            
-                                            if (rPr.firstChild) rPr.insertBefore(rFill, rPr.firstChild);
-                                            else rPr.appendChild(rFill);
+
+                                            // 💡 [XSD 규격 순서 엄수] a:ln(옵션 D 윤곽선)이 이미 존재하면 반드시 그 뒤에
+                                            // fill을 삽입해야 합니다. ln보다 앞에 오면 OpenXML 복구 팝업이 발생합니다.
+                                            const existingLnForFill = Array.from(rPr.childNodes).find(node => node.nodeType === 1 && (node.localName === 'ln' || node.tagName.endsWith(':ln')));
+                                            if (existingLnForFill) {
+                                                if (existingLnForFill.nextSibling) rPr.insertBefore(rFill, existingLnForFill.nextSibling);
+                                                else rPr.appendChild(rFill);
+                                            } else if (rPr.firstChild) {
+                                                rPr.insertBefore(rFill, rPr.firstChild);
+                                            } else {
+                                                rPr.appendChild(rFill);
+                                            }
 
                                             // 💡 2. 첫 열 폰트에 "KoPubDotum Bold" 명시적 폰트 노드 주입
                                             const fontName = 'KoPubDotum Bold';
