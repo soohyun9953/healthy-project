@@ -1,0 +1,856 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>바이오파운드리 통합플랫폼 — 프로토타입</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#f5f4ee;
+    --surface:#ffffff;
+    --surface-2:#ecebe2;
+    --ink:#171f1a;
+    --muted:#5c665f;
+    --border:#dcd8cb;
+    --accent:#0d8a78;
+    --accent-ink:#ffffff;
+    --accent-soft:#d9efea;
+    --foundry:#b8630f;
+    --foundry-soft:#f3e2cc;
+    --good:#2f8f46;
+    --good-soft:#dcefe0;
+    --warn:#b3820f;
+    --warn-soft:#f4ecd4;
+    --critical:#c0473d;
+    --critical-soft:#f6dfdc;
+    --info:#2f66c2;
+    --info-soft:#dce7f8;
+    --shadow: 0 1px 2px rgba(23,31,26,.04), 0 8px 24px -12px rgba(23,31,26,.18);
+    --focus: 0 0 0 3px rgba(13,138,120,.35);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0e1210;
+      --surface:#161c19;
+      --surface-2:#1e2521;
+      --ink:#eef2ee;
+      --muted:#9baaa2;
+      --border:#2a322c;
+      --accent:#49d6bd;
+      --accent-ink:#04211c;
+      --accent-soft:#173330;
+      --foundry:#e2954a;
+      --foundry-soft:#3a2a17;
+      --good:#59c47a;
+      --good-soft:#173323;
+      --warn:#e0b74a;
+      --warn-soft:#372c14;
+      --critical:#e8817a;
+      --critical-soft:#3a1e1c;
+      --info:#7ea6ea;
+      --info-soft:#182741;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+      --focus: 0 0 0 3px rgba(73,214,189,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e1210;
+    --surface:#161c19;
+    --surface-2:#1e2521;
+    --ink:#eef2ee;
+    --muted:#9baaa2;
+    --border:#2a322c;
+    --accent:#49d6bd;
+    --accent-ink:#04211c;
+    --accent-soft:#173330;
+    --foundry:#e2954a;
+    --foundry-soft:#3a2a17;
+    --good:#59c47a;
+    --good-soft:#173323;
+    --warn:#e0b74a;
+    --warn-soft:#372c14;
+    --critical:#e8817a;
+    --critical-soft:#3a1e1c;
+    --info:#7ea6ea;
+    --info-soft:#182741;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    --focus: 0 0 0 3px rgba(73,214,189,.4);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'IBM Plex Sans KR', 'Apple SD Gothic Neo', sans-serif;
+    font-size:14px; line-height:1.55;
+  }
+  ::selection{ background:var(--accent-soft); }
+  .mono{ font-family:'IBM Plex Mono','SFMono-Regular',monospace; font-variant-numeric:tabular-nums; }
+  h1,h2,h3,h4{ text-wrap:balance; margin:0; font-family:'IBM Plex Sans KR',sans-serif; }
+  a{ color:inherit; }
+  button{ font-family:inherit; }
+  :focus-visible{ outline:none; box-shadow:var(--focus); border-radius:6px; }
+
+  /* ---------- shell ---------- */
+  .shell{ display:flex; min-height:100vh; }
+
+  .sidebar{
+    width:250px; flex-shrink:0; background:var(--surface);
+    border-right:1px solid var(--border);
+    display:flex; flex-direction:column;
+    position:sticky; top:0; height:100vh; overflow-y:auto;
+  }
+  .brand{
+    padding:20px 18px 16px; display:flex; align-items:center; gap:10px;
+    border-bottom:1px solid var(--border);
+  }
+  .brand-mark{
+    width:34px; height:34px; border-radius:9px; flex-shrink:0;
+    background:linear-gradient(135deg, var(--accent), var(--foundry));
+    display:flex; align-items:center; justify-content:center;
+    color:var(--accent-ink); font-weight:700; font-size:14px;
+  }
+  .brand-text h1{ font-size:14.5px; font-weight:700; letter-spacing:-.01em; }
+  .brand-text span{ font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace; }
+
+  .nav{ padding:14px 10px; display:flex; flex-direction:column; gap:18px; flex:1; }
+  .nav-group-label{
+    font-size:10.5px; font-weight:600; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.08em; padding:0 10px; margin-bottom:6px; display:block;
+  }
+  .nav-group{ display:flex; flex-direction:column; gap:2px; }
+  .nav-item{
+    display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+    padding:8px 10px; border-radius:8px; border:none; background:none; cursor:pointer;
+    color:var(--muted); font-size:13px; font-weight:500;
+  }
+  .nav-item:hover{ background:var(--surface-2); color:var(--ink); }
+  .nav-item.active{ background:var(--accent-soft); color:var(--accent); font-weight:600; }
+  .nav-item .dot{
+    width:6px; height:6px; border-radius:50%; background:currentColor; opacity:.55; flex-shrink:0;
+  }
+  .nav-item.active .dot{ opacity:1; }
+
+  .sidebar-foot{
+    padding:14px 18px; border-top:1px solid var(--border);
+    font-size:11px; color:var(--muted); display:flex; flex-direction:column; gap:4px;
+  }
+
+  .main{ flex:1; min-width:0; }
+  .topbar{
+    position:sticky; top:0; z-index:5;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:14px 28px; background:color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter:blur(8px); border-bottom:1px solid var(--border);
+  }
+  .crumb{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); }
+  .crumb b{ color:var(--ink); font-weight:600; }
+  .topbar-right{ display:flex; align-items:center; gap:10px; }
+  .badge{
+    display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600;
+    padding:4px 9px; border-radius:999px; border:1px solid var(--border); color:var(--muted);
+  }
+  .badge.proto{ background:var(--foundry-soft); color:var(--foundry); border-color:transparent; }
+  .theme-toggle{
+    border:1px solid var(--border); background:var(--surface); color:var(--muted);
+    border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px;
+  }
+
+  .view{ padding:24px 28px 60px; max-width:1280px; }
+  .view-head{ margin-bottom:20px; }
+  .view-head h2{ font-size:20px; font-weight:700; letter-spacing:-.01em; }
+  .view-head p{ margin:5px 0 0; color:var(--muted); font-size:13px; max-width:64ch; }
+
+  /* ---------- primitives ---------- */
+  .grid{ display:grid; gap:14px; }
+  .grid-kpi{ grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); }
+  .grid-2{ grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); }
+  .grid-cards{ grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); }
+
+  .panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:18px; box-shadow:var(--shadow);
+  }
+  .panel-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:14px; }
+  .panel-head h3{ font-size:14px; font-weight:700; }
+  .panel-head .sub{ font-size:11.5px; color:var(--muted); }
+
+  .kpi{ padding:16px; }
+  .kpi .label{ font-size:11.5px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi .value{ font-size:26px; font-weight:700; margin-top:8px; font-family:'IBM Plex Mono',monospace; }
+  .kpi .delta{ font-size:12px; margin-top:6px; display:flex; align-items:center; gap:4px; }
+  .kpi .delta.up{ color:var(--good); }
+  .kpi .delta.down{ color:var(--critical); }
+  .kpi .delta.flat{ color:var(--muted); }
+
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  thead th{
+    text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--muted); font-weight:600; padding:0 10px 8px; border-bottom:1px solid var(--border);
+  }
+  tbody td{ padding:10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  tbody tr:last-child td{ border-bottom:none; }
+  .table-wrap{ overflow-x:auto; }
+
+  .pill{
+    display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:999px;
+    font-size:11px; font-weight:600; white-space:nowrap;
+  }
+  .pill.good{ background:var(--good-soft); color:var(--good); }
+  .pill.warn{ background:var(--warn-soft); color:var(--warn); }
+  .pill.critical{ background:var(--critical-soft); color:var(--critical); }
+  .pill.info{ background:var(--info-soft); color:var(--info); }
+  .pill.neutral{ background:var(--surface-2); color:var(--muted); }
+  .pill .dot{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+
+  .bar-track{ height:6px; border-radius:999px; background:var(--surface-2); overflow:hidden; min-width:80px; }
+  .bar-fill{ height:100%; border-radius:999px; background:var(--accent); }
+  .bar-fill.foundry{ background:var(--foundry); }
+  .bar-row{ display:flex; align-items:center; gap:8px; }
+  .bar-row .pct{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; width:34px; text-align:right; flex-shrink:0; }
+
+  .id-chip{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; background:var(--surface-2);
+    padding:2px 6px; border-radius:5px; color:var(--ink);
+  }
+
+  .kanban{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+  .kanban-col{ background:var(--surface-2); border-radius:12px; padding:10px; display:flex; flex-direction:column; gap:8px; min-width:0; }
+  .kanban-col h4{ font-size:11.5px; font-weight:700; padding:2px 4px 4px; display:flex; justify-content:space-between; align-items:center; }
+  .kanban-col h4 span{ font-family:'IBM Plex Mono',monospace; color:var(--muted); font-weight:500; }
+  .kanban-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:10px;
+    font-size:12px; display:flex; flex-direction:column; gap:6px; box-shadow:var(--shadow);
+  }
+  .kanban-card .k-title{ font-weight:600; }
+  .kanban-card .k-meta{ display:flex; justify-content:space-between; color:var(--muted); font-size:11px; }
+
+  .sparkline{ display:block; }
+  .device-card{ display:flex; flex-direction:column; gap:10px; }
+  .device-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+  .device-head .name{ font-weight:700; font-size:13.5px; }
+  .device-head .type{ font-size:11.5px; color:var(--muted); }
+  .device-metrics{ display:flex; gap:14px; }
+  .device-metrics div{ font-size:11px; color:var(--muted); }
+  .device-metrics b{ display:block; font-size:15px; color:var(--ink); font-family:'IBM Plex Mono',monospace; font-weight:600; }
+
+  .stack{ display:flex; flex-direction:column; gap:10px; }
+  .row-between{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
+
+  .avatar{
+    width:26px; height:26px; border-radius:50%; background:var(--accent-soft); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0;
+  }
+  .feed-item{ display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); }
+  .feed-item:last-child{ border-bottom:none; }
+  .feed-item .t{ font-size:10.5px; color:var(--muted); margin-top:2px; }
+
+  .btn{
+    border:1px solid var(--border); background:var(--surface); color:var(--ink);
+    padding:7px 13px; border-radius:8px; font-size:12.5px; font-weight:600; cursor:pointer;
+  }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+
+  .tag-list{ display:flex; flex-wrap:wrap; gap:6px; }
+  .tag{ font-size:11px; padding:3px 8px; border-radius:6px; background:var(--surface-2); color:var(--muted); }
+
+  .legend{ display:flex; gap:14px; flex-wrap:wrap; font-size:11.5px; color:var(--muted); }
+  .legend span{ display:inline-flex; align-items:center; gap:5px; }
+  .legend i{ width:8px; height:8px; border-radius:2px; display:inline-block; }
+
+  @media (max-width: 860px){
+    .shell{ flex-direction:column; }
+    .sidebar{ width:100%; height:auto; position:relative; }
+    .kanban{ grid-template-columns:1fr 1fr; }
+    .view{ padding:18px 16px 40px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">BF</div>
+      <div class="brand-text">
+        <h1>바이오파운드리<br>통합플랫폼</h1>
+        <span>PROTOTYPE&nbsp;v0.1</span>
+      </div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-foot">
+      <div>공공의료 ISP · ISMP 수립</div>
+      <div class="mono">To-Be 클릭 프로토타입</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb"><span>바이오파운드리 통합플랫폼</span><span>/</span><b id="crumbCurrent">대시보드</b></div>
+      <div class="topbar-right">
+        <span class="badge proto">● 목업 데이터 · 프로토타입</span>
+        <span class="badge">담당자 · 이연구 책임연구원</span>
+        <button class="theme-toggle" id="themeToggle" type="button" title="테마 전환">라이트/다크</button>
+      </div>
+    </div>
+    <div class="view" id="view"></div>
+  </div>
+</div>
+
+<script>
+/* ---------------- nav model ---------------- */
+const NAV = [
+  { group:'개요', items:[
+    { id:'dashboard', label:'대시보드' },
+  ]},
+  { group:'연구 운영', items:[
+    { id:'eln', label:'실험관리 · ELN' },
+    { id:'sop', label:'워크플로 · SOP' },
+    { id:'biobank', label:'바이오뱅크' },
+    { id:'equipment', label:'장비 · IoT 모니터링' },
+  ]},
+  { group:'자원 · 지능', items:[
+    { id:'inventory', label:'재고 · 자원관리' },
+    { id:'ai', label:'AI 분석 파이프라인' },
+  ]},
+  { group:'협업 · 전달', items:[
+    { id:'collab', label:'커뮤니케이션 · 협업' },
+    { id:'delivery', label:'결과 제공 · 전달' },
+    { id:'knowledge', label:'교육 · 지식관리' },
+  ]},
+  { group:'플랫폼', items:[
+    { id:'ops', label:'시스템 운영' },
+  ]},
+];
+const LABELS = Object.fromEntries(NAV.flatMap(g=>g.items).map(i=>[i.id,i.label]));
+
+function renderNav(active){
+  const el = document.getElementById('nav');
+  el.innerHTML = NAV.map(g => `
+    <div class="nav-group">
+      <span class="nav-group-label">${g.group}</span>
+      ${g.items.map(it => `
+        <button class="nav-item ${it.id===active?'active':''}" data-view="${it.id}">
+          <span class="dot"></span>${it.label}
+        </button>
+      `).join('')}
+    </div>
+  `).join('');
+  el.querySelectorAll('.nav-item').forEach(b=>{
+    b.addEventListener('click', ()=> go(b.dataset.view));
+  });
+}
+
+/* ---------------- small chart helpers ---------------- */
+function sparkline(values, {w=120,h=32,color='var(--accent)'}={}){
+  const max = Math.max(...values), min = Math.min(...values);
+  const span = (max-min) || 1;
+  const step = w/(values.length-1);
+  const pts = values.map((v,i)=> `${(i*step).toFixed(1)},${(h-((v-min)/span)*h).toFixed(1)}`).join(' ');
+  const last = pts.split(' ').pop().split(',');
+  return `<svg class="sparkline" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${last[0]}" cy="${last[1]}" r="2.6" fill="${color}"/>
+  </svg>`;
+}
+function bar(pct, cls=''){
+  return `<div class="bar-row"><div class="bar-track"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div><span class="pct mono">${pct}%</span></div>`;
+}
+function pill(text, tone='neutral'){ return `<span class="pill ${tone}"><span class="dot"></span>${text}</span>`; }
+
+/* ---------------- mock data (grounded in ISMP 데이터 주제영역 자료) ---------------- */
+const DATA = {
+  kpis: [
+    { label:'가동중 프로젝트', value:'18', delta:'+2 이번 주', tone:'up' },
+    { label:'금일 실험 등록(ELN)', value:'134', delta:'+11% 전일 대비', tone:'up' },
+    { label:'장비 평균 가동률', value:'81%', delta:'-3%p 전일 대비', tone:'down' },
+    { label:'재고 경고 항목', value:'6', delta:'2건 자동발주 완료', tone:'flat' },
+  ],
+  domains: [
+    { name:'실험/ELN', status:'good', desc:'134건 실행 · 지연 0건' },
+    { name:'워크플로/SOP', status:'warn', desc:'승인대기 SOP 3건' },
+    { name:'바이오 객체(바이오뱅크)', status:'good', desc:'입출고 22건 처리' },
+    { name:'장비/스테이션', status:'critical', desc:'시퀀서-02 점검 필요' },
+    { name:'자원/재고 운영', status:'warn', desc:'시약 6종 안전재고 이하' },
+    { name:'AI 분석', status:'good', desc:'파이프라인 4종 정상' },
+    { name:'커뮤니케이션/협업', status:'good', desc:'멘션 12건' },
+    { name:'결과제공/전달', status:'info', desc:'고객사 리포트 3건 발송 대기' },
+    { name:'교육/지식', status:'good', desc:'신규 SOP 교육 1건' },
+    { name:'시스템운영', status:'good', desc:'API p99 212ms' },
+  ],
+  feed: [
+    { who:'김서연', text:'프로젝트 <b>합성 오페론-14</b>의 시퀀싱 결과가 업로드되었습니다.', t:'6분 전' },
+    { who:'로봇-리퀴드핸들러A', text:'플레이트 배치 <span class="id-chip">PLT-2409-118</span> 이송 완료.', t:'19분 전' },
+    { who:'박도윤', text:'SOP-DNA-EXT-v3.2 개정본 승인 요청.', t:'41분 전' },
+    { who:'AI 이상탐지', text:'인큐베이터-03 온도 편차 감지, 자동 알림 발송.', t:'1시간 전' },
+  ],
+};
+
+const ELN = {
+  samples: [
+    { id:'BF-24091301', project:'합성 오페론-14', step:'형질전환 → 콜로니 선별', owner:'김서연', status:'진행중', updated:'10분 전' },
+    { id:'BF-24091287', project:'효소 변이체 스크리닝', step:'플레이트 리더 판독', owner:'박도윤', status:'QC 검토', updated:'32분 전' },
+    { id:'BF-24091254', project:'대사경로 최적화 v2', step:'배양 · OD600 측정', owner:'이하은', status:'대기', updated:'54분 전' },
+    { id:'BF-24091198', project:'합성 오페론-14', step:'시퀀싱 결과 분석', owner:'AI 파이프라인', status:'완료', updated:'2시간 전' },
+    { id:'BF-24091142', project:'바이오센서 시제품', step:'DNA 추출', owner:'최민준', status:'보류', updated:'3시간 전' },
+  ],
+  statusTone: { '진행중':'info', 'QC 검토':'warn', '대기':'neutral', '완료':'good', '보류':'critical' },
+};
+
+const SOP = {
+  list: [
+    { code:'SOP-DNA-EXT-v3.2', name:'DNA 추출 표준작업절차', status:'승인대기', owner:'박도윤', revised:'2026-09-10' },
+    { code:'SOP-TRANS-v2.0', name:'형질전환 표준작업절차', status:'승인완료', owner:'김서연', revised:'2026-08-22' },
+    { code:'SOP-SEQ-QC-v1.4', name:'시퀀싱 QC 절차', status:'승인완료', owner:'이하은', revised:'2026-07-30' },
+    { code:'SOP-BIOSAFETY-v4.1', name:'생물안전 취급 지침', status:'개정중', owner:'최민준', revised:'2026-09-05' },
+  ],
+  tone: { '승인완료':'good', '승인대기':'warn', '개정중':'info' },
+  board: {
+    '대기':[ {t:'대사경로 최적화 v2 — 배양', m:'이하은 · 4h'} ],
+    '진행중':[ {t:'합성 오페론-14 — 콜로니 선별', m:'김서연 · 진행 32%'}, {t:'바이오센서 — DNA 추출', m:'최민준 · 진행 60%'} ],
+    'QC 검토':[ {t:'효소 변이체 — 판독값 검증', m:'박도윤 · 대기 1건'} ],
+    '완료':[ {t:'합성 오페론-14 — 시퀀싱 분석', m:'AI 파이프라인'}, {t:'플라스미드 QC 배치 #118', m:'자동화'} ],
+  }
+};
+
+const BIOBANK = [
+  { id:'STR-0442', kind:'균주 (E. coli DH5α 유래)', loc:'LN2 Tank-3 / Rack A2', temp:'-196℃', qty:'12 vial', qc:'적합' },
+  { id:'PLM-1187', kind:'플라스미드 (pUC19 벡터)', loc:'초저온 냉동고-1 / Box 07', temp:'-80℃', qty:'34 tube', qc:'적합' },
+  { id:'CEL-0091', kind:'세포주 (CHO-K1)', loc:'액체질소 저장조-2', temp:'-196℃', qty:'8 vial', qc:'재검증 필요' },
+  { id:'ENZ-2201', kind:'정제 효소 배치', loc:'냉동고-4 / Shelf 2', temp:'-20℃', qty:'20 aliquot', qc:'적합' },
+];
+
+const EQUIPMENT = [
+  { name:'리퀴드 핸들러 A', type:'Hamilton STAR', status:'가동중', tone:'good', util:92, spark:[60,64,70,78,82,88,92], pm:'D-18' },
+  { name:'자동 인큐베이터-03', type:'CO₂ 배양기', status:'점검필요', tone:'critical', util:41, spark:[70,68,60,55,48,44,41], pm:'D-2' },
+  { name:'콜로니 피커', type:'QPix 420', status:'가동중', tone:'good', util:76, spark:[50,55,58,64,70,74,76], pm:'D-33' },
+  { name:'시퀀서-02', type:'Illumina NextSeq', status:'점검필요', tone:'critical', util:12, spark:[80,70,55,40,30,20,12], pm:'지연 4일' },
+  { name:'플레이트 리더', type:'Molecular Devices', status:'대기', tone:'neutral', util:58, spark:[40,45,50,52,55,57,58], pm:'D-40' },
+  { name:'원심분리기 B', type:'Beckman Avanti', status:'가동중', tone:'good', util:83, spark:[70,72,75,78,80,81,83], pm:'D-27' },
+];
+
+const INVENTORY = [
+  { name:'LB 배지 (분말)', cat:'배지/시약', stock:120, safety:150, unit:'g', status:'재발주' },
+  { name:'Taq 중합효소', cat:'효소', stock:8, safety:20, unit:'kit', status:'재발주' },
+  { name:'96-well 플레이트', cat:'플라스틱웨어', stock:640, safety:300, unit:'ea', status:'정상' },
+  { name:'항생제(Kanamycin)', cat:'배지/시약', stock:34, safety:40, unit:'vial', status:'재발주' },
+  { name:'피펫 팁 (200µl)', cat:'소모품', stock:2100, safety:1000, unit:'ea', status:'정상' },
+  { name:'DNA 정제 키트', cat:'시약키트', stock:14, safety:15, unit:'kit', status:'재발주' },
+];
+
+const AI = [
+  { name:'서열분석 QC 파이프라인', desc:'FASTQ 품질관리 및 변이 호출 자동화', acc:'98.4%', runs:412, status:'정상' },
+  { name:'콜로니 카운팅 비전모델', desc:'플레이트 이미지 기반 콜로니 자동 계수(CV)', acc:'96.1%', runs:187, status:'정상' },
+  { name:'장비 텔레메트리 이상탐지', desc:'인큐베이터/냉동고 센서 이상 패턴 탐지', acc:'94.7%', runs:1240, status:'경고 1건' },
+  { name:'실험노트 요약(LLM)', desc:'ELN 자유서술 기록 → 구조화 요약', acc:'—', runs:96, status:'정상' },
+];
+
+const DELIVERY = [
+  { client:'국립보건연구원', report:'2026년 3분기 합성생물학 분석 리포트', progress:80, due:'D-3' },
+  { client:'바이오벤처 A사', report:'대사경로 최적화 v2 최종 결과서', progress:45, due:'D-9' },
+  { client:'대학 공동연구단', report:'효소 변이체 스크리닝 데이터셋', progress:100, due:'발송완료' },
+  { client:'제약사 B사', report:'바이오센서 시제품 검증 보고서', progress:20, due:'D-15' },
+];
+
+const KNOWLEDGE = [
+  { title:'SOP 개정 안내 — DNA 추출 v3.2', tag:'공지', t:'오늘' },
+  { title:'ISA-Tab 메타데이터 작성 가이드', tag:'가이드', t:'2일 전' },
+  { title:'신규 연구원 온보딩 코스', tag:'교육', t:'진행률 62%' },
+  { title:'생물안전 정기교육(연 1회)', tag:'필수교육', t:'D-12' },
+];
+
+const OPS = {
+  services:[
+    { name:'PostgreSQL', role:'기준정보 · 재고 · 트랜잭션', status:'정상', latency:'8ms' },
+    { name:'MongoDB', role:'실험 워크플로 원시 데이터 레이크', status:'정상', latency:'14ms' },
+    { name:'InfluxDB', role:'장비 IoT 시계열 로그(38종)', status:'정상', latency:'6ms' },
+    { name:'Milvus', role:'RAG 벡터 유사도 검색', status:'점검중', latency:'—' },
+    { name:'Elasticsearch', role:'지식베이스 전문 검색', status:'정상', latency:'21ms' },
+  ],
+  users: [
+    { name:'김서연', role:'연구원', active:'현재 접속중' },
+    { name:'박도윤', role:'QA 담당', active:'12분 전' },
+    { name:'이하은', role:'연구원', active:'34분 전' },
+    { name:'관리자', role:'플랫폼 운영', active:'현재 접속중' },
+  ]
+};
+
+/* ---------------- view renderers ---------------- */
+function domainTone(s){ return {good:'good',warn:'warn',critical:'critical',info:'info'}[s] || 'neutral'; }
+
+function viewDashboard(){
+  return `
+  <div class="view-head">
+    <h2>대시보드</h2>
+    <p>바이오파운드리 통합플랫폼 전체 현황을 한눈에 확인합니다. 12개 데이터 주제영역의 운영 상태를 실시간으로 요약합니다.</p>
+  </div>
+  <div class="grid grid-kpi" style="margin-bottom:14px;">
+    ${DATA.kpis.map(k=>`
+      <div class="panel kpi">
+        <div class="label">${k.label}</div>
+        <div class="value">${k.value}</div>
+        <div class="delta ${k.tone}">${k.delta}</div>
+      </div>
+    `).join('')}
+  </div>
+  <div class="grid grid-2">
+    <div class="panel">
+      <div class="panel-head"><h3>주제영역별 운영 상태</h3><span class="sub">10개 모듈 · 실시간</span></div>
+      <div class="stack">
+        ${DATA.domains.map(d=>`
+          <div class="row-between">
+            <span>${d.name}</span>
+            <span style="display:flex;align-items:center;gap:10px;">
+              <span style="color:var(--muted);font-size:11.5px;">${d.desc}</span>
+              ${pill(({good:'정상',warn:'주의',critical:'경고',info:'안내'})[d.status], domainTone(d.status))}
+            </span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>최근 활동 피드</h3><span class="sub">협업 · 자동화 이벤트</span></div>
+      <div class="stack">
+        ${DATA.feed.map(f=>`
+          <div class="feed-item">
+            <div class="avatar">${f.who.slice(0,1)}</div>
+            <div>
+              <div style="font-size:12.5px;"><b>${f.who}</b> · ${f.text}</div>
+              <div class="t">${f.t}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function viewEln(){
+  return `
+  <div class="view-head">
+    <h2>실험관리 · ELN</h2>
+    <p>전자연구노트(Electronic Lab Notebook) 기반으로 샘플 단위 실험 진행 상태를 추적합니다.</p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h3>샘플 트래킹</h3><span class="sub">오늘 134건 중 최근 5건</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>샘플 ID</th><th>프로젝트</th><th>현재 단계</th><th>담당</th><th>상태</th><th>업데이트</th></tr></thead>
+        <tbody>
+          ${ELN.samples.map(s=>`
+            <tr>
+              <td><span class="id-chip">${s.id}</span></td>
+              <td>${s.project}</td>
+              <td>${s.step}</td>
+              <td>${s.owner}</td>
+              <td>${pill(s.status, ELN.statusTone[s.status])}</td>
+              <td style="color:var(--muted);">${s.updated}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function viewSop(){
+  return `
+  <div class="view-head">
+    <h2>워크플로 · SOP</h2>
+    <p>표준작업절차(SOP) 문서 버전관리와 실험 작업의 단계별 흐름을 관리합니다.</p>
+  </div>
+  <div class="grid grid-2" style="margin-bottom:14px;">
+    <div class="panel">
+      <div class="panel-head"><h3>SOP 문서 관리</h3><span class="sub">${SOP.list.length}건</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>코드</th><th>문서명</th><th>담당</th><th>최종개정</th><th>상태</th></tr></thead>
+          <tbody>
+            ${SOP.list.map(s=>`
+              <tr>
+                <td><span class="id-chip">${s.code}</span></td>
+                <td>${s.name}</td>
+                <td>${s.owner}</td>
+                <td style="color:var(--muted);">${s.revised}</td>
+                <td>${pill(s.status, SOP.tone[s.status])}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>승인 진행률</h3><span class="sub">이번 분기</span></div>
+      <div class="stack">
+        ${bar(75,'')}
+        <div style="color:var(--muted);font-size:12px;">4건 중 3건 승인 완료 · 1건 승인대기</div>
+        <div class="legend" style="margin-top:6px;">
+          <span><i style="background:var(--good)"></i>승인완료</span>
+          <span><i style="background:var(--warn)"></i>승인대기</span>
+          <span><i style="background:var(--info)"></i>개정중</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h3>실험 작업 보드</h3><span class="sub">단계별 진행 현황</span></div>
+    <div class="kanban">
+      ${Object.entries(SOP.board).map(([col,cards])=>`
+        <div class="kanban-col">
+          <h4>${col}<span>${cards.length}</span></h4>
+          ${cards.map(c=>`
+            <div class="kanban-card">
+              <div class="k-title">${c.t}</div>
+              <div class="k-meta"><span>${c.m}</span></div>
+            </div>
+          `).join('')}
+        </div>
+      `).join('')}
+    </div>
+  </div>`;
+}
+
+function viewBiobank(){
+  return `
+  <div class="view-head">
+    <h2>바이오뱅크</h2>
+    <p>균주 · 플라스미드 · 세포주 등 바이오 객체의 저장 위치와 품질관리(QC) 상태를 관리합니다.</p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h3>보관 인벤토리</h3><span class="sub">${BIOBANK.length}개 배치</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>객체 ID</th><th>종류</th><th>보관 위치</th><th>보관 온도</th><th>잔여 수량</th><th>QC 상태</th></tr></thead>
+        <tbody>
+          ${BIOBANK.map(b=>`
+            <tr>
+              <td><span class="id-chip">${b.id}</span></td>
+              <td>${b.kind}</td>
+              <td>${b.loc}</td>
+              <td class="mono">${b.temp}</td>
+              <td class="mono">${b.qty}</td>
+              <td>${pill(b.qc, b.qc==='적합'?'good':'warn')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function viewEquipment(){
+  return `
+  <div class="view-head">
+    <h2>장비 · IoT 모니터링</h2>
+    <p>실험 장비의 실시간 가동률과 예방정비(PM) 일정을 모니터링합니다. 온습도·상태값은 IoT 센서를 통해 시계열로 수집됩니다.</p>
+  </div>
+  <div class="grid grid-cards">
+    ${EQUIPMENT.map(e=>`
+      <div class="panel device-card">
+        <div class="device-head">
+          <div><div class="name">${e.name}</div><div class="type">${e.type}</div></div>
+          ${pill(e.status, e.tone)}
+        </div>
+        ${sparkline(e.spark, {color: e.tone==='critical' ? 'var(--critical)' : e.tone==='neutral' ? 'var(--muted)' : 'var(--accent)'})}
+        <div class="device-metrics">
+          <div>가동률<b>${e.util}%</b></div>
+          <div>다음 PM<b style="${e.pm.includes('지연')?'color:var(--critical)':''}">${e.pm}</b></div>
+        </div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function viewInventory(){
+  return `
+  <div class="view-head">
+    <h2>재고 · 자원관리</h2>
+    <p>시약, 소모품, 플라스틱웨어의 재고 수준을 안전재고 기준으로 추적하고 자동 발주를 트리거합니다.</p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h3>재고 현황</h3><span class="sub">안전재고 대비 잔여율</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>품목</th><th>분류</th><th>현재고</th><th>안전재고</th><th>잔여율</th><th>상태</th></tr></thead>
+        <tbody>
+          ${INVENTORY.map(i=>{
+            const pct = Math.min(Math.round(i.stock / i.safety * 100), 999);
+            return `
+            <tr>
+              <td>${i.name}</td>
+              <td style="color:var(--muted);">${i.cat}</td>
+              <td class="mono">${i.stock} ${i.unit}</td>
+              <td class="mono">${i.safety} ${i.unit}</td>
+              <td style="max-width:160px;">${bar(Math.min(pct,100), pct<100?'foundry':'')}</td>
+              <td>${pill(i.status, i.status==='재발주'?'warn':'good')}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function viewAi(){
+  return `
+  <div class="view-head">
+    <h2>AI 분석 파이프라인</h2>
+    <p>서열분석 QC, 비전 기반 콜로니 계수, 장비 이상탐지 등 실험 자동화를 가속하는 AI 모델 현황입니다.</p>
+  </div>
+  <div class="grid grid-cards">
+    ${AI.map(a=>`
+      <div class="panel">
+        <div class="row-between" style="margin-bottom:8px;">
+          <h3 style="font-size:13.5px;">${a.name}</h3>
+          ${pill(a.status, a.status==='정상'?'good':'warn')}
+        </div>
+        <p style="margin:0 0 12px;color:var(--muted);font-size:12px;">${a.desc}</p>
+        <div class="row-between" style="font-size:12px;">
+          <div>정확도<b class="mono" style="display:block;font-size:15px;">${a.acc}</b></div>
+          <div>누적 실행<b class="mono" style="display:block;font-size:15px;">${a.runs}</b></div>
+        </div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function viewCollab(){
+  return `
+  <div class="view-head">
+    <h2>커뮤니케이션 · 협업</h2>
+    <p>프로젝트 채널과 실험 관련 멘션, 팀 간 협업 활동을 한 곳에서 확인합니다.</p>
+  </div>
+  <div class="grid grid-2">
+    <div class="panel">
+      <div class="panel-head"><h3>프로젝트 채널</h3><span class="sub">4개 활성</span></div>
+      <div class="stack">
+        ${['합성 오페론-14','효소 변이체 스크리닝','대사경로 최적화 v2','바이오센서 시제품'].map((p,i)=>`
+          <div class="row-between">
+            <span>${p}</span>
+            <span class="tag-list"><span class="tag">멤버 ${5+i}</span><span class="tag">미확인 ${[3,0,7,1][i]}</span></span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>최근 멘션 · 알림</h3><span class="sub">12건</span></div>
+      <div class="stack">
+        ${DATA.feed.map(f=>`
+          <div class="feed-item"><div class="avatar">${f.who.slice(0,1)}</div>
+            <div><div style="font-size:12.5px;">${f.text}</div><div class="t">${f.who} · ${f.t}</div></div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function viewDelivery(){
+  return `
+  <div class="view-head">
+    <h2>결과 제공 · 전달</h2>
+    <p>고객사·연구기관에 전달할 분석 리포트의 준비 진행률과 마감 일정을 관리합니다.</p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h3>리포트 전달 현황</h3><span class="sub">${DELIVERY.length}건</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>수신 기관</th><th>리포트</th><th>준비 진행률</th><th>마감</th></tr></thead>
+        <tbody>
+          ${DELIVERY.map(d=>`
+            <tr>
+              <td>${d.client}</td>
+              <td>${d.report}</td>
+              <td style="max-width:180px;">${bar(d.progress)}</td>
+              <td>${d.due==='발송완료'?pill(d.due,'good'):`<span class="mono">${d.due}</span>`}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function viewKnowledge(){
+  return `
+  <div class="view-head">
+    <h2>교육 · 지식관리</h2>
+    <p>SOP·가이드 등 지식베이스 문서와 연구원 교육 이수 현황을 관리합니다.</p>
+  </div>
+  <div class="grid grid-cards">
+    ${KNOWLEDGE.map(k=>`
+      <div class="panel">
+        <span class="tag" style="margin-bottom:10px;display:inline-block;">${k.tag}</span>
+        <h3 style="font-size:13.5px;margin-bottom:6px;">${k.title}</h3>
+        <div style="color:var(--muted);font-size:12px;">${k.t}</div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function viewOps(){
+  return `
+  <div class="view-head">
+    <h2>시스템 운영</h2>
+    <p>폴리글랏 데이터베이스 아키텍처와 플랫폼 이용자 세션 현황을 모니터링합니다.</p>
+  </div>
+  <div class="grid grid-2">
+    <div class="panel">
+      <div class="panel-head"><h3>데이터 인프라 상태</h3><span class="sub">폴리글랏 DB 구성</span></div>
+      <div class="stack">
+        ${OPS.services.map(s=>`
+          <div class="row-between">
+            <div><b>${s.name}</b><div style="color:var(--muted);font-size:11.5px;">${s.role}</div></div>
+            <div style="text-align:right;">
+              ${pill(s.status, s.status==='정상'?'good':'warn')}
+              <div class="mono" style="font-size:11px;color:var(--muted);margin-top:4px;">${s.latency}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>접속 사용자</h3><span class="sub">${OPS.users.length}명</span></div>
+      <div class="stack">
+        ${OPS.users.map(u=>`
+          <div class="row-between">
+            <span style="display:flex;align-items:center;gap:8px;"><span class="avatar">${u.name.slice(0,1)}</span>${u.name} <span style="color:var(--muted);font-size:11.5px;">· ${u.role}</span></span>
+            <span style="color:var(--muted);font-size:11.5px;">${u.active}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+const VIEWS = {
+  dashboard:viewDashboard, eln:viewEln, sop:viewSop, biobank:viewBiobank,
+  equipment:viewEquipment, inventory:viewInventory, ai:viewAi,
+  collab:viewCollab, delivery:viewDelivery, knowledge:viewKnowledge, ops:viewOps,
+};
+
+function go(id){
+  document.getElementById('view').innerHTML = VIEWS[id]();
+  document.getElementById('crumbCurrent').textContent = LABELS[id];
+  renderNav(id);
+  window.scrollTo({top:0, behavior:'instant'});
+}
+
+/* ---------------- theme toggle ---------------- */
+(function(){
+  const root = document.documentElement;
+  const saved = (() => { try { return localStorage.getItem('bf_theme'); } catch(e){ return null; } })();
+  if(saved==='light' || saved==='dark') root.setAttribute('data-theme', saved);
+  document.getElementById('themeToggle').addEventListener('click', ()=>{
+    const cur = root.getAttribute('data-theme');
+    const next = cur==='dark' ? 'light' : (cur==='light' ? null : (matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark'));
+    if(next){ root.setAttribute('data-theme', next); } else { root.removeAttribute('data-theme'); }
+    try { localStorage.setItem('bf_theme', next || ''); } catch(e){}
+  });
+})();
+
+go('dashboard');
+</script>
+</body>
+</html>
