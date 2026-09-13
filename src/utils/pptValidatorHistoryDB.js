@@ -40,6 +40,7 @@ class PptValidatorHistoryDB {
             piiResults: Array.isArray(result.piiResults) ? result.piiResults : [],
             overflowResults: Array.isArray(result.overflowResults) ? result.overflowResults : [],
             fontResults: Array.isArray(result.fontResults) ? result.fontResults : [],
+            parenResults: Array.isArray(result.parenResults) ? result.parenResults : [],
             createdAt: Date.now()
         };
 
