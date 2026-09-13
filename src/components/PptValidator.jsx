@@ -254,17 +254,37 @@ const roman_to_int = (roman) => {
   return map[roman.toUpperCase()] || null;
 };
 
-// Gemini API를 직접 호출하여 문맥적인 오탈자 및 맞춤법을 진단받는 비동기 함수
-const call_gemini_ai_typos = async (file_name, slides_text_map, api_key, llmProvider = 'gemini', omniRouteModel = 'auto') => {
-  let key = '';
-  if (llmProvider === 'gemini') {
-    const keys = String(api_key).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
-    if (keys.length === 0) {
-      throw new Error('유효한 Gemini API 키가 없습니다. 설정 탭에서 API 키를 등록해 주세요.');
-    }
-    key = keys[0];
-  }
+// AI 맞춤법 검사 1회 호출당 허용하는 최대 문자 수. 이를 초과하는 대용량 문서는
+// 슬라이드 단위로 청크 분할해 순차 호출 후 결과를 병합한다 (긴 문서에서 뒷부분
+// 슬라이드가 토큰 한도 초과로 조용히 누락되는 것을 방지).
+const MAX_CHARS_PER_TYPO_CALL = 30000;
 
+// slides_text_map(슬라이드번호 -> 텍스트줄 배열)을 문자 수 기준으로 여러 청크로 분할.
+// 한 슬라이드 단위는 쪼개지 않고, 청크 누적 길이가 한도를 넘기 직전에 새 청크를 시작한다.
+const splitSlidesMapIntoChunks = (slides_text_map, maxChunkSize = MAX_CHARS_PER_TYPO_CALL) => {
+  const slideNums = Object.keys(slides_text_map);
+  const chunks = [];
+  let currentChunk = {};
+  let currentLength = 0;
+
+  slideNums.forEach(slide_num => {
+    const slideText = slides_text_map[slide_num].join('\n');
+    if (currentLength > 0 && currentLength + slideText.length > maxChunkSize) {
+      chunks.push(currentChunk);
+      currentChunk = {};
+      currentLength = 0;
+    }
+    currentChunk[slide_num] = slides_text_map[slide_num];
+    currentLength += slideText.length;
+  });
+  if (Object.keys(currentChunk).length > 0) {
+    chunks.push(currentChunk);
+  }
+  return chunks.length > 0 ? chunks : [slides_text_map];
+};
+
+// Gemini API를 직접 호출하여 문맥적인 오탈자 및 맞춤법을 진단받는 비동기 함수 (청크 1개분)
+const call_gemini_ai_typos_chunk = async (file_name, slides_text_map, key, llmProvider = 'gemini', omniRouteModel = 'auto') => {
   let document_content = '';
   Object.keys(slides_text_map).forEach(slide_num => {
     document_content += `[Slide ${slide_num}]\n${slides_text_map[slide_num].join('\n')}\n\n`;
@@ -328,8 +348,8 @@ ${document_content}`;
       body: JSON.stringify({
         model: omniRouteModel || 'auto',
         messages: [{ role: 'user', content: prompt }],
-        temperature: CALL_OPTIONS.temperature,
-        maxTokens: CALL_OPTIONS.maxTokens,
+        temperature: 0.1,
+        max_tokens: 8192,
         response_format: { type: 'json_object' }
       })
     });
@@ -360,7 +380,7 @@ ${document_content}`;
   }
   
   try {
-    const parsed = JSON.parse(text_response.trim()).map(item => ({
+    return JSON.parse(text_response.trim()).map(item => ({
       fileName: file_name,
       slideNum: parseInt(item.slideNum || '1', 10),
       sentence: item.originalText,
@@ -368,23 +388,37 @@ ${document_content}`;
       correction: item.correction,
       type: 'AI 맞춤법 (Gemini)',
       desc: item.desc,
-      isAi: true,
-      analysis: item.analysis || null // ensure analysis field
+      isAi: true
     }));
-    // Fill missing analysis via fallback if needed
-    const needsAnalysis = parsed.some(p => p.analysis === null);
-    if (needsAnalysis) {
-      const fallback = await llmAnalyzer(prompt, SYSTEM_PROMPT);
-      // merge analyses (fallback returns array with analysis field)
-      fallback.forEach((f, i) => {
-        if (parsed[i]) parsed[i].analysis = f.analysis || null;
-      });
-    }
-    return parsed;
   } catch (err) {
     console.error('Gemini JSON 파싱 오류:', err, text_response);
     return [];
   }
+};
+
+// Gemini API를 직접 호출하여 문맥적인 오탈자 및 맞춤법을 진단받는 비동기 함수 (대용량 문서 청크 분할 처리)
+const call_gemini_ai_typos = async (file_name, slides_text_map, api_key, llmProvider = 'gemini', omniRouteModel = 'auto') => {
+  let key = '';
+  if (llmProvider === 'gemini') {
+    const keys = String(api_key).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
+    if (keys.length === 0) {
+      throw new Error('유효한 Gemini API 키가 없습니다. 설정 탭에서 API 키를 등록해 주세요.');
+    }
+    key = keys[0];
+  }
+
+  const chunks = splitSlidesMapIntoChunks(slides_text_map);
+  if (chunks.length <= 1) {
+    return call_gemini_ai_typos_chunk(file_name, slides_text_map, key, llmProvider, omniRouteModel);
+  }
+
+  const allResults = [];
+  for (let i = 0; i < chunks.length; i++) {
+    if (i > 0) await new Promise(resolve => setTimeout(resolve, 1500));
+    const chunkResults = await call_gemini_ai_typos_chunk(file_name, chunks[i], key, llmProvider, omniRouteModel);
+    allResults.push(...chunkResults);
+  }
+  return allResults;
 };
 
 // 외부 전문 맞춤법 검사 API를 호출하는 비동기 함수 (선택 옵션)
@@ -438,7 +472,7 @@ const call_external_spell_check = async (file_name, slides_text_map, api_url) =>
   return results;
 };
 
-export default function PptValidator({ apiKey }) {
+export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto' }) {
   const [pptFiles, setPptFiles] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isValidated, setIsValidated] = useState(false);
