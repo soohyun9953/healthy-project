@@ -1888,8 +1888,10 @@ export async function processPptBatch(pptFile, options) {
                                         ln.setAttribute('w', '6350');
                                         ln.setAttribute('cmpd', 'sng');
                                         
-                                        // 기존 색상 노드(solidFill, sysClr, gradFill)만 삭제 후 새로 주입
-                                        const oldFills = Array.from(ln.childNodes).filter(node => node.nodeType === 1 && ['solidFill', 'sysClr', 'gradFill', 'pattFill'].includes(node.localName || node.tagName.split(':').pop()));
+                                        // 💡 [XSD 규격 순서 엄수] fill은 상호 배타적 선택 그룹(noFill|solidFill|gradFill|...)이므로,
+                                        // 기존에 noFill이 있었다면 반드시 함께 제거해야 합니다. 그렇지 않으면 noFill과 solidFill이
+                                        // 동시에 남아 OpenXML 복구 팝업이 발생합니다.
+                                        const oldFills = Array.from(ln.childNodes).filter(node => node.nodeType === 1 && ['noFill', 'solidFill', 'sysClr', 'gradFill', 'pattFill'].includes(node.localName || node.tagName.split(':').pop()));
                                         oldFills.forEach(f => ln.removeChild(f));
                                         
                                         const sf = xmlDoc.createElementNS(nsA, 'a:solidFill');
