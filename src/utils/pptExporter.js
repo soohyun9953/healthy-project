@@ -1850,8 +1850,26 @@ export async function processPptBatch(pptFile, options) {
                         if (useHeaderStyle) totalHeaderRowsApplied++;
                         
                         const tbl = tables[t];
+
+                        // 💡 [표 자체 스타일(tableStyleId) 무력화] 원본 PPT 템플릿의 표에 PowerPoint 내장
+                        // 표 스타일(첫 행 강조/줄무늬 밴드 등)이 걸려 있으면, 아래에서 셀마다 직접 지정하는
+                        // 테두리/배경색과 시각적으로 충돌하여 PowerPoint에서 우리가 지정한 색이 무시된
+                        // 것처럼 보일 수 있다. firstRow/bandRow 등 자동서식 플래그를 모두 끄고 표 스타일을
+                        // "스타일 없음, 표 눈금"으로 교체해, 셀 직접 지정 서식만 그대로 렌더링되도록 한다.
+                        const tblPrList = Array.from(tbl.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'tblPr' || node.tagName.endsWith(':tblPr')));
+                        const tblPr = tblPrList[0];
+                        if (tblPr) {
+                            ['firstRow', 'firstCol', 'lastRow', 'lastCol', 'bandRow', 'bandCol'].forEach(attr => {
+                                tblPr.setAttribute(attr, '0');
+                            });
+                            const styleIdList = Array.from(tblPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'tableStyleId' || node.tagName.endsWith(':tableStyleId')));
+                            styleIdList.forEach(node => {
+                                node.textContent = '{2D5ABB26-0587-4C30-8999-92F81FD0307C}'; // PowerPoint 내장 "스타일 없음, 표 눈금" ID
+                            });
+                        }
+
                         const rows = Array.from(tbl.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'tr' || node.tagName.endsWith(':tr')));
-                        
+
                         for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
                             const tr = rows[rowIdx];
                             const isFirstRow = (rowIdx === 0);
