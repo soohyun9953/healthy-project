@@ -1,9 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { analyzeMeeting, askMeetingQuestion } from '../meetingAnalyzer';
+import { analyzeMeeting, askMeetingQuestion, callGeminiWithFallback, stripJsonFence } from '../meetingAnalyzer';
 import { processFile } from '../utils/fileExtractor';
-import { FALLBACK_MODELS } from '../utils/geminiModels.js';
 import {
-  Mic, Upload, X, Plus, Trash2, FileAudio, ChevronDown, ChevronUp,
+  Mic, Upload, Plus, Trash2, ChevronDown, ChevronUp,
   CheckCircle2, AlertCircle, BookOpen, Download, Copy, Loader2,
   Users, ClipboardList, ListChecks, Sparkles, Tag, Clock,
   FileSearch, CheckSquare, Square, TrendingUp, Lightbulb, Calendar,
@@ -32,10 +31,78 @@ const SPEAKER_COLORS = {
 const getSpeakerColor = (sp) =>
   SPEAKER_COLORS[sp] || { bg: 'rgba(255,255,255,0.05)', border: 'var(--glass-border)', label: 'var(--text-secondary)' };
 
-const fmtSize = (bytes) => {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-};
+// AI 답변 속 "[화자] "원문 인용"" 패턴을 찾아 일반 텍스트와 인용구를 분리한다.
+function extractQuotesFromAnswer(text) {
+  if (!text) return [];
+  const quoteRegex = /\[([^[\]]{1,20})\]\s*"([^"]+)"/g;
+  const quotes = [];
+  let m;
+  while ((m = quoteRegex.exec(text)) !== null) {
+    quotes.push({ speaker: m[1].trim(), quote: m[2].trim() });
+  }
+  return quotes;
+}
+
+// AI 답변 텍스트를 일반 문단과 인용 블록(블록쿼트)으로 나누어 렌더링한다.
+function renderAnswerContent(text) {
+  if (!text) return null;
+  const quoteRegex = /\[([^[\]]{1,20})\]\s*"([^"]+)"/g;
+  const nodes = [];
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+
+  while ((match = quoteRegex.exec(text)) !== null) {
+    const plain = text.slice(lastIndex, match.index);
+    if (plain.trim()) nodes.push(<span key={`p-${key++}`}>{plain}</span>);
+
+    const speaker = match[1].trim();
+    const quote = match[2].trim();
+    const color = getSpeakerColor(speaker);
+    nodes.push(
+      <div key={`q-${key++}`} style={{
+        margin: '6px 0', padding: '8px 12px',
+        borderLeft: `3px solid ${color.border}`,
+        background: color.bg,
+        borderRadius: '0 8px 8px 0',
+        display: 'flex', gap: '8px', alignItems: 'flex-start',
+      }}>
+        <span style={{ fontWeight: 800, fontSize: '12px', color: color.label, flexShrink: 0 }}>{speaker}</span>
+        <span style={{ fontStyle: 'italic', fontSize: '13px' }}>&quot;{quote}&quot;</span>
+      </div>
+    );
+    lastIndex = quoteRegex.lastIndex;
+  }
+
+  const rest = text.slice(lastIndex);
+  if (rest.trim() || nodes.length === 0) nodes.push(<span key={`p-${key++}`}>{rest || text}</span>);
+  return nodes;
+}
+
+// AI 답변에 인용된 발언을, 실제 발언록(transcript)에서 찾아 원문 그대로 보여줄 수 있게 매칭한다.
+function findRelatedTranscriptEntries(answerText, transcript) {
+  const quotes = extractQuotesFromAnswer(answerText);
+  if (quotes.length === 0 || !transcript || transcript.length === 0) return [];
+
+  const related = [];
+  const seenIdx = new Set();
+  quotes.forEach(({ speaker, quote }) => {
+    const normQuote = quote.replace(/\s+/g, '').toLowerCase();
+    if (!normQuote) return;
+    transcript.forEach((t, idx) => {
+      if (seenIdx.has(idx) || t.speaker !== speaker) return;
+      const normTextVal = (t.text || '').replace(/\s+/g, '').toLowerCase();
+      if (!normTextVal) return;
+      const matched = normTextVal.includes(normQuote) || normQuote.includes(normTextVal)
+        || normTextVal.slice(0, 15) === normQuote.slice(0, 15);
+      if (matched) {
+        seenIdx.add(idx);
+        related.push({ ...t, _idx: idx });
+      }
+    });
+  });
+  return related.sort((a, b) => a._idx - b._idx);
+}
 
 function buildPlainText(result) {
   if (!result) return '';
@@ -96,12 +163,15 @@ function buildPlainText(result) {
   return lines.join('\n');
 }
 
+// 전문 용어 추출 시 분석할 문서의 최대 글자 수 (이후는 잘려서 분석되지 않음)
+const MAX_TERM_EXTRACT_CHARS = 80000;
+
 // ── Gemini API로 문서에서 전문 용어 추출 ────────
 async function extractTermsFromText(text, apiKey) {
   const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
   if (keys.length === 0) throw new Error('유효한 API 키가 없습니다.');
 
-  const MODELS = FALLBACK_MODELS;
+  const truncated = text.length > MAX_TERM_EXTRACT_CHARS;
   const prompt = `아래 문서에서 자주 등장하거나 도메인에 특화된 전문 용어, 약어, 고유명사를 추출해줘.
 일반적인 조사나 접속사, 너무 보편적인 단어(예: 회의, 업무, 내용 등)는 제외하고, 실제로 전문적이거나 프로젝트 고유의 맥락을 가진 단어만 추출해줘.
 
@@ -113,48 +183,20 @@ async function extractTermsFromText(text, apiKey) {
 }
 
 [분석할 문서]
-${text.substring(0, 80000)}`;
+${text.substring(0, MAX_TERM_EXTRACT_CHARS)}`;
 
-  let currentKeyIndex = 0;
-  let currentModelIndex = 0;
+  const { text: raw } = await callGeminiWithFallback(keys, [{ role: 'user', parts: [{ text: prompt }] }], {
+    generationConfig: { temperature: 0.1 },
+  });
 
-  while (currentModelIndex < MODELS.length) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/${MODELS[currentModelIndex]}:generateContent?key=${keys[currentKeyIndex]}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1 },
-      }),
-    });
-    
-    if (res.ok) {
-      const data = await res.json();
-      let content = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      if (content.includes('```')) {
-        const m = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-        if (m?.[1]) content = m[1];
-      }
-      try {
-        const parsed = JSON.parse(content);
-        return (parsed.terms || []).sort((a, b) => (b.freq || 0) - (a.freq || 0));
-      } catch (e) {
-        return [];
-      }
-    }
-
-    // 1. 에러 발생 시 항상 다음 API 키를 먼저 시도
-    if (keys.length > 1 && (currentKeyIndex + 1) < keys.length) {
-      currentKeyIndex++;
-      continue;
-    }
-
-    // 2. 모든 키를 다 썼다면 모델 교체 시도
-    currentKeyIndex = 0;
-    currentModelIndex++;
+  const content = stripJsonFence(raw);
+  try {
+    const parsed = JSON.parse(content);
+    const terms = (parsed.terms || []).sort((a, b) => (b.freq || 0) - (a.freq || 0));
+    return { terms, truncated };
+  } catch {
+    return { terms: [], truncated };
   }
-  throw new Error('용어 추출에 실패했습니다.');
 }
 
 // ── 인풋 공통 스타일 ──────────────────────────
@@ -164,14 +206,9 @@ const inputStyle = {
 };
 
 export default function MeetingMinutes({ apiKey }) {
-  // ── 입력 모드 및 상태 ──────────────────────
-  const [inputMode, setInputMode]   = useState('audio'); // 'audio' | 'text'
+  // ── 입력 상태 ──────────────────────────────
   const [textInput, setTextInput]   = useState('');
-  
-  // 오디오 파일
-  const [audioFile, setAudioFile]   = useState(null);
   const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef(null);
   const textFileInputRef = useRef(null);
 
   // 전문 용어 사전
@@ -186,6 +223,7 @@ export default function MeetingMinutes({ apiKey }) {
   const [extractedTerms, setExtractedTerms]         = useState(null); // null | Term[]
   const [selectedTermIds, setSelectedTermIds]       = useState(new Set());
   const [extractError, setExtractError]             = useState('');
+  const [extractNotice, setExtractNotice]           = useState(''); // 잘림 등 경고성 안내(에러 아님)
   const [isTermDragging, setIsTermDragging]         = useState(false);
 
   // 회의록 분석
@@ -205,7 +243,16 @@ export default function MeetingMinutes({ apiKey }) {
   const [qaError, setQaError]               = useState('');
   const [showQaPanel, setShowQaPanel]       = useState(true);
   const [copiedQaId, setCopiedQaId]         = useState(null);
+  const [expandedQuoteIds, setExpandedQuoteIds] = useState(new Set()); // 관련 발언(원문) 펼침 상태
   const qaChatEndRef = useRef(null);
+
+  const toggleQuoteExpand = (id) => {
+    setExpandedQuoteIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
   // 자동 스크롤
   useEffect(() => {
@@ -248,12 +295,14 @@ export default function MeetingMinutes({ apiKey }) {
       // 최근 6개 대화 히스토리만 유지하여 토큰 최적화
       const historyForApi = newHistory.slice(-6).map(m => ({ role: m.role, text: m.text }));
       const res = await askMeetingQuestion(q, contextData, apiKey, historyForApi);
+      const relatedQuotes = result ? findRelatedTranscriptEntries(res.answer, result.transcript || []) : [];
 
       const botMsg = {
         id: Date.now() + 1,
         role: 'model',
         text: res.answer,
         modelUsed: res.modelUsed,
+        relatedQuotes,
         time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
       };
       setQaMessages([...newHistory, botMsg]);
@@ -278,7 +327,7 @@ export default function MeetingMinutes({ apiKey }) {
     }
   };
 
-  // ── 오디오 드래그앤드롭 ───────────────────────
+  // ── 문서 드래그앤드롭 ───────────────────────
   const handleDragOver  = useCallback((e) => { e.preventDefault(); setIsDragging(true); }, []);
   const handleDragLeave = useCallback(() => setIsDragging(false), []);
   const handleDrop = useCallback((e) => {
@@ -288,30 +337,17 @@ export default function MeetingMinutes({ apiKey }) {
   }, []);
 
   const handleFileSelect = async (file) => {
-    const ext = file.name.split('.').pop().toLowerCase();
-    const audioExts = ['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac', 'webm', 'mp4'];
-    
-    if (audioExts.includes(ext) || file.type.startsWith('audio/')) {
-      setInputMode('audio');
-      setAudioFile(file);
-      setTextInput('');
+    setIsLoading(true);
+    try {
+      const result = await processFile(file);
+      const text = result.text;
+      if (!text || text.trim() === '') throw new Error('텍스트를 추출할 수 없습니다.');
+      setTextInput(text);
       setResult(null); setError('');
-    } else {
-      // 텍스트/문서 파일
-      setInputMode('text');
-      setIsLoading(true);
-      try {
-        const result = await processFile(file);
-        const text = result.text;
-        if (!text || text.trim() === '') throw new Error('텍스트를 추출할 수 없습니다.');
-        setTextInput(text);
-        setAudioFile(null);
-        setResult(null); setError('');
-      } catch (err) {
-        setError(err.message || '파일 추출 중 오류가 발생했습니다.');
-      } finally {
-        setIsLoading(false);
-      }
+    } catch (err) {
+      setError(err.message || '파일 추출 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -337,16 +373,20 @@ export default function MeetingMinutes({ apiKey }) {
     setExtractedTerms(null);
     setSelectedTermIds(new Set());
     setExtractError('');
+    setExtractNotice('');
 
     try {
       const result = await processFile(file);
       const text = result.text;
       if (!text || text.trim().length < 10) throw new Error('파일에서 텍스트를 추출하지 못했습니다.');
-      const terms = await extractTermsFromText(text, apiKey);
+      const { terms, truncated } = await extractTermsFromText(text, apiKey);
       const existing = new Set(terminology.map(t => t.word.toLowerCase()));
       const filtered = terms.filter(t => !existing.has(t.word.toLowerCase()));
       setExtractedTerms(filtered);
       setSelectedTermIds(new Set(filtered.map((_, i) => i)));
+      if (truncated) {
+        setExtractNotice(`문서가 길어 앞부분 ${MAX_TERM_EXTRACT_CHARS.toLocaleString()}자까지만 분석했습니다. 이후 내용에 등장하는 용어는 누락될 수 있습니다.`);
+      }
     } catch (e) {
       setExtractError(e.message || '용어 추출에 실패했습니다.');
     } finally {
@@ -404,16 +444,14 @@ export default function MeetingMinutes({ apiKey }) {
 
   // ── 회의록 분석 ────────────────────────────
   const handleAnalyze = async () => {
-    if (inputMode === 'audio' && !audioFile) { setError('오디오 파일을 먼저 업로드하세요.'); return; }
-    if (inputMode === 'text' && !textInput.trim()) { setError('분석할 텍스트를 먼저 입력하세요.'); return; }
-    
+    if (!textInput.trim()) { setError('분석할 텍스트를 먼저 입력하세요.'); return; }
+
     const keys = String(apiKey).split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
     if (keys.length === 0) { setError('설정에서 Gemini API 키를 먼저 입력하세요.'); return; }
-    
+
     setIsLoading(true); setError(''); setResult(null);
     try {
-      const inputData = inputMode === 'audio' ? audioFile : textInput;
-      const data = await analyzeMeeting(inputData, inputMode, apiKey, terminology, (msg) => setProgress(msg));
+      const data = await analyzeMeeting(textInput, apiKey, terminology, (msg) => setProgress(msg));
       setResult(data);
     } catch (e) {
       setError(e.message || '분석 중 오류가 발생했습니다.');
@@ -452,7 +490,7 @@ export default function MeetingMinutes({ apiKey }) {
             AI 회의록 생성기
             <Sparkles size={16} style={{ color: '#38bdf8', filter: 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.5))' }} />
           </h2>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>음성 파일 업로드 → 화자 분류 → 결정사항·액션아이템 자동 추출</p>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>회의 녹취록/텍스트 입력 → 화자 분류 → 결정사항·액션아이템 자동 추출</p>
         </div>
       </div>
 
@@ -461,123 +499,49 @@ export default function MeetingMinutes({ apiKey }) {
         {/* ── 왼쪽: 업로드 + 분석 ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         
-          {/* 모드 전환 탭 */}
-          <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '10px' }}>
-            <button
-              onClick={() => setInputMode('audio')}
+          {/* 녹취록(문서/텍스트) 입력 */}
+          <div
+            onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+            style={{
+              border: `2px dashed ${isDragging ? '#34d399' : 'var(--glass-border)'}`,
+              borderRadius: '14px', padding: '16px',
+              background: isDragging ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.02)',
+              transition: 'all 0.2s ease', position: 'relative',
+            }}
+          >
+            <textarea
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              placeholder="추출된 회의 기록 화면 텍스트를 화면에 직접 붙여넣거나, 문서 파일(PDF, PPTX, TXT, DOXC 등)을 바로 여기에 드래그앤드롭 하세요."
               style={{
-                flex: 1, padding: '8px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, border: 'none',
-                background: inputMode === 'audio' ? 'rgba(99,102,241,0.2)' : 'transparent',
-                color: inputMode === 'audio' ? '#818cf8' : 'var(--text-muted)',
-                cursor: 'pointer', transition: 'all 0.2s',
+                width: '100%', minHeight: '145px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)',
+                color: 'var(--text-primary)', padding: '12px', borderRadius: '8px', resize: 'vertical', fontSize: '13px', lineHeight: 1.6
               }}
-            >
-              오디오 파일 분석
-            </button>
-            <button
-              onClick={() => setInputMode('text')}
-              style={{
-                flex: 1, padding: '8px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, border: 'none',
-                background: inputMode === 'text' ? 'rgba(16,185,129,0.2)' : 'transparent',
-                color: inputMode === 'text' ? '#34d399' : 'var(--text-muted)',
-                cursor: 'pointer', transition: 'all 0.2s',
-              }}
-            >
-              녹취록(문서) 직접 분석
-            </button>
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                {textInput.length > 0 ? `현재 ${textInput.length.toLocaleString()} 글자 입력됨` : '문서 드래그앤드롭 지원'}
+              </span>
+              <input ref={textFileInputRef} type="file" accept=".pdf,.txt,.md,.csv,.xlsx,.xls,.pptx,.hwpx,.json,.html,.xml"
+                style={{ display: 'none' }} onChange={(e) => e.target.files[0] && handleFileSelect(e.target.files[0])} />
+              <button
+                onClick={() => textFileInputRef.current?.click()}
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              >
+                문서 업로드
+              </button>
+            </div>
           </div>
 
-          {/* 오디오 파일 입력 모드 */}
-          {inputMode === 'audio' && (
-            <>
-              <div
-                onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-                onClick={() => !audioFile && fileInputRef.current?.click()}
-                style={{
-                  border: `2px dashed ${isDragging ? 'var(--accent-blue)' : audioFile ? 'rgba(99,102,241,0.5)' : 'var(--glass-border)'}`,
-                  borderRadius: '14px', padding: '28px', textAlign: 'center',
-                  cursor: audioFile ? 'default' : 'pointer',
-                  background: isDragging ? 'rgba(99,102,241,0.08)' : audioFile ? 'rgba(99,102,241,0.05)' : 'rgba(255,255,255,0.02)',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.webm"
-                  style={{ display: 'none' }} onChange={(e) => e.target.files[0] && handleFileSelect(e.target.files[0])} />
-                {audioFile ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', justifyContent: 'center' }}>
-                    <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'rgba(99,102,241,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <FileAudio size={22} color="#818cf8" />
-                    </div>
-                    <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>{audioFile.name}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{fmtSize(audioFile.size)} · {audioFile.size > 20 * 1024 * 1024 ? 'Files API 방식' : '인라인 방식'}</div>
-                    </div>
-                    <button onClick={(e) => { e.stopPropagation(); setAudioFile(null); setResult(null); }}
-                      style={{ marginLeft: 'auto', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '6px', cursor: 'pointer', color: '#ef4444', display: 'flex', alignItems: 'center' }}>
-                      <X size={14} />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                      <Upload size={24} color="#818cf8" />
-                    </div>
-                    <p style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, margin: '0 0 4px' }}>오디오 파일을 드래그하거나 클릭하여 업로드</p>
-                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>MP3, WAV, M4A, OGG, FLAC, AAC, WEBM · 최대 2GB</p>
-                  </>
-                )}
-              </div>
-              {audioFile && (
-                <audio controls src={URL.createObjectURL(audioFile)} style={{ width: '100%', borderRadius: '10px', height: '40px' }} />
-              )}
-            </>
-          )}
-
-          {/* 텍스트/문서 파일 입력 모드 */}
-          {inputMode === 'text' && (
-            <div
-              onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-              style={{
-                border: `2px dashed ${isDragging ? '#34d399' : 'var(--glass-border)'}`,
-                borderRadius: '14px', padding: '16px',
-                background: isDragging ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.02)',
-                transition: 'all 0.2s ease', position: 'relative',
-              }}
-            >
-              <textarea
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder="추출된 회의 기록 화면 텍스트를 화면에 직접 붙여넣거나, 문서 파일(PDF, PPTX, TXT, DOXC 등)을 바로 여기에 드래그앤드롭 하세요."
-                style={{
-                  width: '100%', minHeight: '145px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)',
-                  color: 'var(--text-primary)', padding: '12px', borderRadius: '8px', resize: 'vertical', fontSize: '13px', lineHeight: 1.6
-                }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {textInput.length > 0 ? `현재 ${textInput.length.toLocaleString()} 글자 입력됨` : '문서 드래그앤드롭 지원'}
-                </span>
-                <input ref={textFileInputRef} type="file" accept=".pdf,.txt,.md,.csv,.xlsx,.xls,.pptx,.hwpx,.json,.html,.xml"
-                  style={{ display: 'none' }} onChange={(e) => e.target.files[0] && handleFileSelect(e.target.files[0])} />
-                <button
-                  onClick={() => textFileInputRef.current?.click()}
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', color: 'var(--text-secondary)', cursor: 'pointer' }}
-                >
-                  문서 업로드
-                </button>
-              </div>
-            </div>
-          )}
-
-          <button onClick={handleAnalyze} disabled={isLoading || (inputMode === 'audio' ? !audioFile : (!textInput || !textInput.trim()))}
+          <button onClick={handleAnalyze} disabled={isLoading || !textInput.trim()}
             style={{
               width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
-              background: isLoading || (inputMode === 'audio' ? !audioFile : !textInput?.trim()) ? 'rgba(255,255,255,0.05)' : (inputMode === 'audio' ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'linear-gradient(135deg, #10b981, #34d399)'),
-              color: isLoading || (inputMode === 'audio' ? !audioFile : !textInput?.trim()) ? 'var(--text-muted)' : (inputMode === 'audio' ? 'white' : '#000'),
-              fontWeight: 700, fontSize: '15px', cursor: isLoading || (inputMode === 'audio' ? !audioFile : !textInput?.trim()) ? 'not-allowed' : 'pointer',
+              background: isLoading || !textInput.trim() ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #10b981, #34d399)',
+              color: isLoading || !textInput.trim() ? 'var(--text-muted)' : '#000',
+              fontWeight: 700, fontSize: '15px', cursor: isLoading || !textInput.trim() ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               transition: 'all 0.2s ease',
-              boxShadow: isLoading || (inputMode === 'audio' ? !audioFile : !textInput?.trim()) ? 'none' : (inputMode === 'audio' ? '0 4px 20px rgba(99,102,241,0.35)' : '0 4px 20px rgba(16,185,129,0.35)'),
+              boxShadow: isLoading || !textInput.trim() ? 'none' : '0 4px 20px rgba(16,185,129,0.35)',
             }}>
             {isLoading
               ? <><Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> 분석 중...</>
@@ -662,6 +626,9 @@ export default function MeetingMinutes({ apiKey }) {
                 </button>
                 {extractError && (
                   <p style={{ fontSize: '11px', color: '#f87171', margin: '6px 0 0' }}>{extractError}</p>
+                )}
+                {extractNotice && (
+                  <p style={{ fontSize: '11px', color: '#fbbf24', margin: '6px 0 0' }}>⚠ {extractNotice}</p>
                 )}
               </div>
 
@@ -767,12 +734,29 @@ export default function MeetingMinutes({ apiKey }) {
       {result && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '4px' }}>
 
+          {/* 불완전한 결과 경고 배지 */}
+          {result._meta?.partial && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px 16px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '10px' }}>
+              <AlertCircle size={16} color="#fbbf24" style={{ flexShrink: 0, marginTop: '1px' }} />
+              <div style={{ fontSize: '12.5px', color: '#fbbf24', lineHeight: 1.6 }}>
+                <strong>일부 결과가 불완전하게 생성되었습니다.</strong> AI 응답이 중간에 잘렸거나 처리에 실패한 구간이 있을 수 있습니다.
+                {result._meta.totalChunks > 1 && (result._meta.failedChunks || []).length > 0 && (
+                  <> (실패 구간: {result._meta.failedChunks.join(', ')} / 전체 {result._meta.totalChunks}구간)</>
+                )}
+                {' '}아래 내용을 검토하시고, 필요하면 텍스트를 나누어 다시 시도해 주세요.
+              </div>
+            </div>
+          )}
+
           {/* 결과 헤더 */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.08))', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '14px' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                 <CheckCircle2 size={16} color="#34d399" />
                 <span style={{ fontSize: '11px', color: '#34d399', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>회의록 생성 완료</span>
+                {result._meta?.totalChunks > 1 && (
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '1px 7px', borderRadius: '10px' }}>{result._meta.totalChunks}개 구간으로 분할 분석</span>
+                )}
               </div>
               <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: 'var(--text-primary)' }}>{result.meetingTitle || '회의록'}</h3>
               {result.speakerCount > 0 && (
@@ -1166,9 +1150,21 @@ export default function MeetingMinutes({ apiKey }) {
                           wordBreak: 'break-word',
                           boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
                         }}>
-                          {msg.text}
+                          {msg.role === 'model' ? renderAnswerContent(msg.text) : msg.text}
                           {msg.role === 'model' && (
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                              {(msg.relatedQuotes || []).length > 0 ? (
+                                <button
+                                  onClick={() => toggleQuoteExpand(msg.id)}
+                                  style={{
+                                    background: 'none', border: 'none', color: '#a78bfa',
+                                    fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0
+                                  }}
+                                >
+                                  {expandedQuoteIds.has(msg.id) ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                  관련 발언 원문 보기 ({msg.relatedQuotes.length})
+                                </button>
+                              ) : <span />}
                               <button
                                 onClick={() => handleCopyQa(msg.id, msg.text)}
                                 style={{
@@ -1180,6 +1176,19 @@ export default function MeetingMinutes({ apiKey }) {
                                 {copiedQaId === msg.id ? <CheckCircle2 size={12} /> : <Copy size={12} />}
                                 {copiedQaId === msg.id ? '복사됨' : '답변 복사'}
                               </button>
+                            </div>
+                          )}
+                          {msg.role === 'model' && expandedQuoteIds.has(msg.id) && (msg.relatedQuotes || []).length > 0 && (
+                            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {msg.relatedQuotes.map((t, i) => {
+                                const color = getSpeakerColor(t.speaker);
+                                return (
+                                  <div key={i} style={{ display: 'flex', gap: '8px', padding: '8px 10px', background: color.bg, borderRadius: '8px', border: `1px solid ${color.border}` }}>
+                                    <span style={{ fontWeight: 800, fontSize: '12px', color: color.label, flexShrink: 0 }}>{t.speaker}</span>
+                                    <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{t.text}</span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
