@@ -145,14 +145,14 @@ const tab_guides = {
   },
   meeting: {
     title: 'AI 회의록 생성',
-    desc: '음성 녹음 파일 또는 전사 텍스트를 바탕으로 회의의 핵심 주제, 결정 사항, 액션 아이템을 요약 추출합니다.',
+    desc: '회의 녹취록 또는 전사 텍스트를 바탕으로 회의의 핵심 주제, 결정 사항, 액션 아이템을 요약 추출합니다.',
     steps: [
-      '회의 오디오 파일(MP3, WAV 등)을 업로드하거나 회의록 텍스트를 기입합니다.',
-      '화자 수와 화자 분리 정밀도 옵션을 설정합니다.',
-      '[회의록 분석 시작]을 클릭해 회의 주제별 요약을 수행합니다.',
+      '회의록 텍스트를 직접 붙여넣거나 문서 파일(PDF, PPTX, TXT, DOCX 등)을 업로드합니다.',
+      '전문 용어 사전에 프로젝트 고유 용어/약어를 등록합니다.',
+      '[회의록 생성 시작]을 클릭해 회의 주제별 요약을 수행합니다.',
       '자동 완성된 공식 회의록 산출물을 다운로드합니다.'
     ],
-    tips: '화자가 여러 명일 경우 [오디오 파일 분석] 탭을 권장합니다.'
+    tips: '문서 업로드 버튼이나 드래그앤드롭으로 다양한 형식의 회의 기록 파일을 텍스트로 바로 변환해 분석할 수 있습니다.'
   },
   library: {
     title: '참고자료 라이브러리',
@@ -386,7 +386,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.13.3</span>
+                <span>AI 산출물 검수 v2.14.3</span>
               </div>
             )}
           </div>
@@ -507,7 +507,7 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginRight: '8px' }}>
               <span className="mobile-hide-text" style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Last Update</span>
-              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.09.15 v2.13.3</span>
+              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.09.15 v2.14.3</span>
             </div>
             
             <button 
@@ -920,7 +920,7 @@ function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <HelpCircle size={24} color="var(--accent-blue)" />
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  건강한 프로젝트 통합 매뉴얼 (v2.13.3)
+                  건강한 프로젝트 통합 매뉴얼 (v2.14.3)
                 </h3>
               </div>
               <button 
