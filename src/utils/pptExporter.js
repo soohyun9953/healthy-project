@@ -1855,6 +1855,16 @@ export async function processPptBatch(pptFile, options) {
                         for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
                             const tr = rows[rowIdx];
                             const isFirstRow = (rowIdx === 0);
+
+                            // 첫 행(헤더) 특별 포맷팅 시 행 높이가 0.9cm(324000 EMU)를 초과하면 0.9cm로 제한
+                            if (isFirstRow && useHeaderStyle) {
+                                const MAX_HEADER_ROW_HEIGHT_EMU = 324000; // 0.9cm = 0.9 * 360000 EMU
+                                const currentTrH = parseInt(tr.getAttribute('h') || '0', 10);
+                                if (currentTrH > MAX_HEADER_ROW_HEIGHT_EMU) {
+                                    tr.setAttribute('h', String(MAX_HEADER_ROW_HEIGHT_EMU));
+                                }
+                            }
+
                             const cells = Array.from(tr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'tc' || node.tagName.endsWith(':tc')));
                             
                             for (let c = 0; c < cells.length; c++) {
