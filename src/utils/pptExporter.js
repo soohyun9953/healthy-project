@@ -1883,10 +1883,23 @@ export async function processPptBatch(pptFile, options) {
                                 }
                                 tcPr.setAttribute('anchor', 'ctr');
                                 
-                                // 1단계: 테두리 4개 보정 (첫행 흰색 FFFFFF, 본문 회색 7F7F7F 0.5pt = 6350)
-                                const borderColor = (isFirstRow && useHeaderStyle) ? 'FFFFFF' : '7F7F7F';
+                                // 1단계: 테두리 4개 보정 (본문 회색 7F7F7F 0.5pt = 6350)
+                                // 첫 행(헤더)의 경우, 표 전체의 바깥 테두리는 회색을 유지하고
+                                // 헤더 내부(셀과 셀 사이를 구분하는 선)만 흰색으로 처리한다.
+                                const isLastCol = (c === cells.length - 1);
+                                const isLastRow = (rowIdx === rows.length - 1);
                                 ['lnL', 'lnR', 'lnT', 'lnB'].reverse().forEach(side => {
                                     if (applyTableDesign || (isFirstRow && useHeaderStyle) || (isFirstColBody && applyFirstColHeaderStyle)) {
+                                        let borderColor = '7F7F7F';
+                                        if (isFirstRow && useHeaderStyle) {
+                                            const isOuterEdge =
+                                                (side === 'lnT') ||
+                                                (side === 'lnB' && isLastRow) ||
+                                                (side === 'lnL' && isFirstCol) ||
+                                                (side === 'lnR' && isLastCol);
+                                            borderColor = isOuterEdge ? '7F7F7F' : 'FFFFFF';
+                                        }
+
                                         let existingLnList = Array.from(tcPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === side || node.tagName.endsWith(':' + side)));
                                         let ln = existingLnList[0];
                                         if (!ln) {
@@ -1897,18 +1910,18 @@ export async function processPptBatch(pptFile, options) {
                                         // 💡 [선 굵기 100% 통일] 기존 선 두께가 몇 pt이든 무조건 0.5pt(6350 EMU), 단일 실선(sng)으로 강제 보정
                                         ln.setAttribute('w', '6350');
                                         ln.setAttribute('cmpd', 'sng');
-                                        
+
                                         // 💡 [XSD 규격 순서 엄수] fill은 상호 배타적 선택 그룹(noFill|solidFill|gradFill|...)이므로,
                                         // 기존에 noFill이 있었다면 반드시 함께 제거해야 합니다. 그렇지 않으면 noFill과 solidFill이
                                         // 동시에 남아 OpenXML 복구 팝업이 발생합니다.
                                         const oldFills = Array.from(ln.childNodes).filter(node => node.nodeType === 1 && ['noFill', 'solidFill', 'sysClr', 'gradFill', 'pattFill'].includes(node.localName || node.tagName.split(':').pop()));
                                         oldFills.forEach(f => ln.removeChild(f));
-                                        
+
                                         const sf = xmlDoc.createElementNS(nsA, 'a:solidFill');
                                         const clr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
                                         clr.setAttribute('val', borderColor);
                                         sf.appendChild(clr);
-                                        
+
                                         if (ln.firstChild) ln.insertBefore(sf, ln.firstChild);
                                         else ln.appendChild(sf);
                                     }
