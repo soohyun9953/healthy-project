@@ -536,51 +536,179 @@ body {
   }
 }
 
-/* --- Light Mode Theme --- */
+/* --- Light Mode Theme (화이트/라이트 모드 완전 최적화) --- */
 .light-mode {
   --bg-dark: #f8fafc;
   --bg-primary: #ffffff;
   --bg-secondary: #f1f5f9;
+  --bg-card: #ffffff;
+  --panel-bg: rgba(255, 255, 255, 0.96);
+  --panel-border: #e2e8f0;
   
-  --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-border: rgba(0, 0, 0, 0.1);
-  --glass-outline: rgba(168, 85, 247, 0.2);
+  --glass-bg: rgba(255, 255, 255, 0.95);
+  --glass-border: #e2e8f0;
+  --glass-outline: rgba(147, 51, 234, 0.2);
+  --glass-blur: blur(20px);
 
   --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  
+  --accent-blue: #2563eb;
+  --accent-purple: #9333ea;
+  --accent-green: #059669;
+  --accent-amber: #d97706;
 }
 
 .light-mode.app-container {
-  background: radial-gradient(circle at 50% -20%, rgba(168, 85, 247, 0.05), transparent 60%),
-              radial-gradient(circle at -10% 50%, rgba(59, 130, 246, 0.03), transparent 50%),
-              var(--bg-dark);
+  background: radial-gradient(circle at 50% -20%, rgba(147, 51, 234, 0.06), transparent 60%),
+              radial-gradient(circle at -10% 50%, rgba(37, 99, 235, 0.04), transparent 50%),
+              #f8fafc;
+  color: #0f172a;
 }
 
 .light-mode .sidebar {
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.92);
+  border-right: 1px solid #e2e8f0;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.03);
+}
+
+.light-mode .sidebar-header {
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.light-mode .sidebar-footer {
+  border-top: 1px solid #e2e8f0;
 }
 
 .light-mode .content-header {
-  background: rgba(248, 250, 252, 0.6);
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.02);
+}
+
+.light-mode .main-content {
+  background: #f8fafc;
+}
+
+.light-mode .nav-item {
+  color: #475569;
 }
 
 .light-mode .nav-item:hover {
-  background: rgba(0, 0, 0, 0.03);
+  background: rgba(0, 0, 0, 0.04);
+  color: #0f172a;
 }
 
 .light-mode .nav-item.active {
+  background: rgba(147, 51, 234, 0.08);
+  color: #7e22ce;
+  font-weight: 700;
+}
+
+.light-mode .sidebar-toggle-btn {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.light-mode .sidebar.collapsed .sidebar-toggle-btn {
+  background: #ffffff;
+  border-color: #9333ea;
+  color: #9333ea;
+  box-shadow: 0 4px 14px rgba(147, 51, 234, 0.25);
+}
+
+.light-mode .settings-btn {
+  color: #475569;
+}
+
+.light-mode .settings-btn:hover,
+.light-mode .settings-btn.active {
   background: rgba(0, 0, 0, 0.05);
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 .light-mode .settings-dropdown {
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.1);
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.light-mode .settings-header {
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+}
+
+.light-mode .setting-group input,
+.light-mode .model-select {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
 }
 
 .light-mode .logo-text h1 {
-  background: linear-gradient(to right, #0f172a, #3b82f6);
+  background: linear-gradient(to right, #0f172a, #2563eb);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+.light-mode .glass-panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+
+.light-mode .breadcrumb-parent { color: #64748b; }
+.light-mode .breadcrumb-current { color: #0f172a; }
+
+.light-mode .badge {
+  background: #e2e8f0;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
+.light-mode table thead tr {
+  background: #f1f5f9 !important;
+  color: #1e293b !important;
+  border-bottom-color: #cbd5e1 !important;
+}
+
+.light-mode table tbody tr {
+  border-bottom-color: #f1f5f9 !important;
+}
+
+.light-mode table tbody tr:hover {
+  background: rgba(147, 51, 234, 0.04) !important;
+}
+
+.light-mode input[type="text"],
+.light-mode input[type="number"],
+.light-mode input[type="password"],
+.light-mode textarea,
+.light-mode select {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.light-mode input::placeholder,
+.light-mode textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+.light-mode ::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.light-mode ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.light-mode ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
 }
 
 /* ── 프로젝트 비타민 명언/유머 팝업 모달 스타일 (한글어 클래스명) ── */

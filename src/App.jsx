@@ -507,9 +507,25 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginRight: '8px' }}>
               <span className="mobile-hide-text" style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Last Update</span>
-              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.09.15 v2.14.4</span>
+              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.09.18 v2.14.5</span>
             </div>
             
+            {/* Theme Mode Toggle Button */}
+            <button 
+              className={`settings-btn theme-toggle-btn ${isLightMode ? 'light-active' : ''}`}
+              onClick={() => setIsLightMode(!isLightMode)}
+              title={isLightMode ? "다크 테마 모드로 전환" : "화이트(라이트) 테마 모드로 전환"}
+              style={{
+                marginRight: '4px',
+                color: isLightMode ? '#f59e0b' : '#38bdf8',
+                background: isLightMode ? 'rgba(245, 158, 11, 0.12)' : 'rgba(56, 189, 248, 0.1)',
+                border: `1px solid ${isLightMode ? 'rgba(245, 158, 11, 0.35)' : 'rgba(56, 189, 248, 0.3)'}`,
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {isLightMode ? <Sun size={19} /> : <Moon size={19} />}
+            </button>
+
             <button 
               className={`settings-btn ${show_manual_modal ? 'active' : ''}`} 
               onClick={() => set_show_manual_modal(true)}
@@ -537,6 +553,60 @@ function App() {
               </div>
               
               <div className="settings-body">
+                {/* 테마 모드 선택 설정 */}
+                <div className="setting-group" style={{ marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px', border: '1px solid var(--glass-border)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', fontSize: '13px', fontWeight: 600 }}>
+                    {isLightMode ? <Sun size={15} color="#f59e0b" /> : <Moon size={15} color="#38bdf8" />}
+                    화면 테마 모드
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setIsLightMode(false)}
+                      style={{
+                        flex: 1,
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        border: `1px solid ${!isLightMode ? 'var(--accent-purple)' : 'var(--glass-border)'}`,
+                        background: !isLightMode ? 'rgba(168, 85, 247, 0.15)' : 'transparent',
+                        color: !isLightMode ? '#c084fc' : 'var(--text-secondary)',
+                        fontSize: '12px',
+                        fontWeight: !isLightMode ? 700 : 500,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <Moon size={14} /> 다크 모드 (기본)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsLightMode(true)}
+                      style={{
+                        flex: 1,
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        border: `1px solid ${isLightMode ? '#f59e0b' : 'var(--glass-border)'}`,
+                        background: isLightMode ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
+                        color: isLightMode ? '#f59e0b' : 'var(--text-secondary)',
+                        fontSize: '12px',
+                        fontWeight: isLightMode ? 700 : 500,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <Sun size={14} /> 화이트(라이트) 모드
+                    </button>
+                  </div>
+                </div>
+
                 <div className="setting-group">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <label style={{ margin: 0 }}>
