@@ -773,7 +773,7 @@ function App() {
                       <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>OmniRoute 모델 선택 (대시보드에서 추가한 모델명):</label>
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <select
-                          value={['auto', 'claude-3-5-sonnet', 'gpt-4o', 'gpt-4o-mini', 'gemini-2.0-flash', 'gemini-1.5-pro', 'qwen/qwen-2.5-72b-instruct'].includes(omniRouteModel) ? omniRouteModel : 'custom'}
+                          value={['auto', 'claude-3-5-sonnet', 'gpt-4o', 'gpt-4o-mini', 'gemini-2.5-flash', 'gemini-2.0-flash', 'qwen/qwen-2.5-72b-instruct'].includes(omniRouteModel) ? omniRouteModel : 'custom'}
                           onChange={(e) => { if (e.target.value !== 'custom') setOmniRouteModel(e.target.value); }}
                           style={{
                             flex: 1,
@@ -791,8 +791,8 @@ function App() {
                           <option value="claude-3-5-sonnet" style={{ background: '#0f172a', color: '#e2e8f0' }}>claude-3-5-sonnet (Anthropic)</option>
                           <option value="gpt-4o" style={{ background: '#0f172a', color: '#e2e8f0' }}>gpt-4o (OpenAI)</option>
                           <option value="gpt-4o-mini" style={{ background: '#0f172a', color: '#e2e8f0' }}>gpt-4o-mini (OpenAI 경량)</option>
+                          <option value="gemini-2.5-flash" style={{ background: '#0f172a', color: '#e2e8f0' }}>gemini-2.5-flash (Google 최신)</option>
                           <option value="gemini-2.0-flash" style={{ background: '#0f172a', color: '#e2e8f0' }}>gemini-2.0-flash (Google)</option>
-                          <option value="gemini-1.5-pro" style={{ background: '#0f172a', color: '#e2e8f0' }}>gemini-1.5-pro (Google)</option>
                           <option value="qwen/qwen-2.5-72b-instruct" style={{ background: '#0f172a', color: '#e2e8f0' }}>qwen-2.5-72b (Alibaba 무료)</option>
                           <option value="custom" style={{ background: '#0f172a', color: '#e2e8f0' }}>-- 직접 입력 --</option>
                         </select>

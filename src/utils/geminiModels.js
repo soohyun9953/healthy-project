@@ -10,12 +10,12 @@
  */
 
 export const FALLBACK_MODELS = [
-    "models/gemini-3.6-flash",          // 1순위: 최신 효율 모델 (2026-07-21, 기본 권장)
-    "models/gemini-3.5-flash",          // 2순위: 고성능 에이전틱 작업 (2026-05)
-    "models/gemini-3.5-flash-lite",     // 3순위: 경량 고처리량 모델 (2026-07-21)
-    "models/gemini-2.5-flash",          // 4순위: 구세대 Flash (폴백 유지)
-    "models/gemini-2.5-pro",            // 5순위: 구세대 Pro (폴백 유지)
-    "models/gemini-1.5-pro",            // 6순위: 구버전 Pro
-    "models/gemini-1.5-flash",          // 7순위: 구버전 Flash
+    "models/gemini-2.5-flash",          // 1순위: 최신 고성능 표준 모델 (안정적 & 빠른 응답)
+    "models/gemini-2.5-flash-lite",     // 2순위: 최신 경량 고속 모델
+    "models/gemini-2.0-flash",          // 3순위: 2.0 세대 표준 Flash 모델
+    "models/gemini-2.0-flash-lite",     // 4순위: 2.0 세대 경량 Flash Lite 모델
+    "models/gemini-3.6-flash",          // 5순위: 3.6 Flash 모델
+    "models/gemini-3.5-flash",          // 6순위: 3.5 Flash 모델
+    "models/gemini-3.5-flash-lite",     // 7순위: 3.5 Flash Lite 모델
 ];
 

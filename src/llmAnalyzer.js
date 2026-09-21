@@ -2,7 +2,7 @@ import { FALLBACK_MODELS } from './utils/geminiModels.js';
 import { extract_dictionary_typos, generate_conjugation_rules, TYPO_DICTIONARY } from './utils/typoDictionary.js';
 
 async function fetch_with_timeout(resource, options = {}) {
-    const { timeout = 25000 } = options;
+    const { timeout = 60000 } = options;
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     
@@ -25,7 +25,7 @@ const sleep_delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // 1차: 서버 프록시(/api/gemini-proxy)로 요청해 API 키를 헤더로만 전달(URL 노출 차단).
 // 2차: 프록시가 배포되지 않은 환경(로컬 vite dev 등)에서는 x-goog-api-key 헤더 기반 직접 호출로 폴백.
 // 어느 경로든 키를 URL 쿼리스트링에 싣지 않는다.
-async function call_gemini_generate(modelId, activeKey, userInput, timeout = 25000, temperature = 0.1) {
+async function call_gemini_generate(modelId, activeKey, userInput, timeout = 60000, temperature = 0.1) {
     const contents = [{ role: "user", parts: [{ text: userInput }] }];
     const generationConfig = { temperature };
 
@@ -207,7 +207,7 @@ function mergeResults(res1, res2, isTypoMode, partNumber = 2) {
 async function analyze_with_omniroute(prompt, model = 'auto', onProgress, systemPrompt = '', userInputData = '', raw_artifact_text = '') {
     const candidate_models = (model && model !== 'auto') 
         ? [model] 
-        : ['gemini-2.0-flash', 'gemini-1.5-pro', 'gpt-4o-mini'];
+        : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gpt-4o-mini'];
 
     let last_error = null;
     let best_result = null;
@@ -799,9 +799,9 @@ ${ragContext ? `\n${ragContext}` : ''}
 
                 let response;
                 try {
-                    response = await call_gemini_generate(modelId, activeKey, userInput, 25000);
+                    response = await call_gemini_generate(modelId, activeKey, userInput, 60000);
                 } catch (fetchErr) {
-                    const reason = fetchErr.name === 'AbortError' ? '25초 타임아웃 초과' : `네트워크 오류(${fetchErr.message})`;
+                    const reason = fetchErr.name === 'AbortError' ? '60초 타임아웃 초과' : `네트워크 오류(${fetchErr.message})`;
                     error_log.push(`[${modelLabel} / ${keyLabel}] ${reason}`);
                     console.warn(`Fetch failed or timed out for ${modelId}:`, fetchErr);
                     if (keys.length > 1 && (currentKeyIndex + 1) < keys.length) {
@@ -973,9 +973,9 @@ async function call_gemini_or_omniroute_chat(systemPrompt, userInput, apiKey, on
 
         let response;
         try {
-            response = await call_gemini_generate(modelId, activeKey, `${systemPrompt}\n\n${userInput}`, 25000, 0.7);
+            response = await call_gemini_generate(modelId, activeKey, `${systemPrompt}\n\n${userInput}`, 60000, 0.7);
         } catch (fetchErr) {
-            const reason = fetchErr.name === 'AbortError' ? '25초 타임아웃 초과' : `네트워크 연결 지연(${fetchErr.message})`;
+            const reason = fetchErr.name === 'AbortError' ? '60초 타임아웃 초과' : `네트워크 연결 지연(${fetchErr.message})`;
             error_log.push(`[${modelLabel} / ${keyLabel}] ${reason}`);
             console.warn(`RAG Q&A Fetch failed for ${modelId}:`, fetchErr);
 
