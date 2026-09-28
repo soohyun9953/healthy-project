@@ -1687,45 +1687,45 @@ export async function processPptBatch(pptFile, options) {
                                 }
                                 tcPr.setAttribute('anchor', 'ctr');
                                 
-                                // 1단계: 테두리 4개 보정 (본문 회색 7F7F7F 0.5pt = 6350)
-                                // 💡 1행(헤더): "열과 열 사이의 내부 세로선"만 흰색(#FFFFFF)으로 처리하고,
-                                //    1행의 위쪽(lnT), 아래쪽(lnB - 2행과의 경계선), 좌우 외곽선(lnL 첫열, lnR 끝열)은 모두 회색(#7F7F7F)으로 처리합니다.
-                                // 💡 2행 이하: 모든 내부 가로/세로선 및 외곽선이 100% 회색(#7F7F7F)으로 적용됩니다.
+                                // 1단계: 테두리 4개(lnL, lnR, lnT, lnB) 완전 재구성 (본문 회색 7F7F7F 0.5pt = 6350)
+                                // 💡 1행(헤더): "열과 열 사이의 내부 세로선"만 흰색(#FFFFFF), 외곽선 및 2행과의 경계(하단선)는 회색(#7F7F7F)
+                                // 💡 2행 이하: 모든 내부/외부 가로선 및 세로선이 100% 빠짐없이 회색(#7F7F7F)으로 적용됩니다.
                                 const isLastCol = (c === cells.length - 1);
-                                ['lnL', 'lnR', 'lnT', 'lnB'].reverse().forEach(side => {
-                                    if (applyTableDesign || (isFirstRow && useHeaderStyle) || (isFirstColBody && applyFirstColHeaderStyle)) {
+                                if (applyTableDesign || (isFirstRow && useHeaderStyle) || (isFirstColBody && applyFirstColHeaderStyle)) {
+                                    // 1-1. tcPr 내부의 기존 모든 테두리 노드(lnL, lnR, lnT, lnB, lnTlToBr, lnBlToTr) 완전 제거
+                                    const borderTagNames = ['lnL', 'lnR', 'lnT', 'lnB', 'lnTlToBr', 'lnBlToTr'];
+                                    const oldBorders = Array.from(tcPr.childNodes).filter(node => 
+                                        node.nodeType === 1 && borderTagNames.some(tag => node.localName === tag || node.tagName.endsWith(':' + tag))
+                                    );
+                                    oldBorders.forEach(b => tcPr.removeChild(b));
+
+                                    // 1-2. XSD 스키마 순서(lnL -> lnR -> lnT -> lnB)에 맞추어 4개 테두리 노드를 새롭게 생성
+                                    const borderSides = ['lnL', 'lnR', 'lnT', 'lnB'];
+                                    const firstNonBorderNode = tcPr.firstChild;
+                                    borderSides.forEach(side => {
                                         let borderColor = '7F7F7F';
                                         if (isFirstRow && useHeaderStyle) {
                                             const isInnerVertical = (side === 'lnL' && !isFirstCol) || (side === 'lnR' && !isLastCol);
                                             borderColor = isInnerVertical ? 'FFFFFF' : '7F7F7F';
                                         }
 
-                                        let existingLnList = Array.from(tcPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === side || node.tagName.endsWith(':' + side)));
-                                        let ln = existingLnList[0];
-                                        if (!ln) {
-                                            ln = xmlDoc.createElementNS(nsA, `a:${side}`);
-                                            if (tcPr.firstChild) tcPr.insertBefore(ln, tcPr.firstChild);
-                                            else tcPr.appendChild(ln);
-                                        }
-                                        // 💡 [선 굵기 100% 통일] 기존 선 두께가 몇 pt이든 무조건 0.5pt(6350 EMU), 단일 실선(sng)으로 강제 보정
+                                        const ln = xmlDoc.createElementNS(nsA, `a:${side}`);
                                         ln.setAttribute('w', '6350');
                                         ln.setAttribute('cmpd', 'sng');
-
-                                        // 💡 [XSD 규격 순서 엄수] fill은 상호 배타적 선택 그룹(noFill|solidFill|gradFill|...)이므로,
-                                        // 기존에 noFill이 있었다면 반드시 함께 제거해야 합니다. 그렇지 않으면 noFill과 solidFill이
-                                        // 동시에 남아 OpenXML 복구 팝업이 발생합니다.
-                                        const oldFills = Array.from(ln.childNodes).filter(node => node.nodeType === 1 && ['noFill', 'solidFill', 'sysClr', 'gradFill', 'pattFill'].includes(node.localName || node.tagName.split(':').pop()));
-                                        oldFills.forEach(f => ln.removeChild(f));
 
                                         const sf = xmlDoc.createElementNS(nsA, 'a:solidFill');
                                         const clr = xmlDoc.createElementNS(nsA, 'a:srgbClr');
                                         clr.setAttribute('val', borderColor);
                                         sf.appendChild(clr);
+                                        ln.appendChild(sf);
 
-                                        if (ln.firstChild) ln.insertBefore(sf, ln.firstChild);
-                                        else ln.appendChild(sf);
-                                    }
-                                });
+                                        if (firstNonBorderNode) {
+                                            tcPr.insertBefore(ln, firstNonBorderNode);
+                                        } else {
+                                            tcPr.appendChild(ln);
+                                        }
+                                    });
+                                }
                                 
                                 // 2단계: 첫 행 헤더 배경색 (#0072BA) 및 흰색 텍스트 포맷팅
                                 if (isFirstRow && useHeaderStyle) {
