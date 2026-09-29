@@ -2194,3 +2194,200 @@ export async function getPptSlideCount(pptFile) {
     return slideFiles.length;
 }
 
+/**
+ * 여러 개의 PPTX Blob/File을 순서대로 하나의 단일 PPTX 파일로 병합(Merge)합니다.
+ * @param {Array<Blob|File>} pptFilesArray 병합할 PPTX 파일 또는 Blob 목록
+ * @returns {Promise<Blob>} 하나의 파일로 병합된 PPTX Blob
+ */
+export async function mergeMultiplePptx(pptFilesArray) {
+    if (!pptFilesArray || pptFilesArray.length === 0) {
+        throw new Error('병합할 PPT 파일이 없습니다.');
+    }
+    if (pptFilesArray.length === 1) {
+        return pptFilesArray[0];
+    }
+
+    // 1. 첫 번째 PPT 파일을 베이스(마스터 구조)로 로드
+    const baseZip = new JSZip();
+    await baseZip.loadAsync(await pptFilesArray[0].arrayBuffer());
+
+    // 베이스의 메타데이터 로드
+    let presXml = await baseZip.file('ppt/presentation.xml')?.async('text');
+    let presRelsXml = await baseZip.file('ppt/_rels/presentation.xml.rels')?.async('text');
+    let ctXml = await baseZip.file('[Content_Types].xml')?.async('text');
+
+    if (!presXml || !presRelsXml || !ctXml) {
+        throw new Error('첫 번째 PPT 파일의 내부 OpenXML 구조가 올바르지 않습니다.');
+    }
+
+    // 베이스의 기본 슬라이드 레이아웃 경로 파악 (폴백용)
+    let defaultLayoutTarget = '../slideLayouts/slideLayout1.xml';
+    const firstSlideRels = await baseZip.file('ppt/slides/_rels/slide1.xml.rels')?.async('text');
+    if (firstSlideRels) {
+        const layoutMatch = firstSlideRels.match(/Target="([^"]*slideLayout[^"]*)"/i);
+        if (layoutMatch) {
+            defaultLayoutTarget = layoutMatch[1];
+        }
+    }
+
+    // 베이스에 존재하는 슬라이드 레이아웃 파일 집합
+    const existingLayouts = new Set(
+        Object.keys(baseZip.files)
+            .filter(f => f.startsWith('ppt/slideLayouts/slideLayout') && f.endsWith('.xml'))
+            .map(f => {
+                const name = f.split('/').pop();
+                return `../slideLayouts/${name}`;
+            })
+    );
+
+    // 베이스의 슬라이드 파일들 목록 및 총 개수 파악
+    const baseSlideFiles = Object.keys(baseZip.files)
+        .filter(f => f.match(/^ppt\/slides\/slide\d+\.xml$/i));
+    let currentSlideCount = baseSlideFiles.length;
+
+    // 최대 rId 번호 추출
+    let maxRidNum = 100;
+    const ridMatches = presRelsXml.matchAll(/Id="rId(\d+)"/g);
+    for (const m of ridMatches) {
+        const n = parseInt(m[1], 10);
+        if (n > maxRidNum) maxRidNum = n;
+    }
+
+    // 최대 sldId 번호 추출
+    let maxSldIdNum = 255;
+    const sldIdMatches = presXml.matchAll(/<p:sldId[^>]*\bid="(\d+)"/gi);
+    for (const m of sldIdMatches) {
+        const n = parseInt(m[1], 10);
+        if (n >= 256 && n > maxSldIdNum) maxSldIdNum = n;
+    }
+
+    let newSldIdEntries = '';
+    let newPresRelsEntries = '';
+    let newCtOverrides = '';
+
+    // 2. 2번째 파일부터 순회하며 슬라이드 및 미디어 리소스 복사
+    for (let fileIdx = 1; fileIdx < pptFilesArray.length; fileIdx++) {
+        const srcZip = new JSZip();
+        await srcZip.loadAsync(await pptFilesArray[fileIdx].arrayBuffer());
+
+        // 소스 파일의 슬라이드 파일들 번호 순 정렬
+        const srcSlideFiles = Object.keys(srcZip.files)
+            .filter(f => f.match(/^ppt\/slides\/slide\d+\.xml$/i))
+            .sort((a, b) => {
+                const numA = parseInt(a.match(/slide(\d+)\.xml/i)[1], 10);
+                const numB = parseInt(b.match(/slide(\d+)\.xml/i)[1], 10);
+                return numA - numB;
+            });
+
+        // 소스 파일의 미디어 파일 복사 및 경로 리매핑 테이블 구성
+        const mediaRenameMap = {};
+        const srcMediaFiles = Object.keys(srcZip.files).filter(f => f.startsWith('ppt/media/'));
+        for (const srcMediaPath of srcMediaFiles) {
+            const fileName = srcMediaPath.split('/').pop();
+            const targetMediaPath = `ppt/media/f${fileIdx}_${fileName}`;
+            const mediaData = await srcZip.file(srcMediaPath).async('uint8array');
+            baseZip.file(targetMediaPath, mediaData);
+
+            // [Content_Types].xml에 미디어 확장자 기본 타입 등록 확인
+            const ext = fileName.split('.').pop().toLowerCase();
+            if (!ctXml.includes(`Extension="${ext}"`) && !newCtOverrides.includes(`Extension="${ext}"`)) {
+                let mime = 'image/png';
+                if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+                else if (ext === 'gif') mime = 'image/gif';
+                else if (ext === 'svg') mime = 'image/svg+xml';
+                else if (ext === 'wmf') mime = 'image/x-wmf';
+                else if (ext === 'emf') mime = 'image/x-emf';
+                newCtOverrides += `<Default Extension="${ext}" ContentType="${mime}"/>`;
+            }
+
+            mediaRenameMap[`../media/${fileName}`] = `../media/f${fileIdx}_${fileName}`;
+            mediaRenameMap[`media/${fileName}`] = `media/f${fileIdx}_${fileName}`;
+        }
+
+        // 슬라이드 복제 및 관계 매핑
+        for (const srcSlidePath of srcSlideFiles) {
+            currentSlideCount++;
+            maxRidNum++;
+            maxSldIdNum++;
+
+            const newSlideFileName = `slide${currentSlideCount}.xml`;
+            const newSlidePath = `ppt/slides/${newSlideFileName}`;
+            const newRelsPath = `ppt/slides/_rels/${newSlideFileName}.rels`;
+            const newRid = `rId${maxRidNum}`;
+            const newSldId = maxSldIdNum;
+
+            // 슬라이드 본문 XML 읽기
+            let slideXml = await srcZip.file(srcSlidePath).async('text');
+
+            // 슬라이드 관계(rels) 파일 읽기 및 보정
+            const srcRelsPath = srcSlidePath.replace('ppt/slides/', 'ppt/slides/_rels/') + '.rels';
+            const srcRelsFile = srcZip.file(srcRelsPath);
+
+            if (srcRelsFile) {
+                let relsXml = await srcRelsFile.async('text');
+
+                // 1) 미디어 경로 리네이밍 적용
+                for (const [oldTarget, newTarget] of Object.entries(mediaRenameMap)) {
+                    relsXml = relsXml.replaceAll(oldTarget, newTarget);
+                }
+
+                // 2) 레이아웃 참조가 베이스에 없으면 기본 레이아웃으로 보정
+                relsXml = relsXml.replace(/Target="([^"]*slideLayout\d*\.xml)"/gi, (match, target) => {
+                    if (existingLayouts.has(target)) {
+                        return `Target="${target}"`;
+                    }
+                    return `Target="${defaultLayoutTarget}"`;
+                });
+
+                // 3) 슬라이드 노트, 코멘트 등 단독 참조 관계 정리
+                relsXml = relsXml.replace(/<Relationship [^>]*Type="[^"]*(notesSlide|comments|commentsExtended)[^"]*"[^>]*\/>\s*/gi, '');
+
+                baseZip.file(newRelsPath, relsXml);
+            }
+
+            // 슬라이드 본문 저장
+            baseZip.file(newSlidePath, slideXml);
+
+            // 메타데이터 엔트리 추가
+            newSldIdEntries += `<p:sldId id="${newSldId}" r:id="${newRid}"/>`;
+            newPresRelsEntries += `<Relationship Id="${newRid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/${newSlideFileName}"/>`;
+            newCtOverrides += `<Override PartName="/${newSlidePath}" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`;
+        }
+    }
+
+    // 3. 베이스 프레젠테이션 메타데이터 최종 반영
+    // 1) presentation.xml
+    if (presXml.includes('</p:sldIdLst>')) {
+        presXml = presXml.replace('</p:sldIdLst>', `${newSldIdEntries}</p:sldIdLst>`);
+    } else if (presXml.includes('<p:sldIdLst/>')) {
+        presXml = presXml.replace('<p:sldIdLst/>', `<p:sldIdLst>${newSldIdEntries}</p:sldIdLst>`);
+    } else {
+        presXml = presXml.replace('</p:presentation>', `<p:sldIdLst>${newSldIdEntries}</p:sldIdLst></p:presentation>`);
+    }
+    baseZip.file('ppt/presentation.xml', presXml);
+
+    // 2) ppt/_rels/presentation.xml.rels
+    presRelsXml = presRelsXml.replace('</Relationships>', `${newPresRelsEntries}</Relationships>`);
+    baseZip.file('ppt/_rels/presentation.xml.rels', presRelsXml);
+
+    // 3) [Content_Types].xml
+    ctXml = ctXml.replace('</Types>', `${newCtOverrides}</Types>`);
+    baseZip.file('[Content_Types].xml', ctXml);
+
+    // 4) docProps/app.xml
+    const appXml = await baseZip.file('docProps/app.xml')?.async('text');
+    if (appXml) {
+        const updatedAppXml = appXml.replace(/<Slides>\d+<\/Slides>/, `<Slides>${currentSlideCount}</Slides>`);
+        baseZip.file('docProps/app.xml', updatedAppXml);
+    }
+
+    // 4. 통합 PPTX 생성
+    const mergedBlob = await baseZip.generateAsync({
+        type: 'blob',
+        mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    });
+
+    return mergedBlob;
+}
+
+
