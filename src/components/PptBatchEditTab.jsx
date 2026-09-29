@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Presentation, Upload, X, Settings, CheckCircle2, Layers, Loader2, Sparkles, Info, FilePlus2 } from 'lucide-react';
+import { Presentation, Upload, X, Settings, CheckCircle2, Layers, Loader2, Sparkles, Info, FilePlus2, ArrowUpDown, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { processPptBatch, mergeMultiplePptx } from '../utils/pptExporter';
 import JSZip from 'jszip';
+
+// 자연어(숫자 포함) 파일명 정렬 헬퍼 함수 (예: IV.4.1 -> IV.4.2 -> IV.4.10)
+const sortFilesNaturally = (files, ascending = true) => {
+    return [...files].sort((a, b) => {
+        const res = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        return ascending ? res : -res;
+    });
+};
 
 // PPT 일괄 편집(단어 수정 + 디자인 변경) 탭. PptGenerator.jsx의 batch_edit 서브탭에서 분리됨.
 export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
@@ -80,7 +88,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             const files = Array.from(e.dataTransfer.files);
             const validFiles = files.filter(f => f.name.toLowerCase().endsWith('.pptx'));
             if (validFiles.length > 0) {
-                setBatchPptFiles(prev => [...prev, ...validFiles]);
+                // 💡 탐색기에서 드래그 시 마우스로 집은 파일이 1번으로 오는 OS 동작을 방지하고 번호순 자동 정렬
+                setBatchPptFiles(prev => sortFilesNaturally([...prev, ...validFiles], true));
             } else {
                 setErrorMsg('PPT 파일(.pptx)만 지원합니다.');
             }
@@ -91,12 +100,37 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
         const files = Array.from(e.target.files);
         const validFiles = files.filter(f => f.name.toLowerCase().endsWith('.pptx'));
         if (validFiles.length > 0) {
-            setBatchPptFiles(prev => [...prev, ...validFiles]);
+            setBatchPptFiles(prev => sortFilesNaturally([...prev, ...validFiles], true));
         }
+        e.target.value = '';
     };
 
     const removeBatchFile = (indexToRemove) => {
         setBatchPptFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    };
+
+    const moveFileOrder = (index, direction) => {
+        setBatchPptFiles(prev => {
+            const targetIndex = index + direction;
+            if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+            const newArr = [...prev];
+            const temp = newArr[index];
+            newArr[index] = newArr[targetIndex];
+            newArr[targetIndex] = temp;
+            return newArr;
+        });
+    };
+
+    const handleSortNaturally = () => {
+        setBatchPptFiles(prev => sortFilesNaturally(prev, true));
+    };
+
+    const handleSortReverse = () => {
+        setBatchPptFiles(prev => sortFilesNaturally(prev, false));
+    };
+
+    const handleClearAllFiles = () => {
+        setBatchPptFiles([]);
     };
 
     const buildBatchReportDetail = (modifiedBlob, options) => {
@@ -578,23 +612,122 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
 
                     {batchPptFiles.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
-                            {batchPptFiles.map((file, idx) => (
-                                <div key={idx} style={{
-                                    display: 'flex', alignItems: 'center', gap: '6px',
-                                    background: 'rgba(0,0,0,0.2)', padding: '4px 10px',
-                                    borderRadius: '6px', fontSize: '12.5px', border: '1px solid #a855f7'
-                                }}>
-                                    <span style={{ color: '#c084fc' }}>✔</span>
-                                    <span style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                            {/* 정렬 제어 툴바 */}
+                            <div style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                flexWrap: 'wrap', gap: '8px', padding: '8px 12px',
+                                background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid var(--panel-border)'
+                            }}>
+                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ color: '#c084fc', fontWeight: 700 }}>총 {batchPptFiles.length}개</span> 파일 등록됨 (💡 순서대로 병합됩니다)
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <button
-                                        onClick={() => removeBatchFile(idx)}
-                                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                                        type="button"
+                                        onClick={handleSortNaturally}
+                                        title="파일명의 번호/이름 순서대로 자동 정렬 (1, 2, ..., 10)"
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: '4px',
+                                            padding: '5px 10px', borderRadius: '6px', fontSize: '12px',
+                                            background: 'rgba(168, 85, 247, 0.15)', border: '1px solid #a855f7',
+                                            color: '#d8b4fe', cursor: 'pointer', fontWeight: 600
+                                        }}
                                     >
-                                        <X size={14} />
+                                        <ArrowUpDown size={13} /> 이름/번호순 정렬
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleSortReverse}
+                                        title="역순으로 정렬"
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: '4px',
+                                            padding: '5px 9px', borderRadius: '6px', fontSize: '12px',
+                                            background: 'rgba(255,255,255,0.05)', border: '1px solid var(--panel-border)',
+                                            color: 'var(--text-secondary)', cursor: 'pointer'
+                                        }}
+                                    >
+                                        역순
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleClearAllFiles}
+                                        title="등록된 파일 모두 지우기"
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: '4px',
+                                            padding: '5px 9px', borderRadius: '6px', fontSize: '12px',
+                                            background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)',
+                                            color: '#f87171', cursor: 'pointer'
+                                        }}
+                                    >
+                                        <Trash2 size={13} /> 전체 삭제
                                     </button>
                                 </div>
-                            ))}
+                            </div>
+
+                            {/* 파일 태그 목록 */}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                {batchPptFiles.map((file, idx) => (
+                                    <div key={idx} style={{
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                        background: 'rgba(0,0,0,0.3)', padding: '5px 8px',
+                                        borderRadius: '8px', fontSize: '12.5px', border: '1px solid #a855f7',
+                                        transition: 'all 0.15s ease'
+                                    }}>
+                                        <span style={{
+                                            background: '#a855f7', color: 'white',
+                                            borderRadius: '4px', padding: '1px 5px',
+                                            fontSize: '11px', fontWeight: 700
+                                        }}>
+                                            {idx + 1}
+                                        </span>
+                                        <span
+                                            title={file.name}
+                                            style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}
+                                        >
+                                            {file.name}
+                                        </span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '2px', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '4px' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => moveFileOrder(idx, -1)}
+                                                disabled={idx === 0}
+                                                title="앞으로 이동"
+                                                style={{
+                                                    background: 'none', border: 'none',
+                                                    color: idx === 0 ? 'rgba(255,255,255,0.2)' : 'var(--text-secondary)',
+                                                    cursor: idx === 0 ? 'default' : 'pointer',
+                                                    padding: '2px', display: 'flex', alignItems: 'center'
+                                                }}
+                                            >
+                                                <ChevronLeft size={13} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => moveFileOrder(idx, 1)}
+                                                disabled={idx === batchPptFiles.length - 1}
+                                                title="뒤로 이동"
+                                                style={{
+                                                    background: 'none', border: 'none',
+                                                    color: idx === batchPptFiles.length - 1 ? 'rgba(255,255,255,0.2)' : 'var(--text-secondary)',
+                                                    cursor: idx === batchPptFiles.length - 1 ? 'default' : 'pointer',
+                                                    padding: '2px', display: 'flex', alignItems: 'center'
+                                                }}
+                                            >
+                                                <ChevronRight size={13} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeBatchFile(idx)}
+                                                title="파일 삭제"
+                                                style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center', marginLeft: '2px' }}
+                                            >
+                                                <X size={13} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </div>
