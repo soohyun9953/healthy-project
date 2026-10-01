@@ -2281,13 +2281,13 @@ export async function mergeMultiplePptx(pptFilesArray) {
             }
         }
 
-        // 종속 리소스 복사 목록 (media, charts, diagrams, drawings, embeddings, tags)
+        // 종속 리소스 복사 목록 (media, charts, diagrams, drawings, embeddings, tags, theme)
         // 충돌 방지를 위해 리소스 파일명에 f{fileIdx}_ 접두어를 붙임
         const resourcePrefix = `f${fileIdx}_`;
         const pathRenameMap = {};
 
         const srcFileKeys = Object.keys(srcZip.files);
-        const resourceCategories = ['ppt/media/', 'ppt/charts/', 'ppt/diagrams/', 'ppt/drawings/', 'ppt/embeddings/', 'ppt/tags/'];
+        const resourceCategories = ['ppt/media/', 'ppt/charts/', 'ppt/diagrams/', 'ppt/drawings/', 'ppt/embeddings/', 'ppt/tags/', 'ppt/theme/'];
 
         for (const srcKey of srcFileKeys) {
             if (srcZip.files[srcKey].dir) continue;
@@ -2306,7 +2306,7 @@ export async function mergeMultiplePptx(pptFilesArray) {
 
                     if (srcKey.endsWith('.rels') || srcKey.endsWith('.xml')) {
                         let fileText = await srcZip.file(srcKey).async('text');
-                        fileText = fileText.replace(/(\.\.\/(?:media|charts|diagrams|drawings|embeddings|tags)\/)([^"'\s>]+)/g, (match, dir, fname) => {
+                        fileText = fileText.replace(/(\.\.\/(?:media|charts|diagrams|drawings|embeddings|tags|theme)\/)([^"'\s>]+)/g, (match, dir, fname) => {
                             return `${dir}${resourcePrefix}${fname}`;
                         });
                         baseZip.file(targetKey, fileText);
@@ -2327,8 +2327,24 @@ export async function mergeMultiplePptx(pptFilesArray) {
                     const simpleCategoryName = cat.replace('ppt/', '');
                     pathRenameMap[`../${simpleCategoryName}${relativeInsideCat}`] = `../${simpleCategoryName}${resourcePrefix}${relativeInsideCat}`;
                     pathRenameMap[`${simpleCategoryName}${relativeInsideCat}`] = `${simpleCategoryName}${resourcePrefix}${relativeInsideCat}`;
+                    // 동일 디렉토리 내 상대경로 매핑 (예: chart rels 내부의 style1.xml, colors1.xml 등)
+                    if (!relativeInsideCat.includes('/')) {
+                        pathRenameMap[`Target="${relativeInsideCat}"`] = `Target="${resourcePrefix}${relativeInsideCat}"`;
+                    }
                     break;
                 }
+            }
+        }
+
+        // 복사된 차트/다이어그램의 _rels 파일 내부의 동일 디렉토리 및 상대경로 타깃 2차 보정
+        const copiedRelsFiles = Object.keys(baseZip.files).filter(k => k.startsWith(`ppt/charts/_rels/${resourcePrefix}`) || k.startsWith(`ppt/diagrams/_rels/${resourcePrefix}`));
+        for (const relsKey of copiedRelsFiles) {
+            let relsContent = await baseZip.file(relsKey)?.async('text');
+            if (relsContent) {
+                for (const [oldTarget, newTarget] of Object.entries(pathRenameMap)) {
+                    relsContent = relsContent.replaceAll(oldTarget, newTarget);
+                }
+                baseZip.file(relsKey, relsContent);
             }
         }
 
