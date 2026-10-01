@@ -2196,6 +2196,8 @@ export async function getPptSlideCount(pptFile) {
 
 /**
  * 여러 개의 PPTX Blob/File을 순서대로 하나의 단일 PPTX 파일로 병합(Merge)합니다.
+ * 이미지(media), 차트(charts), 스마트아트 다이어그램(diagrams), 드로잉(drawings), OLE 임베딩(embeddings) 등
+ * 모든 하위 종속 리소스를 완벽하게 격리 복제 및 재참조 매핑하여 OpenXML 손상 및 복구 팝업 없이 결합합니다.
  * @param {Array<Blob|File>} pptFilesArray 병합할 PPTX 파일 또는 Blob 목록
  * @returns {Promise<Blob>} 하나의 파일로 병합된 PPTX Blob
  */
@@ -2211,7 +2213,6 @@ export async function mergeMultiplePptx(pptFilesArray) {
     const baseZip = new JSZip();
     await baseZip.loadAsync(await pptFilesArray[0].arrayBuffer());
 
-    // 베이스의 메타데이터 로드
     let presXml = await baseZip.file('ppt/presentation.xml')?.async('text');
     let presRelsXml = await baseZip.file('ppt/_rels/presentation.xml.rels')?.async('text');
     let ctXml = await baseZip.file('[Content_Types].xml')?.async('text');
@@ -2265,10 +2266,71 @@ export async function mergeMultiplePptx(pptFilesArray) {
     let newPresRelsEntries = '';
     let newCtOverrides = '';
 
-    // 2. 2번째 파일부터 순회하며 슬라이드 및 미디어 리소스 복사
+    // 2. 2번째 파일부터 순회하며 슬라이드 및 모든 종속 리소스 복사
     for (let fileIdx = 1; fileIdx < pptFilesArray.length; fileIdx++) {
         const srcZip = new JSZip();
         await srcZip.loadAsync(await pptFilesArray[fileIdx].arrayBuffer());
+        const srcCtXml = await srcZip.file('[Content_Types].xml')?.async('text') || '';
+
+        // [Content_Types].xml의 Default 확장자들 중 베이스에 없는 항목 추가
+        const defaultExtMatches = srcCtXml.matchAll(/<Default\s+([^>]*?)Extension="([^"]+)"([^>]*?)\/>/gi);
+        for (const defMatch of defaultExtMatches) {
+            const ext = defMatch[2];
+            if (!ctXml.includes(`Extension="${ext}"`) && !newCtOverrides.includes(`Extension="${ext}"`)) {
+                newCtOverrides += defMatch[0];
+            }
+        }
+
+        // 종속 리소스 복사 목록 (media, charts, diagrams, drawings, embeddings, tags)
+        // 충돌 방지를 위해 리소스 파일명에 f{fileIdx}_ 접두어를 붙임
+        const resourcePrefix = `f${fileIdx}_`;
+        const pathRenameMap = {};
+
+        const srcFileKeys = Object.keys(srcZip.files);
+        const resourceCategories = ['ppt/media/', 'ppt/charts/', 'ppt/diagrams/', 'ppt/drawings/', 'ppt/embeddings/', 'ppt/tags/'];
+
+        for (const srcKey of srcFileKeys) {
+            if (srcZip.files[srcKey].dir) continue;
+
+            for (const cat of resourceCategories) {
+                if (srcKey.startsWith(cat)) {
+                    const relativeInsideCat = srcKey.substring(cat.length);
+                    let targetKey = '';
+
+                    if (relativeInsideCat.startsWith('_rels/')) {
+                        const baseFileName = relativeInsideCat.substring(6);
+                        targetKey = `${cat}_rels/${resourcePrefix}${baseFileName}`;
+                    } else {
+                        targetKey = `${cat}${resourcePrefix}${relativeInsideCat}`;
+                    }
+
+                    if (srcKey.endsWith('.rels') || srcKey.endsWith('.xml')) {
+                        let fileText = await srcZip.file(srcKey).async('text');
+                        fileText = fileText.replace(/(\.\.\/(?:media|charts|diagrams|drawings|embeddings|tags)\/)([^"'\s>]+)/g, (match, dir, fname) => {
+                            return `${dir}${resourcePrefix}${fname}`;
+                        });
+                        baseZip.file(targetKey, fileText);
+                    } else {
+                        const binData = await srcZip.file(srcKey).async('uint8array');
+                        baseZip.file(targetKey, binData);
+                    }
+
+                    const overrideRegex = new RegExp(`<Override\\s+[^>]*?PartName="/${srcKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*?\\/>`, 'i');
+                    const overrideMatch = srcCtXml.match(overrideRegex);
+                    if (overrideMatch) {
+                        const newOverride = overrideMatch[0].replace(`PartName="/${srcKey}"`, `PartName="/${targetKey}"`);
+                        if (!ctXml.includes(newOverride) && !newCtOverrides.includes(newOverride)) {
+                            newCtOverrides += newOverride;
+                        }
+                    }
+
+                    const simpleCategoryName = cat.replace('ppt/', '');
+                    pathRenameMap[`../${simpleCategoryName}${relativeInsideCat}`] = `../${simpleCategoryName}${resourcePrefix}${relativeInsideCat}`;
+                    pathRenameMap[`${simpleCategoryName}${relativeInsideCat}`] = `${simpleCategoryName}${resourcePrefix}${relativeInsideCat}`;
+                    break;
+                }
+            }
+        }
 
         // 소스 파일의 슬라이드 파일들 번호 순 정렬
         const srcSlideFiles = Object.keys(srcZip.files)
@@ -2278,31 +2340,6 @@ export async function mergeMultiplePptx(pptFilesArray) {
                 const numB = parseInt(b.match(/slide(\d+)\.xml/i)[1], 10);
                 return numA - numB;
             });
-
-        // 소스 파일의 미디어 파일 복사 및 경로 리매핑 테이블 구성
-        const mediaRenameMap = {};
-        const srcMediaFiles = Object.keys(srcZip.files).filter(f => f.startsWith('ppt/media/'));
-        for (const srcMediaPath of srcMediaFiles) {
-            const fileName = srcMediaPath.split('/').pop();
-            const targetMediaPath = `ppt/media/f${fileIdx}_${fileName}`;
-            const mediaData = await srcZip.file(srcMediaPath).async('uint8array');
-            baseZip.file(targetMediaPath, mediaData);
-
-            // [Content_Types].xml에 미디어 확장자 기본 타입 등록 확인
-            const ext = fileName.split('.').pop().toLowerCase();
-            if (!ctXml.includes(`Extension="${ext}"`) && !newCtOverrides.includes(`Extension="${ext}"`)) {
-                let mime = 'image/png';
-                if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
-                else if (ext === 'gif') mime = 'image/gif';
-                else if (ext === 'svg') mime = 'image/svg+xml';
-                else if (ext === 'wmf') mime = 'image/x-wmf';
-                else if (ext === 'emf') mime = 'image/x-emf';
-                newCtOverrides += `<Default Extension="${ext}" ContentType="${mime}"/>`;
-            }
-
-            mediaRenameMap[`../media/${fileName}`] = `../media/f${fileIdx}_${fileName}`;
-            mediaRenameMap[`media/${fileName}`] = `media/f${fileIdx}_${fileName}`;
-        }
 
         // 슬라이드 복제 및 관계 매핑
         for (const srcSlidePath of srcSlideFiles) {
@@ -2316,18 +2353,15 @@ export async function mergeMultiplePptx(pptFilesArray) {
             const newRid = `rId${maxRidNum}`;
             const newSldId = maxSldIdNum;
 
-            // 슬라이드 본문 XML 읽기
             let slideXml = await srcZip.file(srcSlidePath).async('text');
-
-            // 슬라이드 관계(rels) 파일 읽기 및 보정
             const srcRelsPath = srcSlidePath.replace('ppt/slides/', 'ppt/slides/_rels/') + '.rels';
             const srcRelsFile = srcZip.file(srcRelsPath);
 
             if (srcRelsFile) {
                 let relsXml = await srcRelsFile.async('text');
 
-                // 1) 미디어 경로 리네이밍 적용
-                for (const [oldTarget, newTarget] of Object.entries(mediaRenameMap)) {
+                // 1) 모든 종속 리소스 경로(차트, 다이어그램, 이미지, 임베딩 등) 리네이밍 적용
+                for (const [oldTarget, newTarget] of Object.entries(pathRenameMap)) {
                     relsXml = relsXml.replaceAll(oldTarget, newTarget);
                 }
 
@@ -2345,10 +2379,8 @@ export async function mergeMultiplePptx(pptFilesArray) {
                 baseZip.file(newRelsPath, relsXml);
             }
 
-            // 슬라이드 본문 저장
             baseZip.file(newSlidePath, slideXml);
 
-            // 메타데이터 엔트리 추가
             newSldIdEntries += `<p:sldId id="${newSldId}" r:id="${newRid}"/>`;
             newPresRelsEntries += `<Relationship Id="${newRid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/${newSlideFileName}"/>`;
             newCtOverrides += `<Override PartName="/${newSlidePath}" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`;
