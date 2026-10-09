@@ -574,7 +574,7 @@ export function apply_typos_to_text(originalText, typosList) {
     return modified;
 }
 
-export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', omniRouteModel = 'auto', customDict = {}) {
+export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel = 'auto', isSubCall = false, ragContext = "", llmProvider = 'gemini', omniRouteModel = 'auto', customDict = {}, analysisMode = 'typo') {
     const keys = String(apiKey || '').split(',').map(k => k.trim()).filter(k => k.match(/^(AIza|AQ\.)/));
     // OmniRoute는 API 키 불필요
     if (llmProvider !== 'omniroute' && keys.length === 0) {
@@ -582,7 +582,8 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
     }
 
     let currentKeyIndex = 0;
-    const isOnlyTypoCheck = !guidelineText || guidelineText.trim() === '';
+    const isAiHumanize = analysisMode === 'ai_humanize';
+    const isOnlyTypoCheck = (!guidelineText || guidelineText.trim() === '') || isAiHumanize;
 
     if (!isSubCall) {
         // [교정교열 모드 1차 정밀 분할 스캔]: 8,000자 이상 시 분할하여 LLM의 토큰 한계로 인한 누락 원천 차단
@@ -598,22 +599,24 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
                         await sleep_delay(1500);
                     }
                     
-                    const res = await analyzeDocumentsWithLLM("", chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, omniRouteModel, customDict);
+                    const res = await analyzeDocumentsWithLLM("", chunks[i], inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, omniRouteModel, customDict, analysisMode);
                     results.push(res);
                 }
                 if (onProgress) onProgress("전체 구간 분석 결과 병합 중...");
                 const mergedRes = merge_multiple_results(results, true);
 
-                // 정적 사전 결합 (사용자 정의 커스텀 사전 포함)
-                const dictTypos = extract_dictionary_typos(artifactText, customDict);
-                const seenSig = new Set((mergedRes.typos || []).map(t => `${t.page}_${t.originalText}_${t.correction}`));
-                dictTypos.forEach(dt => {
-                    const sig = `${dt.page}_${dt.originalText}_${dt.correction}`;
-                    if (!seenSig.has(sig)) {
-                        seenSig.add(sig);
-                        mergedRes.typos.push(dt);
-                    }
-                });
+                if (!isAiHumanize) {
+                    // 정적 사전 결합 (사용자 정의 커스텀 사전 포함 - 일반 오탈자 모드일 때만)
+                    const dictTypos = extract_dictionary_typos(artifactText, customDict);
+                    const seenSig = new Set((mergedRes.typos || []).map(t => `${t.page}_${t.originalText}_${t.correction}`));
+                    dictTypos.forEach(dt => {
+                        const sig = `${dt.page}_${dt.originalText}_${dt.correction}`;
+                        if (!seenSig.has(sig)) {
+                            seenSig.add(sig);
+                            mergedRes.typos.push(dt);
+                        }
+                    });
+                }
 
                 if (mergedRes) {
                     mergedRes.correctedFullText = apply_typos_to_text(artifactText, mergedRes.typos);
@@ -634,7 +637,7 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
                         await sleep_delay(3000);
                     }
                     
-                    const res = await analyzeDocumentsWithLLM(chunks[i], artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, omniRouteModel);
+                    const res = await analyzeDocumentsWithLLM(chunks[i], artifactText, inspectionScope, apiKey, glossaryText, onProgress, selectedModel, true, ragContext, llmProvider, omniRouteModel, customDict, analysisMode);
                     results.push(res);
                 }
                 if (onProgress) onProgress("분석 결과 병합 중...");
@@ -657,7 +660,42 @@ export async function analyzeDocumentsWithLLM(guidelineText, artifactText, inspe
 
     let systemPrompt = '';
     if (onProgress) onProgress("분석 프롬프트 구성 중...");
-    if (isOnlyTypoCheck) {
+    if (isAiHumanize) {
+        systemPrompt = `[시스템 역할]
+당신은 대한민국 최고 수준의 **'AI 작성투 탐지 및 문장 인간화(Humanize AI Text) 전문 교열 에이전트'**입니다.
+당신의 핵심 임무는 입력된 문서(PPTX, HWPX, PDF, DOCX, TXT 등)를 전수 검수하여, **AI(ChatGPT, Claude, Gemini 등)가 작성한 것 같은 부자연스럽고 기계적인 번역투, 공허한 미사여구, 상투적 클리셰 문장**을 정밀하게 탐지하고, **'일반인 및 현업 전문가가 직접 쓴 것처럼 자연스럽고 매끄러우며 명확한 문구'**로 추천(인간화 교정)하는 것입니다.
+
+[AI 생성투 주요 탐지 대상 및 인간화 원칙]
+모든 검출 사항은 아래의 5가지 차원 중 하나로 명확히 분류하여 'errorType'에 기입하십시오.
+1. **[AI 번역투/피동형]**: 영어 직역투, 어색한 피동/수동태, 불필요한 '~에 대하여', '~를 가능하게 만듭니다', '~에 의해 진행되어지는 바' 등
+   - [예시 원문]: "본 프로젝트는 원활한 서비스 제공을 가능하게 만들며, 담당자들에 의해 적극적으로 활용되어질 것입니다."
+   - [인간화 추천]: "본 사업을 통해 원활한 서비스를 제공하고, 담당자가 업무에 적극 활용하도록 합니다."
+2. **[기계적 수식어/미사여구]**: 알맹이 없이 과장된 AI 클리셰 ("~의 중대한 이정표로서 혁신적인 가치를 창출하고", "생태계의 패러다임 전환을 촉진하며", "중추적 역할을 수행합니다")
+   - [예시 원문]: "이는 디지털 혁신의 중대한 이정표로서 미래 지향적 가치를 창출하는 데 핵심적인 역할을 수행합니다."
+   - [인간화 추천]: "이는 디지털 전환의 핵심 기반으로서 실질적인 업무 개선을 이끕니다."
+3. **[상투적 접속사 남발]**: 문장마다 기계적으로 반복되는 '뿐만 아니라', '이와 더불어', '이에 따라', '종합적으로 볼 때', '결과적으로' 등
+   - [인간화 추천]: 불필요한 접속사를 덜어내고 문맥을 간결하고 자연스럽게 연결
+4. **[모호한 교과서식 어조]**: 실체가 모호하고 장황한 서술 ("다양한 요소들을 종합적으로 고려하여 유기적인 협업 체계를 구축함으로써 시너지를 극대화...")
+   - [인간화 추천]: 현업 실무진이 쓰는 간결하고 실질적인 어휘로 압축 ("현업 부서와 협의하여 단계별 실행 체계를 구축...")
+5. **[판에 박힌 AI 종결어미]**: "~라 할 수 있겠습니다", "~하는 것이 매우 중요하다고 볼 수 있습니다", "~할 필요성이 대두되고 있습니다"
+   - [인간화 추천]: "~합니다", "~가 중요합니다", "~을 추진합니다"와 같이 명확하고 단호한 능동형 종결
+
+[필수 출력 구조 - 반드시 아래 JSON 객체로만 반환]
+{
+  "score": 88,
+  "inspectionScope": "<점검범위 또는 null>",
+  "summary": "<문서 전체의 AI 작성투 탐지 결과와 인간다운 자연스러운 문장 개선 방향에 대한 종합 평가 요약 (한국어 3문장 이상)>",
+  "requirementMapping": [],
+  "typos": [
+    {
+      "page": "<페이지/슬라이드 위치>",
+      "originalText": "<AI가 작성한 것으로 의심되는 원문 문장>",
+      "correction": "<사람이 작성한 듯한 자연스럽고 간결한 추천 문구>",
+      "errorType": "[AI 작성투] <구체적 사유: 번역투 피동형, 공허한 미사여구, 기계적 접속사 반복 등>"
+    }
+  ]
+}`;
+    } else if (isOnlyTypoCheck) {
         systemPrompt = `[시스템 역할]
 당신은 대한민국 최고 수준의 섬세함과 엄격함을 지닌 **'ISMP 산출물 하이브리드 품질 감사 에이전트'**입니다. 
 당신의 핵심 임무는 입력된 문서(PPTX, HWPX, DOCX 등)를 다음 **[5대 차원 심층 품질 점검 기준]**에 근거하여 철저히 검수하고, 발견된 모든 품질 오류를 도출하는 것입니다.

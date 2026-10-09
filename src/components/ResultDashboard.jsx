@@ -40,20 +40,21 @@ async function exportToExcel(data, isTypoMode = false) {
     };
 
     // ── 시트 준비: 오탈자/교정교열 결과 시트 생성 함수 ──
+    const isAiHumanizeMode = data.mode === 'ai_humanize';
     const buildTypoSheet = () => {
         const typoHeaders = [
             { header: '순번', key: '순번', width: 6 },
             { header: '페이지/위치', key: '위치', width: 25 },
-            { header: '원문 문장 전체', key: '원문', width: 40 },
-            { header: '수정 제안 문장', key: '수정', width: 40 },
-            { header: '오류 유형/사유', key: '사유', width: 60 }
+            { header: isAiHumanizeMode ? 'AI 작성 의심 원문' : '원문 문장 전체', key: '원문', width: 40 },
+            { header: isAiHumanizeMode ? '인간화 추천 문구' : '수정 제안 문장', key: '수정', width: 40 },
+            { header: isAiHumanizeMode ? '탐지 사유 (AI 생성투)' : '오류 유형/사유', key: '사유', width: 60 }
         ];
 
         const validTypos = (data.typos || []).map(item => {
             const orig = String(item.originalText || item.original || item.errorText || item.before || item.wrong || item.source || '').trim();
             const corr = String(item.correction || item.correct || item.after || item.suggestion || item.target || item.right || '').trim();
             const page = String(item.page || item.location || item.type || item.section || item.path || '1페이지');
-            const reason = String(item.errorType || item.reason || item.context || item.category || '[표현 품질] 교정');
+            const reason = String(item.errorType || item.reason || item.context || item.category || (isAiHumanizeMode ? '[AI 작성투] 교정' : '[표현 품질] 교정'));
             return { orig, corr, page, reason };
         }).filter(t => t.orig && t.corr && t.orig !== t.corr && t.corr !== '문맥 검토 및 구체적 명세 보완 권고');
 
@@ -71,11 +72,13 @@ async function exportToExcel(data, isTypoMode = false) {
                 '위치': '전체 산출물',
                 '원문': '특이 결함 없음',
                 '수정': '원문 유지',
-                '사유': '[품질 완료] 지적할 오탈자, 띄어쓰기 및 표현 결함이 발견되지 않았습니다. (정상 문서)'
+                '사유': isAiHumanizeMode 
+                    ? '[품질 완료] AI 특유의 번역투나 부자연스러운 기계적 문장이 없는 자연스러운 문서입니다.'
+                    : '[품질 완료] 지적할 오탈자, 띄어쓰기 및 표현 결함이 발견되지 않았습니다. (정상 문서)'
             });
         }
 
-        addSheet('교정교열_결과', typoHeaders, typoRows);
+        addSheet(isAiHumanizeMode ? 'AI_인간화_추천결과' : '교정교열_결과', typoHeaders, typoRows);
     };
 
     if (isTypoMode) {
@@ -86,8 +89,8 @@ async function exportToExcel(data, isTypoMode = false) {
             { header: '내용', key: '내용', width: 80 }
         ];
         const summaryRows = [
-            { '항목': '검수 모드', '내용': 'ISMP 산출물 전문 교정교열 모드' },
-            { '항목': '총점', '내용': `${data.score || 85}점 / 100점` },
+            { '항목': '검수 모드', '내용': isAiHumanizeMode ? 'AI 작성투 탐지 & 인간화 문구 추천 모드' : 'ISMP 산출물 전문 교정교열 모드' },
+            { '항목': isAiHumanizeMode ? '자연스러움 지수' : '총점', '내용': `${data.score || 85}점 / 100점` },
             { '항목': '종합 분석 의견', '내용': data.summary || '분석 완료' }
         ];
         addSheet('종합_요약', summaryHeaders, summaryRows);
@@ -387,20 +390,30 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
 
             {/* 🔥 교정교열 모드일 경우: [오탈자 및 표현 결함 결과 표]를 화면 최상단 1순위로 즉시 노출! */}
             {isTypoMode && (
-                <section className="glass-panel animate-slide-up stagger-1" style={{ padding: '24px', borderLeft: '5px solid var(--warning-color)' }}>
+                <section className="glass-panel animate-slide-up stagger-1" style={{ padding: '24px', borderLeft: isAiHumanizeMode ? '5px solid var(--accent-purple)' : '5px solid var(--warning-color)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <PenTool size={22} color="var(--warning-color)" />
+                            {isAiHumanizeMode ? (
+                                <Sparkles size={22} color="var(--accent-purple)" />
+                            ) : (
+                                <PenTool size={22} color="var(--warning-color)" />
+                            )}
                             <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                ISMP 산출물 전문 교정교열 검수 결과
+                                {isAiHumanizeMode ? 'AI 작성투 탐지 & 인간화 추천 결과' : 'ISMP 산출물 전문 교정교열 검수 결과'}
                             </h3>
                             <span style={{
                                 padding: '4px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: 700,
-                                background: typosList.length > 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)',
-                                color: typosList.length > 0 ? 'var(--danger-color)' : 'var(--success-color)',
-                                border: `1px solid ${typosList.length > 0 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`
+                                background: typosList.length > 0 
+                                    ? (isAiHumanizeMode ? 'rgba(168, 85, 247, 0.15)' : 'rgba(239, 68, 68, 0.15)')
+                                    : 'rgba(34, 197, 94, 0.15)',
+                                color: typosList.length > 0 
+                                    ? (isAiHumanizeMode ? 'var(--accent-purple)' : 'var(--danger-color)')
+                                    : 'var(--success-color)',
+                                border: `1px solid ${typosList.length > 0 ? (isAiHumanizeMode ? 'rgba(168, 85, 247, 0.3)' : 'rgba(239, 68, 68, 0.3)') : 'rgba(34, 197, 94, 0.3)'}`
                             }}>
-                                {typosList.length > 0 ? `발견된 결함: ${typosList.length}건 (100% 전수 스캔)` : '특이 결함 없음 (완벽)'}
+                                {isAiHumanizeMode 
+                                    ? (typosList.length > 0 ? `AI 생성 의심 문구: ${typosList.length}건` : 'AI 작성투 없음 (자연스러움 100%)')
+                                    : (typosList.length > 0 ? `발견된 결함: ${typosList.length}건 (100% 전수 스캔)` : '특이 결함 없음 (완벽)')}
                             </span>
                         </div>
 
@@ -435,7 +448,7 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                                 }}
                             >
                                 {copiedToast ? <Check size={16} /> : <Copy size={16} />}
-                                <span>{copiedToast ? '✅ 복사 완료!' : '📋 교정 완성본 복사'}</span>
+                                <span>{copiedToast ? '✅ 복사 완료!' : (isAiHumanizeMode ? '📋 인간화 완성본 복사' : '📋 교정 완성본 복사')}</span>
                             </button>
 
                             {/* 교정본 파일 다운로드 */}
@@ -453,7 +466,7 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                                     }}
                                 >
                                     <FileText size={16} />
-                                    <span>💾 교정본(.md) 다운로드</span>
+                                    <span>{isAiHumanizeMode ? '💾 인간화본(.md) 다운로드' : '💾 교정본(.md) 다운로드'}</span>
                                 </button>
                             )}
 
@@ -475,22 +488,28 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                     </div>
 
                     {/* 전체 요약 문구 */}
-                    <div style={{ padding: '14px 18px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid var(--accent-blue)' }}>
-                        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>📋 종합 교열 의견 및 전수 점검 요약</span>
+                    <div style={{ padding: '14px 18px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '20px', borderLeft: `4px solid ${isAiHumanizeMode ? 'var(--accent-purple)' : 'var(--accent-blue)'}` }}>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                            {isAiHumanizeMode ? '📋 AI 작성투 탐지 종합 의견 및 인간화 개선 요약' : '📋 종합 교열 의견 및 전수 점검 요약'}
+                        </span>
                         <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.6', color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
                             {data.summary || '분석이 완료되었습니다.'}
                         </p>
                     </div>
 
-                    {/* 오탈자 결과 명확 표시 테이블 (인라인 Diff 하이라이트 적용) */}
+                    {/* 오탈자 / AI 작성투 결과 명확 표시 테이블 (인라인 Diff 하이라이트 적용) */}
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.03)' }}>
                                     <th style={{ padding: '14px 16px', fontWeight: 600, width: '60px' }}>순번</th>
                                     <th style={{ padding: '14px 16px', fontWeight: 600, width: '12%' }}>위치/페이지</th>
-                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '60%' }}>원문 vs 교정 제안 (인라인 단어 Diff)</th>
-                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '22%' }}>오류 유형/사유</th>
+                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '60%' }}>
+                                        {isAiHumanizeMode ? 'AI 작성 의심 원문 vs 인간화 추천 문구 (인라인 Diff)' : '원문 vs 교정 제안 (인라인 단어 Diff)'}
+                                    </th>
+                                    <th style={{ padding: '14px 16px', fontWeight: 600, width: '22%' }}>
+                                        {isAiHumanizeMode ? '탐지 사유 (AI 생성투)' : '오류 유형/사유'}
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -498,7 +517,7 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                                     typosList.map((typo, idx) => (
                                         <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', backgroundColor: idx % 2 === 0 ? 'rgba(0,0,0,0.15)' : 'transparent' }}>
                                             <td style={{ padding: '14px 16px', fontWeight: 700, color: 'var(--text-secondary)' }}>{idx + 1}</td>
-                                            <td style={{ padding: '14px 16px', color: 'var(--warning-color)', fontWeight: 600 }}>
+                                            <td style={{ padding: '14px 16px', color: isAiHumanizeMode ? 'var(--accent-purple)' : 'var(--warning-color)', fontWeight: 600 }}>
                                                 {typo.page || typo.location || typo.type || typo.section || '1페이지'}
                                             </td>
                                             <td style={{ padding: '14px 16px' }}>
@@ -508,14 +527,16 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
                                                 )}
                                             </td>
                                             <td style={{ padding: '14px 16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                                                {typo.errorType || typo.reason || typo.context || '[표현 품질] 교정'}
+                                                {typo.errorType || typo.reason || typo.context || (isAiHumanizeMode ? '[AI 작성투] 교정' : '[표현 품질] 교정')}
                                             </td>
                                         </tr>
                                     ))
                                 ) : (
                                     <tr>
                                         <td colSpan={4} style={{ padding: '30px', textAlign: 'center', color: 'var(--success-color)', fontSize: '15px', fontWeight: 600 }}>
-                                            ✅ 지적할 오탈자, 띄어쓰기 및 표현 결함이 발견되지 않은 깨끗한 산출물입니다.
+                                            {isAiHumanizeMode 
+                                                ? '✨ AI 특유의 번역투나 부자연스러운 기계적 문장이 없는 자연스러운 문서입니다.' 
+                                                : '✅ 지적할 오탈자, 띄어쓰기 및 표현 결함이 발견되지 않은 깨끗한 산출물입니다.'}
                                         </td>
                                     </tr>
                                 )}
