@@ -348,6 +348,7 @@ export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
 
     if (!data) return null;
 
+    const isAiHumanizeMode = data?.mode === 'ai_humanize';
     const displayScore = isNaN(data.score) || data.score === undefined || data.score === null ? 0 : Math.round(Number(data.score));
     const typosList = data.typos || [];
     const styleIssues = data.styleIssues || [];

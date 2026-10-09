@@ -57,6 +57,70 @@ const gaEvent = (eventName, params = {}) => {
   }
 };
 
+// ── 에러 바운더리 컴포넌트 (화면 블랙아웃 방지) ─────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('[ErrorBoundary caught error]:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          padding: '40px',
+          margin: '20px',
+          background: 'rgba(239, 68, 68, 0.08)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          borderRadius: '16px',
+          color: 'var(--text-primary)',
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '16px'
+        }}>
+          <ShieldAlert size={48} color="var(--danger-color)" />
+          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700 }}>화면을 표시하는 중 일시적인 오류가 발생했습니다.</h2>
+          <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)', maxWidth: '600px', lineHeight: '1.6' }}>
+            {this.state.error?.message || '알 수 없는 오류가 발생했습니다.'}
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+              window.location.reload();
+            }}
+            style={{
+              padding: '10px 20px',
+              background: 'var(--accent-blue)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '10px',
+              fontSize: '14px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <RefreshCw size={16} /> 화면 새로고침 및 복구
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ── 탭별 상세 가이드 데이터 ─────────────────────────
 const tab_guides = {
   ppt: {
@@ -949,19 +1013,21 @@ function App() {
             </div>
           )}
 
-          {activeTab === 'main' && <DocumentValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
-          {activeTab === 'ismpda' && <IsmpDaDashboard />}
-          {activeTab === 'typo' && <TypoValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
-          {activeTab === 'law' && <LawConsultant apiKey={apiKey} isMcpMode={false} />}
-          {activeTab === 'law-mcp' && <LawConsultant apiKey={apiKey} isMcpMode={true} />}
-          { activeTab === 'erd' && <ErdGenerator apiKey={apiKey} /> }
-          { activeTab === 'aippt' && <AiPptDesigner apiKey={apiKey} /> }
-          { activeTab === 'ppt' && <PptGenerator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
-          { activeTab === 'g2b' && <G2bSearch /> }
-          { activeTab === 'ppt-verify' && <PptValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
-          {activeTab === 'meeting' && <MeetingMinutes apiKey={apiKey} />}
-          {activeTab === 'library' && <ReferenceLibrary />}
-          {activeTab === 'rag' && <RagKnowledgeBase apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
+          <ErrorBoundary>
+            {activeTab === 'main' && <DocumentValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
+            {activeTab === 'ismpda' && <IsmpDaDashboard />}
+            {activeTab === 'typo' && <TypoValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
+            {activeTab === 'law' && <LawConsultant apiKey={apiKey} isMcpMode={false} />}
+            {activeTab === 'law-mcp' && <LawConsultant apiKey={apiKey} isMcpMode={true} />}
+            { activeTab === 'erd' && <ErdGenerator apiKey={apiKey} /> }
+            { activeTab === 'aippt' && <AiPptDesigner apiKey={apiKey} /> }
+            { activeTab === 'ppt' && <PptGenerator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
+            { activeTab === 'g2b' && <G2bSearch /> }
+            { activeTab === 'ppt-verify' && <PptValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
+            {activeTab === 'meeting' && <MeetingMinutes apiKey={apiKey} />}
+            {activeTab === 'library' && <ReferenceLibrary />}
+            {activeTab === 'rag' && <RagKnowledgeBase apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
+          </ErrorBoundary>
         </div>
       </main>
 
@@ -990,7 +1056,7 @@ function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <HelpCircle size={24} color="var(--accent-blue)" />
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  건강한 프로젝트 통합 매뉴얼 (v2.14.8)
+                  건강한 프로젝트 통합 매뉴얼 (v2.15.0)
                 </h3>
               </div>
               <button 
