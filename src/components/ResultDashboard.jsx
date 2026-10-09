@@ -282,64 +282,71 @@ function extractCoreDiff(orig, corr) {
 // (예: 새호->새로, 컨텐츠->콘텐츠가 한 줄에 있으면 두 항목 모두 원문이 그 줄 전체), 같은 원문을 공유하는
 // 항목들을 그룹으로 묶어 그 줄 안에서 서로 다른 치환 구간을 함께 찾아낸다.
 function buildFullDocumentTrackChanges(originalFullText, typosList) {
-    if (!originalFullText) return null;
+    if (!originalFullText || typeof originalFullText !== 'string') return null;
 
-    const candidates = (typosList || [])
-        .map(t => ({
-            orig: String(t.originalText || t.original || t.errorText || t.before || t.wrong || '').trim(),
-            corr: String(t.correction || t.correct || t.after || t.suggestion || '').trim()
-        }))
-        .filter(t => t.orig && t.corr && t.orig !== t.corr);
+    try {
+        const candidates = (typosList || [])
+            .map(t => ({
+                orig: String(t.originalText || t.original || t.errorText || t.before || t.wrong || '').trim(),
+                corr: String(t.correction || t.correct || t.after || t.suggestion || '').trim()
+            }))
+            .filter(t => t.orig && t.corr && t.orig !== t.corr);
 
-    const groups = new Map(); // orig(원문 문장/구절) -> [corr, ...]
-    candidates.forEach(({ orig, corr }) => {
-        if (!groups.has(orig)) groups.set(orig, []);
-        groups.get(orig).push(corr);
-    });
+        if (candidates.length === 0) return null;
 
-    // 긴 문장부터 처리해 짧은 문장이 다른 문장 내부에 우연히 걸리는 것을 방지
-    const origList = [...groups.keys()].sort((a, b) => b.length - a.length);
-
-    const usedRanges = [];
-    const matches = [];
-
-    origList.forEach((orig) => {
-        const spans = groups.get(orig)
-            .map((corr) => extractCoreDiff(orig, corr))
-            .filter(Boolean);
-        if (spans.length === 0) return;
-
-        let searchFrom = 0;
-        let lineIdx = -1;
-        while (searchFrom <= originalFullText.length) {
-            const idx = originalFullText.indexOf(orig, searchFrom);
-            if (idx === -1) break;
-            const end = idx + orig.length;
-            const overlaps = usedRanges.some(([s, e]) => idx < e && end > s);
-            if (!overlaps) { lineIdx = idx; break; }
-            searchFrom = idx + 1;
-        }
-        if (lineIdx === -1) return; // 문서 내에서 해당 문장을 찾지 못하면 건너뜀
-
-        spans.forEach((sp) => {
-            matches.push({ start: lineIdx + sp.start, end: lineIdx + sp.endOrig, orig: sp.origCore, corr: sp.corrCore });
+        const groups = new Map(); // orig(원문 문장/구절) -> [corr, ...]
+        candidates.forEach(({ orig, corr }) => {
+            if (!groups.has(orig)) groups.set(orig, []);
+            groups.get(orig).push(corr);
         });
-        usedRanges.push([lineIdx, lineIdx + orig.length]);
-    });
 
-    matches.sort((a, b) => a.start - b.start);
+        // 긴 문장부터 처리해 짧은 문장이 다른 문장 내부에 우연히 걸리는 것을 방지
+        const origList = [...groups.keys()].sort((a, b) => b.length - a.length);
 
-    const segments = [];
-    let cursor = 0;
-    matches.forEach((m) => {
-        if (m.start < cursor) return; // 안전장치: 겹치는 구간은 건너뜀
-        if (m.start > cursor) segments.push({ type: 'text', content: originalFullText.slice(cursor, m.start) });
-        segments.push({ type: 'change', orig: m.orig, corr: m.corr });
-        cursor = m.end;
-    });
-    if (cursor < originalFullText.length) segments.push({ type: 'text', content: originalFullText.slice(cursor) });
+        const usedRanges = [];
+        const matches = [];
 
-    return { segments, matchedCount: matches.length, totalCandidates: candidates.length };
+        origList.forEach((orig) => {
+            const spans = groups.get(orig)
+                .map((corr) => extractCoreDiff(orig, corr))
+                .filter(Boolean);
+            if (spans.length === 0) return;
+
+            let searchFrom = 0;
+            let lineIdx = -1;
+            while (searchFrom <= originalFullText.length) {
+                const idx = originalFullText.indexOf(orig, searchFrom);
+                if (idx === -1) break;
+                const end = idx + orig.length;
+                const overlaps = usedRanges.some(([s, e]) => idx < e && end > s);
+                if (!overlaps) { lineIdx = idx; break; }
+                searchFrom = idx + 1;
+            }
+            if (lineIdx === -1) return; // 문서 내에서 해당 문장을 찾지 못하면 건너뜀
+
+            spans.forEach((sp) => {
+                matches.push({ start: lineIdx + sp.start, end: lineIdx + sp.endOrig, orig: sp.origCore, corr: sp.corrCore });
+            });
+            usedRanges.push([lineIdx, lineIdx + orig.length]);
+        });
+
+        matches.sort((a, b) => a.start - b.start);
+
+        const segments = [];
+        let cursor = 0;
+        matches.forEach((m) => {
+            if (m.start < cursor) return; // 안전장치: 겹치는 구간은 건너뜀
+            if (m.start > cursor) segments.push({ type: 'text', content: originalFullText.slice(cursor, m.start) });
+            segments.push({ type: 'change', orig: m.orig, corr: m.corr });
+            cursor = m.end;
+        });
+        if (cursor < originalFullText.length) segments.push({ type: 'text', content: originalFullText.slice(cursor) });
+
+        return { segments, matchedCount: matches.length, totalCandidates: candidates.length };
+    } catch (e) {
+        console.warn('buildFullDocumentTrackChanges safely failed:', e);
+        return null;
+    }
 }
 
 export default function ResultDashboard({ data, isTypoMode = false, onRetry }) {
