@@ -166,15 +166,15 @@ const tab_guides = {
     tips: 'Gemini API Key가 올바르게 설정되어 있어야 AI 진단 기능이 정상 작동합니다.'
   },
   typo: {
-    title: 'AI 교정교열 & AI 작성투 탐지',
-    desc: '문서 내 맞춤법/오탈자 교정과 더불어, AI가 작성한 듯한 번역투/기계적 문장을 탐지하여 사람이 쓴 자연스럽고 전문적인 문구로 인간화(Humanize) 추천합니다.',
+    title: 'AI 교정교열 & 문서 버전 비교(Diff)',
+    desc: '문서 내 맞춤법/오탈자 교정, AI 작성투 탐지&인간화 추천, 그리고 2개 문서(PPT, 엑셀, HWPX, PDF) 간 변경점 비교 및 엑셀 다운로드를 원스톱으로 제공합니다.',
     steps: [
-      '상단 서브 탭에서 [표준 맞춤법·오탈자 교정] 또는 [AI 작성투 탐지 & 인간화 추천] 선택',
-      '텍스트를 입력창에 직접 붙여넣거나 원본 문서(PPTX, HWPX, PDF, DOCX, TXT 등) 업로드',
-      '[분석 시작] 버튼을 눌러 인라인 Diff 및 위치별 추천 문구 확인',
-      '수정본 전체 텍스트 원클릭 복사 또는 엑셀(.xlsx) / 마크다운(.md) 다운로드'
+      '상단 서브 탭에서 [표준 맞춤법·오탈자 교정], [AI 작성투 탐지 & 인간화 추천], 또는 [문서 버전 비교 (Diff)] 선택',
+      '[문서 버전 비교] 선택 시 원본 문서(A)와 비교 대상 문서(B) 2개를 업로드 (PPTX, XLSX, HWPX, PDF 등)',
+      '[두 문서 변경점 비교 및 추적 시작] 클릭 시 각 파일의 페이지별 수정·추가·삭제 내역 실시간 분석',
+      '[📥 변경 내역 엑셀 다운로드] 버튼으로 각 파일의 페이지 번호와 내용이 담긴 정형 엑셀(.xlsx) 파일 저장'
     ],
-    tips: 'AI 작성투 탐지 모드는 AI 특유의 번역투 피동형, 공허한 미사여구, 상투적 접속사 남발을 교정하여 공공/비즈니스 실무에 꼭 맞는 자연스러운 문장으로 다듬어 줍니다.'
+    tips: '문서 버전 비교(Diff) 기능은 서로 다른 포맷(예: HWPX와 PDF) 간에도 각 페이지 및 단락 단위로 정밀하게 변경점을 대조 분석합니다.'
   },
   law: {
     title: 'AI 법률 자문(제미나이)',
@@ -571,7 +571,7 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginRight: '8px' }}>
               <span className="mobile-hide-text" style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Last Update</span>
-              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.10.01 v2.14.10</span>
+              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.10.16 v2.16.0</span>
             </div>
             
             {/* Theme Mode Toggle Button */}

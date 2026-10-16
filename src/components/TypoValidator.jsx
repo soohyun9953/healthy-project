@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { ArrowRight, Loader2, PenTool, RotateCcw, History, Trash2, X, BookPlus, Plus, Layers, Upload, CheckCircle2, XCircle, Sparkles } from 'lucide-react';
+import { ArrowRight, Loader2, PenTool, RotateCcw, History, Trash2, X, BookPlus, Plus, Layers, Upload, CheckCircle2, XCircle, Sparkles, ArrowRightLeft } from 'lucide-react';
 import InputSection from './InputSection';
 import ResultDashboard from './ResultDashboard';
+import DocumentCompareTab from './DocumentCompareTab';
 import { analyzeDocumentsWithLLM, apply_typos_to_text } from '../llmAnalyzer';
 import { extract_dictionary_typos, extract_dict_pairs_from_glossary } from '../utils/typoDictionary';
 import { proofreadHistoryDB } from '../utils/proofreadHistoryDB';
@@ -314,7 +315,25 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
           >
             <Sparkles size={15} color={proofreadMode === 'ai_humanize' ? 'var(--accent-purple)' : 'var(--text-secondary)'} />
             AI 작성투 탐지 & 인간화 추천
-            <span style={{ fontSize: '10px', background: 'rgba(168, 85, 247, 0.3)', color: '#d8b4fe', padding: '2px 6px', borderRadius: '6px', fontWeight: 700 }}>NEW</span>
+          </button>
+
+          <button
+            onClick={() => { setProofreadMode('diff'); setResultData(null); }}
+            className="interactive"
+            style={{
+              background: proofreadMode === 'diff' ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.35))' : 'rgba(255, 255, 255, 0.04)',
+              border: proofreadMode === 'diff' ? '1px solid var(--success-color)' : '1px solid var(--glass-border)',
+              padding: '8px 18px', borderRadius: '10px',
+              color: proofreadMode === 'diff' ? '#fff' : 'var(--text-secondary)',
+              fontSize: '13px', fontWeight: proofreadMode === 'diff' ? 700 : 500, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '8px',
+              boxShadow: proofreadMode === 'diff' ? '0 0 16px rgba(16, 185, 129, 0.25)' : 'none',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <ArrowRightLeft size={15} color={proofreadMode === 'diff' ? 'var(--success-color)' : 'var(--text-secondary)'} />
+            문서 버전 비교 (Diff)
+            <span style={{ fontSize: '10px', background: 'rgba(16, 185, 129, 0.3)', color: '#86efac', padding: '2px 6px', borderRadius: '6px', fontWeight: 700 }}>NEW</span>
           </button>
         </div>
 
@@ -365,9 +384,12 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
         </div>
       </div>
 
-      {/* ── 본문 영역: 입력 섹션 + 결과/대기 패널 ────────────────── */}
-      <div style={{ display: 'flex', flex: 1, width: '100%', gap: '24px', minHeight: 0, overflow: 'hidden' }}>
-        <InputSection onAnalyze={handleAnalyze} isAnalyzing={isAnalyzing} isTypoMode={true} onReset={handleReset} />
+      {/* ── 본문 영역: 문서 버전 비교 (Diff) vs 일반 맞춤법/인간화 모드 ────────────────── */}
+      {proofreadMode === 'diff' ? (
+        <DocumentCompareTab apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />
+      ) : (
+        <div style={{ display: 'flex', flex: 1, width: '100%', gap: '24px', minHeight: 0, overflow: 'hidden' }}>
+          <InputSection onAnalyze={handleAnalyze} isAnalyzing={isAnalyzing} isTypoMode={true} onReset={handleReset} />
 
         <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
 
@@ -801,6 +823,7 @@ function TypoValidator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto'
         )}
         </div>
       </div>
+      )}
     </div>
   );
 }

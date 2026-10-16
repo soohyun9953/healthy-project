@@ -194,6 +194,8 @@ export async function extractTextFromPPTX(file) {
             .replace(/&apos;/g, "'");
     };
 
+    const pageMap = {};
+
     for (const fileName of slideFiles) {
         const content = await zip.files[fileName].async('string');
         const slideParagraphs = [];
@@ -232,15 +234,17 @@ export async function extractTextFromPPTX(file) {
             }
         }
 
+        const slideNum = parseInt(fileName.match(/\d+/)[0], 10);
         if (slideParagraphs.length > 0) {
-            const slideNum = fileName.match(/\d+/)[0];
+            pageMap[slideNum] = slideParagraphs;
             textBlocks.push(`[슬라이드 ${slideNum}]\n` + slideParagraphs.join('\n'));
         }
     }
     
     return {
         text: textBlocks.join('\n\n').trim(),
-        pages: slideFiles.length
+        pages: slideFiles.length,
+        pageMap
     };
 }
 
@@ -451,34 +455,42 @@ export async function extractTextFromMD(file) {
  */
 export async function extractStructuredFileContent(file) {
     const ext = getFileExtension(file.name);
+    let res;
 
     if (ext === 'pptx') {
-        const res = await extractTextFromPPTX(file);
-        // PPTX는 text 안에 [슬라이드 N]이 들어있으므로 pageMap 구성
-        const pageMap = {};
-        const slideBlocks = res.text.split(/\[슬라이드 \d+\]\n/).filter(b => b.trim().length > 0);
-        slideBlocks.forEach((block, idx) => {
-            pageMap[idx + 1] = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        });
-        return { text: res.text, pages: res.pages || Object.keys(pageMap).length, pageMap };
+        res = await extractTextFromPPTX(file);
     } else if (ext === 'hwpx') {
-        return await extractTextFromHWPX(file);
+        res = await extractTextFromHWPX(file);
     } else if (ext === 'docx') {
-        return await extractTextFromDOCX(file);
+        res = await extractTextFromDOCX(file);
     } else if (ext === 'pdf') {
-        return await extractTextFromPDF(file);
+        res = await extractTextFromPDF(file);
     } else if (ext === 'xlsx' || ext === 'xls') {
-        return await extractTextFromExcel(file);
+        res = await extractTextFromExcel(file);
     } else if (ext === 'md' || ext === 'markdown' || ext === 'txt' || ext === 'csv' || ext === 'json' || ext === 'html' || ext === 'xml') {
-        return await extractTextFromMD(file);
+        res = await extractTextFromMD(file);
     } else {
         const text = await file.text();
-        return {
+        res = {
             text: text.trim(),
             pages: 1,
             pageMap: { 1: text.split('\n').map(l => l.trim()).filter(l => l.length > 0) }
         };
     }
+
+    const pageMap = res.pageMap || {};
+    if (Object.keys(pageMap).length === 0 && res.text) {
+        pageMap[1] = res.text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    }
+
+    return {
+        text: res.text || '',
+        pages: res.pages || Object.keys(pageMap).length || 1,
+        pageMap,
+        fileName: file.name,
+        fileSize: file.size,
+        ext
+    };
 }
 
 /** 통합 파일 처리 함수 */
