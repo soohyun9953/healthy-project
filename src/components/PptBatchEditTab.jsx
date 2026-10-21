@@ -409,7 +409,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             textColorRules,
                             preventWordWrap,
                             clearAltText,
-                            fixLangErrFlags
+                            fixLangErrFlags,
+                            clearSpeakerNotes
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -466,7 +467,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             textColorRules,
                             preventWordWrap,
                             clearAltText,
-                            fixLangErrFlags
+                            fixLangErrFlags,
+                            clearSpeakerNotes
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;

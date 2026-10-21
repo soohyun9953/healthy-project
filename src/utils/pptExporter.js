@@ -867,10 +867,12 @@ export async function processPptBatch(pptFile, options) {
     const arrayBuffer = await pptFile.arrayBuffer();
     const zip = new PizZip(arrayBuffer);
     
-    // [1단계 프리필터] 시작 시점에 zip 내 모든 XML/rels 파일에서 수직 탭 완벽 선제 정제
+    let allFiles = Object.keys(zip.files);
+    let hasChanges = false;
     let total_cleaned_vt = 0;
-        // 💡 [옵션 M: 슬라이드 노트(발표자 노트) 내용 일괄 삭제]
     let totalNotesDeleted = 0;
+
+    // 💡 [옵션 M: 슬라이드 노트(발표자 노트) 일괄 삭제]
     if (clearSpeakerNotes) {
         // 1. 슬라이드 rels에서 notesSlide 관계 제거
         const slideRels = allFiles.filter(p => p.startsWith('ppt/slides/_rels/slide') && p.endsWith('.xml.rels'));
@@ -878,7 +880,7 @@ export async function processPptBatch(pptFile, options) {
             const relFile = zip.file(relPath);
             if (!relFile) return;
             const relXml = relFile.asText();
-            const newRelXml = relXml.replace(/<Relationship[^>]*Type="[^"]*\/notesSlide"[^>]*\/>/g, '');
+            const newRelXml = relXml.replace(/<Relationship[^>]*Type="[^"]*\/notesSlide"[^>]*(\/>|>[\s\S]*?<\/Relationship>)\s*/gi, '');
             if (newRelXml !== relXml) {
                 zip.file(relPath, newRelXml);
                 hasChanges = true;
@@ -899,25 +901,25 @@ export async function processPptBatch(pptFile, options) {
         if (zip.files['[Content_Types].xml']) {
             const ctFile = zip.file('[Content_Types].xml');
             let ctXml = ctFile.asText();
-            const newCtXml = ctXml.replace(/<Override[^>]*PartName="\/ppt\/notesSlides\/[^"]*"[^>]*\/>/g, '');
+            const newCtXml = ctXml.replace(/<Override[^>]*PartName="\/ppt\/notesSlides\/[^"]*"[^>]*(\/>|>[\s\S]*?<\/Override>)\s*/gi, '');
             if (newCtXml !== ctXml) {
                 zip.file('[Content_Types].xml', newCtXml);
                 hasChanges = true;
             }
         }
+
+        // 파일 목록 동기화
+        allFiles = Object.keys(zip.files);
     }
 
     if (clean_vertical_tab) {
         total_cleaned_vt += clean_all_vertical_tabs(zip);
     }
     
-    const allFiles = Object.keys(zip.files);
-    
     const parser = new DOMParser();
     const serializer = new XMLSerializer();
     const nsA = 'http://schemas.openxmlformats.org/drawingml/2006/main';
     
-    let hasChanges = false;
     let totalTablesCount = 0; // PPT 내에 감지된 총 테이블(표) 요소 개수 누적기
     let totalHeaderRowsApplied = 0; // 첫 행 헤더 스타일이 적용된 표 개수 카운터
     let totalReplacedWords = 0;
