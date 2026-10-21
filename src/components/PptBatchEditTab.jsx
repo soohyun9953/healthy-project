@@ -50,8 +50,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     }); // 옵션 I: 단락 한글 단어 잘림 방지
     const [clearAltText, setClearAltText] = useState(false); // 옵션 J: 대체 텍스트 일괄 제거 여부
     const [fixLangErrFlags, setFixLangErrFlags] = useState(false); // 옵션 K: 언어 태그/맞춤법 오류 표시 보정
-    const [mergeToOneFile, setMergeToOneFile] = useState(false); // 옵션 L: 다중 PPT를 하나의 PPT 파일로 병합
-    const [clearSpeakerNotes, setClearSpeakerNotes] = useState(false); // 옵션 M: 슬라이드 노트 일괄 삭제
+    const [clearSpeakerNotes, setClearSpeakerNotes] = useState(false); // 옵션 L: 슬라이드 노트 일괄 삭제
+    const [mergeToOneFile, setMergeToOneFile] = useState(false); // 옵션 M: 다중 PPT를 하나의 PPT 파일로 병합
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -480,7 +480,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
 
                 if (successCount > 0) {
                     if (mergeToOneFile) {
-                        // 💡 [옵션 L] 여러 PPT 파일들을 하나의 단일 PPT 파일로 병합하여 저장
+                        // 💡 [옵션 M] 여러 PPT 파일들을 하나의 단일 PPT 파일로 병합하여 저장
                         const mergedBlob = await mergeMultiplePptx(modifiedBlobs);
                         const mergedFileName = '통합_수정_PPT_산출물.pptx';
 
@@ -1194,36 +1194,37 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
                 </div>
 
-                {/* 옵션 L: 다중 PPT 파일을 하나의 통합 PPT 파일로 병합 */}
+                {/* 옵션 L: 슬라이드 노트 일괄 삭제 */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
                         <input
                             id="checkbox-option-l"
                             type="checkbox"
-                            checked={mergeToOneFile}
-                            onChange={(e) => setMergeToOneFile(e.target.checked)}
+                            checked={clearSpeakerNotes}
+                            onChange={(e) => setClearSpeakerNotes(e.target.checked)}
                             style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
                         />
-                        옵션 L: 다중 PPT 파일을 하나의 통합 PPT 파일로 합치기 (병합)
+                        옵션 L: 슬라이드 노트(발표자 메모) 내용 일괄 삭제 적용
                     </label>
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                        💡 여러 개의 PPT 파일을 일괄 수정한 뒤, <strong>순서대로 결합하여 1개의 PPTX 파일로 통합 저장</strong>합니다. (미선택 시 기본 개별 ZIP 압축 파일로 다운로드됩니다.)
+                        💡 PPT 파일 내 모든 슬라이드에 작성된 발표자 노트(슬라이드 노트) 내용을 일괄 삭제하여 문서를 정제합니다. 외부 제출용 또는 배포용 자료에서 비공개 메모를 안전하게 제거할 때 유용합니다.
                     </div>
                 </div>
-                {/* 옵션 M: 슬라이드 노트 일괄 삭제 */}
+
+                {/* 옵션 M: 다중 PPT 파일을 하나의 통합 PPT 파일로 병합 (제일 하단) */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
                         <input
                             id="checkbox-option-m"
                             type="checkbox"
-                            checked={clearSpeakerNotes}
-                            onChange={(e) => setClearSpeakerNotes(e.target.checked)}
+                            checked={mergeToOneFile}
+                            onChange={(e) => setMergeToOneFile(e.target.checked)}
                             style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
                         />
-                        옵션 M: 슬라이드 노트(발표자 메모) 내용 일괄 삭제 적용
+                        옵션 M: 다중 PPT 파일을 하나의 통합 PPT 파일로 합치기 (병합)
                     </label>
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                        💡 PPT 파일 내 모든 슬라이드에 작성된 발표자 노트(슬라이드 노트) 내용을 일괄 삭제하여 문서를 정제합니다. 외부 제출용 또는 배포용 자료에서 비공개 메모를 안전하게 제거할 때 유용합니다.
+                        💡 여러 개의 PPT 파일을 일괄 수정한 뒤, <strong>순서대로 결합하여 1개의 PPTX 파일로 통합 저장</strong>합니다. (미선택 시 기본 개별 ZIP 압축 파일로 다운로드됩니다.)
                     </div>
                 </div>
             </div>

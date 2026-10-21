@@ -872,7 +872,7 @@ export async function processPptBatch(pptFile, options) {
     let total_cleaned_vt = 0;
     let totalNotesDeleted = 0;
 
-    // 💡 [옵션 M: 슬라이드 노트(발표자 노트) 일괄 삭제]
+    // 💡 [옵션 L: 슬라이드 노트(발표자 노트) 일괄 삭제]
     if (clearSpeakerNotes) {
         // 1. 슬라이드 rels에서 notesSlide 관계 제거
         const slideRels = allFiles.filter(p => p.startsWith('ppt/slides/_rels/slide') && p.endsWith('.xml.rels'));
