@@ -125,7 +125,7 @@ class ErrorBoundary extends React.Component {
 const tab_guides = {
   ppt: {
     title: 'PPT 생성(표준산출물)',
-    desc: '표준 파워포인트(.pptx) 산출물 일괄편집, 목차 분석 기반 하위 목차별 분할 생성, 엑셀 데이터 매핑 생성, 스마트 애니메이션, PPT ➜ HWPX 양식 융합, HWP ➔ HWPX 변환 및 MD(마크다운) ➔ MS Word(.docx) 일괄 변환을 통합 제공합니다.',
+    desc: '표준 파워포인트(.pptx) 산출물 일괄편집(단어 치환, 폰트/표 표준화, 슬라이드 노트 일괄 삭제 등), 목차 분석 기반 하위 목차별 분할 생성, 엑셀 데이터 매핑 생성, 스마트 애니메이션, PPT ➜ HWPX 양식 융합 및 포맷 변환을 통합 제공합니다.',
     steps: [
       '상단 서브 탭에서 원하는 산출물 변환/생성 도구 선택 (PPT 일괄편집, PPT 목차별 분할, 엑셀 매핑, HWPX 변환, MD ➔ Word 변환 등)',
       '대상 파일(.pptx, .xlsx, .hwp, .md 등) 업로드 또는 직접 입력/드래그 앤 드롭',
@@ -450,7 +450,24 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.15.0</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>AI 산출물 검수 v2.17.0</span>
+                  <span 
+                    title="[ISP/ISMP에서의 프로토타입(Prototype) 의미]&#10;본 시스템 구축 사업 착수 전, 목표 시스템의 기술적 실현 가능성(Feasibility)과 사용자 요구사항(UI/UX·비즈니스 흐름)을 사전에 시뮬레이션 및 검증하여 프로젝트 리스크를 조기 식별·제거하기 위한 핵심 시연 모델입니다."
+                    style={{
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      background: 'rgba(168, 85, 247, 0.2)',
+                      color: '#d8b4fe',
+                      border: '1px solid rgba(168, 85, 247, 0.4)',
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      cursor: 'help'
+                    }}
+                  >
+                    프로토타입 ⓘ
+                  </span>
+                </div>
               </div>
             )}
           </div>
@@ -571,7 +588,7 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginRight: '8px' }}>
               <span className="mobile-hide-text" style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Last Update</span>
-              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.10.16 v2.16.0</span>
+              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.10.21 v2.17.0</span>
             </div>
             
             {/* Theme Mode Toggle Button */}

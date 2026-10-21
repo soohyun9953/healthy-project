@@ -827,10 +827,11 @@ export async function processPptBatch(pptFile, options) {
         textColorRulesStr = '',
         preventWordWrap = false,
         clearAltText = false,
-        fixLangErrFlags = false
+        fixLangErrFlags = false,
+        clearSpeakerNotes = false
     } = options;
 
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -868,6 +869,44 @@ export async function processPptBatch(pptFile, options) {
     
     // [1단계 프리필터] 시작 시점에 zip 내 모든 XML/rels 파일에서 수직 탭 완벽 선제 정제
     let total_cleaned_vt = 0;
+        // 💡 [옵션 M: 슬라이드 노트(발표자 노트) 내용 일괄 삭제]
+    let totalNotesDeleted = 0;
+    if (clearSpeakerNotes) {
+        // 1. 슬라이드 rels에서 notesSlide 관계 제거
+        const slideRels = allFiles.filter(p => p.startsWith('ppt/slides/_rels/slide') && p.endsWith('.xml.rels'));
+        slideRels.forEach(relPath => {
+            const relFile = zip.file(relPath);
+            if (!relFile) return;
+            const relXml = relFile.asText();
+            const newRelXml = relXml.replace(/<Relationship[^>]*Type="[^"]*\/notesSlide"[^>]*\/>/g, '');
+            if (newRelXml !== relXml) {
+                zip.file(relPath, newRelXml);
+                hasChanges = true;
+            }
+        });
+
+        // 2. ppt/notesSlides/ 파일들 zip에서 완전 제거
+        const notesFiles = allFiles.filter(p => p.startsWith('ppt/notesSlides/'));
+        notesFiles.forEach(f => {
+            if (f.endsWith('.xml') && !f.includes('_rels')) {
+                totalNotesDeleted++;
+            }
+            zip.remove(f);
+            hasChanges = true;
+        });
+
+        // 3. [Content_Types].xml 에서 notesSlide Override 태그 제거
+        if (zip.files['[Content_Types].xml']) {
+            const ctFile = zip.file('[Content_Types].xml');
+            let ctXml = ctFile.asText();
+            const newCtXml = ctXml.replace(/<Override[^>]*PartName="\/ppt\/notesSlides\/[^"]*"[^>]*\/>/g, '');
+            if (newCtXml !== ctXml) {
+                zip.file('[Content_Types].xml', newCtXml);
+                hasChanges = true;
+            }
+        }
+    }
+
     if (clean_vertical_tab) {
         total_cleaned_vt += clean_all_vertical_tabs(zip);
     }
@@ -1963,6 +2002,7 @@ export async function processPptBatch(pptFile, options) {
     blob.totalWordWrapPrevented = totalWordWrapPrevented;
     blob.totalLangFixed = totalLangFixed;
     blob.totalErrFlagsCleared = totalErrFlagsCleared;
+    blob.totalNotesDeleted = totalNotesDeleted;
 
     return blob;
 }

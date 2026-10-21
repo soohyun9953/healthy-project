@@ -51,6 +51,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [clearAltText, setClearAltText] = useState(false); // 옵션 J: 대체 텍스트 일괄 제거 여부
     const [fixLangErrFlags, setFixLangErrFlags] = useState(false); // 옵션 K: 언어 태그/맞춤법 오류 표시 보정
     const [mergeToOneFile, setMergeToOneFile] = useState(false); // 옵션 L: 다중 PPT를 하나의 PPT 파일로 병합
+    const [clearSpeakerNotes, setClearSpeakerNotes] = useState(false); // 옵션 M: 슬라이드 노트 일괄 삭제
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -219,6 +220,12 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             changes.push(`언어 태그 보정 ${langCount}개, 맞춤법 오류 표시 제거 ${errCount}개`);
         }
 
+        // 12. 슬라이드 노트 일괄 삭제
+        if (clearSpeakerNotes) {
+            const count = modifiedBlob.totalNotesDeleted || 0;
+            changes.push(`슬라이드 노트 삭제 ${count}개`);
+        }
+
         if (changes.length > 0) {
             // 실질적인 변경이 하나라도 존재하는지 확인 (표 없음 제외)
             const hasRealChanges = (modifiedBlob.totalReplacedWords || 0) > 0 ||
@@ -232,6 +239,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                   (preventWordWrap && (modifiedBlob.totalWordWrapPrevented || 0) > 0) ||
                                   clearAltText ||
                                   (fixLangErrFlags && ((modifiedBlob.totalLangFixed || 0) > 0 || (modifiedBlob.totalErrFlagsCleared || 0) > 0)) ||
+                                  (clearSpeakerNotes && (modifiedBlob.totalNotesDeleted || 0) > 0) ||
                                   (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
 
             if (hasRealChanges) {
@@ -313,8 +321,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags) {
-            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 대체 텍스트 일괄 제거, 또는 언어 태그/맞춤법 오류 표시 보정 중 하나 이상을 입력/선택해주세요.');
+        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes) {
+            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 대체 텍스트 일괄 제거, 언어 태그/맞춤법 오류 표시 보정, 또는 슬라이드 노트 일괄 삭제 중 하나 이상을 입력/선택해주세요.');
             return;
         }
 
@@ -352,7 +360,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         textColorRulesStr: textColorRules,
                         preventWordWrap: preventWordWrap,
                         clearAltText: clearAltText,
-                        fixLangErrFlags: fixLangErrFlags
+                        fixLangErrFlags: fixLangErrFlags,
+                        clearSpeakerNotes: clearSpeakerNotes
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -434,7 +443,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             textColorRulesStr: textColorRules,
                             preventWordWrap: preventWordWrap,
                             clearAltText: clearAltText,
-                            fixLangErrFlags: fixLangErrFlags
+                            fixLangErrFlags: fixLangErrFlags,
+                            clearSpeakerNotes: clearSpeakerNotes
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         modifiedBlobs.push(modifiedBlob);
@@ -1198,6 +1208,22 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         💡 여러 개의 PPT 파일을 일괄 수정한 뒤, <strong>순서대로 결합하여 1개의 PPTX 파일로 통합 저장</strong>합니다. (미선택 시 기본 개별 ZIP 압축 파일로 다운로드됩니다.)
                     </div>
                 </div>
+                {/* 옵션 M: 슬라이드 노트 일괄 삭제 */}
+                <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                        <input
+                            id="checkbox-option-m"
+                            type="checkbox"
+                            checked={clearSpeakerNotes}
+                            onChange={(e) => setClearSpeakerNotes(e.target.checked)}
+                            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
+                        />
+                        옵션 M: 슬라이드 노트(발표자 메모) 내용 일괄 삭제 적용
+                    </label>
+                    <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                        💡 PPT 파일 내 모든 슬라이드에 작성된 발표자 노트(슬라이드 노트) 내용을 일괄 삭제하여 문서를 정제합니다. 외부 제출용 또는 배포용 자료에서 비공개 메모를 안전하게 제거할 때 유용합니다.
+                    </div>
+                </div>
             </div>
 
             <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
@@ -1205,17 +1231,17 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     id="btn-batch-process"
                     className="interactive"
                     onClick={handleBatchProcess}
-                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile)}
+                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes)}
                     style={{
                         width: '100%',
                         padding: '16px',
-                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile)) ? 'var(--text-muted)' : 'white',
+                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes)) ? 'var(--text-muted)' : 'white',
                         border: 'none',
                         borderRadius: '12px',
                         fontSize: '16px',
                         fontWeight: 700,
-                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile)) ? 'not-allowed' : 'pointer',
+                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes)) ? 'not-allowed' : 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                     }}
                 >
