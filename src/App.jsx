@@ -450,24 +450,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>AI 산출물 검수 v2.17.0</span>
-                  <span 
-                    title="[ISP/ISMP에서의 프로토타입(Prototype) 의미]&#10;본 시스템 구축 사업 착수 전, 목표 시스템의 기술적 실현 가능성(Feasibility)과 사용자 요구사항(UI/UX·비즈니스 흐름)을 사전에 시뮬레이션 및 검증하여 프로젝트 리스크를 조기 식별·제거하기 위한 핵심 시연 모델입니다."
-                    style={{
-                      fontSize: '9px',
-                      fontWeight: 700,
-                      background: 'rgba(168, 85, 247, 0.2)',
-                      color: '#d8b4fe',
-                      border: '1px solid rgba(168, 85, 247, 0.4)',
-                      padding: '1px 5px',
-                      borderRadius: '4px',
-                      cursor: 'help'
-                    }}
-                  >
-                    프로토타입 ⓘ
-                  </span>
-                </div>
+                <span>AI 산출물 검수 v2.17.0</span>
               </div>
             )}
           </div>
