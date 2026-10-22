@@ -2407,6 +2407,29 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
       setForbiddenResults(finalForbiddens);
       setEngKoMixedResults(finalEngKoMixed);
       set_duplicate_results(finalDuplicates);
+
+      // 파일 간 슬라이드 번호 연속성(연결 상태) 사후 판정
+      for (let pIdx = 0; pIdx < allPageRanges.length; pIdx++) {
+        const cur = allPageRanges[pIdx];
+        if (pIdx === 0) {
+          cur.continuityStatus = '시작 파일';
+          cur.isContinuous = true;
+          cur.detail = `첫 번째 파일 (${cur.startPage}p ~ ${cur.endPage}p, 총 ${cur.totalSlides}장)`;
+        } else {
+          const prev = allPageRanges[pIdx - 1];
+          const expectedStart = prev.endPage + 1;
+          if (cur.startPage === expectedStart) {
+            cur.continuityStatus = `정상 연결 (${prev.endPage}p ➔ ${cur.startPage}p)`;
+            cur.isContinuous = true;
+            cur.detail = `이전 파일(${prev.fileName})의 마지막 ${prev.endPage}p에 이어 ${cur.startPage}p부터 정상 시작됨`;
+          } else {
+            cur.continuityStatus = `단절 불일치 (예상 ${expectedStart}p ➔ 실제 ${cur.startPage}p)`;
+            cur.isContinuous = false;
+            cur.detail = `이전 파일(${prev.fileName})의 마지막 ${prev.endPage}p에 이어 ${expectedStart}p부터 시작해야 하나 실제 ${cur.startPage}p로 설정되어 연결이 단절되었습니다.`;
+          }
+        }
+      }
+
       setPageRangeResults(allPageRanges);
       setMacImageResults(finalMacImages);
       setPiiResults(finalPii);
@@ -2580,7 +2603,9 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
         '파일명': p.fileName,
         '시작페이지': p.startPage,
         '최종 페이지': p.endPage,
-        '총 페이지수': p.totalSlides
+        '총 페이지수': p.totalSlides,
+        '슬라이드 번호 연결 상태': p.continuityStatus || (idx === 0 ? '시작 파일' : '-'),
+        '연결 분석 설명': p.detail || ''
       }));
       const pageRangeSheet = XLSX.utils.json_to_sheet(pageRangeRows);
       XLSX.utils.book_append_sheet(workbook, pageRangeSheet, '페이지범위_분석결과');
@@ -4640,10 +4665,11 @@ TBD
                       <thead>
                         <tr style={{ borderBottom: '2px solid var(--panel-border)', color: 'var(--text-secondary)' }}>
                           <th style={{ padding: '12px 8px', fontWeight: 700, width: '220px' }}>파일명</th>
-                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>시작페이지</th>
-                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>최종 페이지</th>
-                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '120px' }}>총 페이지수</th>
-                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>참고 사항</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '95px' }}>시작페이지</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '95px' }}>최종 페이지</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '95px' }}>총 장수</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700, width: '150px' }}>번호 연결 상태</th>
+                          <th style={{ padding: '12px 8px', fontWeight: 700 }}>연결 분석 및 상세 내용</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4659,10 +4685,26 @@ TBD
                               {p.endPage} 페이지
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-primary)', fontWeight: 700 }}>
-                              {p.totalSlides} 장 (슬라이드 수)
+                              {p.totalSlides} 장
+                            </td>
+                            <td style={{ padding: '12px 8px' }}>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                background: p.isContinuous ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: p.isContinuous ? '#10b981' : '#f87171',
+                                border: `1px solid ${p.isContinuous ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                              }}>
+                                {p.isContinuous ? (idx === 0 ? '🏁 시작 파일' : '✅ 정상 연결') : '❌ 단절/불일치'}
+                              </span>
                             </td>
                             <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                              시작 번호 {p.startPage}p부터 최종 번호 {p.endPage}p까지 스캔되었으며, 물리적인 총 수량은 {p.totalSlides}장으로 감지되었습니다.
+                              {p.detail || `시작 번호 ${p.startPage}p부터 최종 번호 ${p.endPage}p까지 총 ${p.totalSlides}장`}
                             </td>
                           </tr>
                         ))}
