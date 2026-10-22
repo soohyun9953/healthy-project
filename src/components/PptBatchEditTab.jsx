@@ -1289,7 +1289,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
                 </div>
 
-                {/* 옵션 O: 슬라이드 서식 자동 다시 설정 (상단 목차 텍스트 맞춤: 중간) */}
+                {/* 옵션 O: 슬라이드 마스터 서식 다시 설정 자동화 (홈 > 다시 설정 & 상단 목차 텍스트 맞춤: 중간) */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
                         <input
@@ -1299,12 +1299,12 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             onChange={(e) => setApplyFormatReset(e.target.checked)}
                             style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
                         />
-                        옵션 O: PPT 서식 자동 다시 설정 (상단 목차 텍스트 맞춤: 중간)
+                        옵션 O: 슬라이드 마스터 서식 다시 설정 자동화 (홈 ➔ 다시 설정 & 상단 목차 텍스트 맞춤: 중간)
                     </label>
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                        💡 PPT 슬라이드의 서식을 표준으로 다시 설정(재배치/정규화)하며, 특히 <strong>슬라이드 상단의 목차·헤더·소분류 텍스트 상자의 텍스트 맞춤을 '중간(Middle, 세로 가운데 맞춤)'으로 일괄 자동 설정</strong>합니다.<br/>
+                        💡 PowerPoint의 <strong>[홈] ➔ [슬라이드] ➔ [다시 설정]</strong> 기능을 일괄 자동화합니다. 각 슬라이드가 참조하는 슬라이드 레이아웃/마스터의 표준 서식(위치, 크기, 여백, 단락 정렬, 폰트 스타일)을 플레이스홀더에 1:1로 완전 동기화하며, 특히 <strong>슬라이드 상단의 목차·헤더·소분류 텍스트 상자의 텍스트 맞춤을 '중간(Middle, 세로 가운데 맞춤)'으로 일괄 설정</strong>합니다.<br/>
                         <span style={{ color: 'var(--accent-blue)', fontSize: '12px' }}>
-                            PowerPoint [홈] ➔ [단락] ➔ [텍스트 맞춤: 중간] 및 [슬라이드 서식 다시 설정] 작업을 자동화하여 상단 목차 텍스트가 위로 쏠리지 않고 중앙에 깔끔하게 정렬됩니다.
+                            수동으로 슬라이드마다 [홈] ➔ [다시 설정]을 누르지 않아도 슬라이드 마스터의 표준 서식과 상단 목차 세로 가운데 정렬이 한 번에 적용됩니다.
                         </span>
                     </div>
                 </div>

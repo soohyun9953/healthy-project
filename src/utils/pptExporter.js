@@ -1244,6 +1244,63 @@ export async function processPptBatch(pptFile, options) {
         }
     }
 
+    // 💡 [옵션 O: 슬라이드 마스터/레이아웃 플레이스홀더 사양 사전 캐싱 (홈 > 다시 설정 자동화)]
+    const layoutSpecMap = {}; // layoutPath -> { [phKey]: { xfrm, bodyPr, spPr, pPr, rPr, name } }
+    if (applyFormatReset) {
+        const layoutFiles = allFiles.filter(k => k.startsWith('ppt/slideLayouts/slideLayout') && k.endsWith('.xml'));
+        layoutFiles.forEach(lPath => {
+            try {
+                const lXml = zip.file(lPath).asText();
+                const lDoc = parser.parseFromString(lXml, 'application/xml');
+                const sps = Array.from(lDoc.getElementsByTagNameNS('*', 'sp'));
+                const phDict = {};
+
+                sps.forEach(sp => {
+                    const ph = sp.getElementsByTagNameNS('*', 'ph')[0];
+                    if (!ph) return;
+                    const type = ph.getAttribute('type') || 'body';
+                    const idx = ph.getAttribute('idx') || '0';
+                    const key = `${type}_${idx}`;
+
+                    const xfrm = sp.getElementsByTagNameNS('*', 'xfrm')[0];
+                    const bodyPr = sp.getElementsByTagNameNS('*', 'bodyPr')[0];
+                    const spPr = sp.getElementsByTagNameNS('*', 'spPr')[0];
+                    const txBody = sp.getElementsByTagNameNS('*', 'txBody')[0];
+                    const pPr = txBody ? txBody.getElementsByTagNameNS('*', 'pPr')[0] : null;
+
+                    let sampleRPr = null;
+                    if (txBody) {
+                        sampleRPr = txBody.getElementsByTagNameNS('*', 'rPr')[0] || txBody.getElementsByTagNameNS('*', 'defRPr')[0] || null;
+                    }
+
+                    // 레이아웃 자체의 상단 목차/타이틀 플레이스홀더 bodyPr도 텍스트 맞춤 중간(anchor="ctr") 보장
+                    if (bodyPr && topHeaderMiddleAlign) {
+                        const off = xfrm ? xfrm.getElementsByTagNameNS('*', 'off')[0] : null;
+                        const yVal = off ? parseInt(off.getAttribute('y') || '9999999', 10) : 9999999;
+                        if (yVal < 1600000 || ['title', 'ctrTitle', 'subTitle', 'hdr'].includes(type) || ['10', '11', '12', '13'].includes(idx)) {
+                            bodyPr.setAttribute('anchor', 'ctr');
+                        }
+                    }
+
+                    phDict[key] = {
+                        type,
+                        idx,
+                        xfrm: xfrm ? xfrm.cloneNode(true) : null,
+                        bodyPr: bodyPr ? bodyPr.cloneNode(true) : null,
+                        spPr: spPr ? spPr.cloneNode(true) : null,
+                        pPr: pPr ? pPr.cloneNode(true) : null,
+                        rPr: sampleRPr ? sampleRPr.cloneNode(true) : null
+                    };
+                });
+
+                layoutSpecMap[lPath] = phDict;
+                zip.file(lPath, serializer.serializeToString(lDoc));
+            } catch (lErr) {
+                console.warn(`레이아웃 파싱 건너뜀 (${lPath}):`, lErr);
+            }
+        });
+    }
+
     textAndFontTargetFiles.forEach(slidePath => {
         let slideXmlStr = zip.file(slidePath).asText();
         let fileChanged = false;
@@ -2008,68 +2065,173 @@ export async function processPptBatch(pptFile, options) {
                 }
             }
 
-            // 💡 [옵션 O: 슬라이드 서식 자동 다시 설정 (상단 목차 텍스트 맞춤: 중간)]
-            if (applyFormatReset) {
-                const spElements = xmlDoc.getElementsByTagNameNS('*', 'sp');
-                for (let sIdx = 0; sIdx < spElements.length; sIdx++) {
-                    const sp = spElements[sIdx];
+            // 💡 [옵션 O: 슬라이드 마스터 서식 기반 자동 다시 설정 (홈 > 다시 설정 기능 100% 구현)]
+            if (applyFormatReset && isActualSlide) {
+                // 슬라이드가 참조하는 레이아웃 파일 경로 확인
+                const slideFileName = slidePath.split('/').pop();
+                const relsPath = `ppt/slides/_rels/${slideFileName}.rels`;
+                let targetLayoutPath = null;
 
-                    // y 좌표 확인 (a:off y="...")
-                    let yVal = null;
-                    const xfrm = sp.getElementsByTagNameNS('*', 'xfrm')[0];
-                    if (xfrm) {
-                        const off = xfrm.getElementsByTagNameNS('*', 'off')[0];
-                        if (off && off.getAttribute('y')) {
-                            yVal = parseInt(off.getAttribute('y'), 10);
-                        }
-                    }
-
-                    // placeholder 확인
-                    let isPhTitle = false;
-                    const ph = sp.getElementsByTagNameNS('*', 'ph')[0];
-                    if (ph) {
-                        const phType = ph.getAttribute('type') || '';
-                        if (['title', 'ctrTitle', 'subTitle', 'hdr'].includes(phType)) {
-                            isPhTitle = true;
-                        }
-                    }
-
-                    // 도형 이름(name) 확인
-                    let isNamedHeader = false;
-                    const cNvPr = sp.getElementsByTagNameNS('*', 'cNvPr')[0];
-                    if (cNvPr) {
-                        const spName = (cNvPr.getAttribute('name') || '').toLowerCase();
-                        if (spName.includes('title') || spName.includes('header') || spName.includes('제목') || spName.includes('목차') || spName.includes('헤더')) {
-                            isNamedHeader = true;
-                        }
-                    }
-
-                    // 상단 영역 (y < 1600000 EMU) 또는 제목/목차 도형 판정
-                    const isTopHeader = (yVal !== null && yVal < 1600000) || isPhTitle || (isNamedHeader && (yVal === null || yVal < 2500000));
-
-                    // 텍스트 내용 확인
-                    const tNodes = sp.getElementsByTagNameNS('*', 't');
-                    const hasText = tNodes.length > 0 && Array.from(tNodes).some(n => (n.textContent || '').trim().length > 0);
-
-                    if (isTopHeader && hasText) {
-                        const txBody = sp.getElementsByTagNameNS('*', 'txBody')[0];
-                        if (txBody) {
-                            let bodyPr = txBody.getElementsByTagNameNS('*', 'bodyPr')[0];
-                            if (!bodyPr) {
-                                bodyPr = xmlDoc.createElementNS(nsA, 'a:bodyPr');
-                                txBody.insertBefore(bodyPr, txBody.firstChild);
-                            }
-
-                            // 텍스트 맞춤 중간 (anchor="ctr")
-                            if (topHeaderMiddleAlign && bodyPr.getAttribute('anchor') !== 'ctr') {
-                                bodyPr.setAttribute('anchor', 'ctr');
-                                totalFormatResetCount++;
-                                fileChanged = true;
-                                hasChanges = true;
-                            }
-                        }
+                if (zip.files[relsPath]) {
+                    const relsStr = zip.file(relsPath).asText();
+                    const layoutMatch = relsStr.match(/Target="(?:\.\.\/)?slideLayouts\/(slideLayout\d+\.xml)"/i);
+                    if (layoutMatch) {
+                        targetLayoutPath = `ppt/slideLayouts/${layoutMatch[1]}`;
                     }
                 }
+
+                const phDict = (targetLayoutPath && layoutSpecMap[targetLayoutPath]) ? layoutSpecMap[targetLayoutPath] : {};
+                const spElements = Array.from(xmlDoc.getElementsByTagNameNS('*', 'sp'));
+
+                spElements.forEach(sp => {
+                    const ph = sp.getElementsByTagNameNS('*', 'ph')[0];
+
+                    // ── [케이스 1] 플레이스홀더 개체 ➔ 슬라이드 레이아웃/마스터 서식 1:1 완전 복원 (홈 > 다시 설정 본질) ──
+                    if (ph) {
+                        const type = ph.getAttribute('type') || 'body';
+                        const idx = ph.getAttribute('idx') || '0';
+                        const key = `${type}_${idx}`;
+                        const layoutPh = phDict[key] || phDict[`${type}_0`] || (type === 'title' ? Object.values(phDict).find(p => p.type === 'title') : null);
+
+                        if (layoutPh) {
+                            // 1) 위치 및 크기 (<a:xfrm>) 복원
+                            if (layoutPh.xfrm) {
+                                const spPr = sp.getElementsByTagNameNS('*', 'spPr')[0];
+                                const sXfrm = sp.getElementsByTagNameNS('*', 'xfrm')[0];
+                                if (spPr) {
+                                    if (sXfrm) {
+                                        spPr.replaceChild(layoutPh.xfrm.cloneNode(true), sXfrm);
+                                    } else {
+                                        spPr.insertBefore(layoutPh.xfrm.cloneNode(true), spPr.firstChild);
+                                    }
+                                    fileChanged = true;
+                                    hasChanges = true;
+                                }
+                            }
+
+                            // 2) 바디 서식 (<a:bodyPr>) 복원 및 상단 목차 텍스트 맞춤 중간(anchor="ctr") 적용
+                            const txBody = sp.getElementsByTagNameNS('*', 'txBody')[0];
+                            if (txBody) {
+                                let sBodyPr = txBody.getElementsByTagNameNS('*', 'bodyPr')[0];
+                                if (layoutPh.bodyPr) {
+                                    const clonedBodyPr = layoutPh.bodyPr.cloneNode(true);
+                                    if (topHeaderMiddleAlign) {
+                                        clonedBodyPr.setAttribute('anchor', 'ctr');
+                                    }
+                                    if (sBodyPr) {
+                                        txBody.replaceChild(clonedBodyPr, sBodyPr);
+                                    } else {
+                                        txBody.insertBefore(clonedBodyPr, txBody.firstChild);
+                                    }
+                                    fileChanged = true;
+                                    hasChanges = true;
+                                } else if (sBodyPr && topHeaderMiddleAlign) {
+                                    if (sBodyPr.getAttribute('anchor') !== 'ctr') {
+                                        sBodyPr.setAttribute('anchor', 'ctr');
+                                        fileChanged = true;
+                                        hasChanges = true;
+                                    }
+                                }
+
+                                // 3) 단락 서식 (<a:pPr>) 복원 (정렬, 줄간격, 탭 설정 등)
+                                if (layoutPh.pPr) {
+                                    const paragraphs = Array.from(txBody.getElementsByTagNameNS('*', 'p'));
+                                    paragraphs.forEach(p => {
+                                        let spPrNode = p.getElementsByTagNameNS('*', 'pPr')[0];
+                                        const clonedPPr = layoutPh.pPr.cloneNode(true);
+                                        if (spPrNode) {
+                                            p.replaceChild(clonedPPr, spPrNode);
+                                        } else {
+                                            p.insertBefore(clonedPPr, p.firstChild);
+                                        }
+                                        fileChanged = true;
+                                        hasChanges = true;
+                                    });
+                                }
+
+                                // 4) 폰트 런 (<a:rPr>) 서식 복원 (마스터 글꼴, 크기, 볼드)
+                                if (layoutPh.rPr) {
+                                    const targetSz = layoutPh.rPr.getAttribute('sz');
+                                    const targetB = layoutPh.rPr.getAttribute('b');
+                                    const latin = layoutPh.rPr.getElementsByTagNameNS('*', 'latin')[0];
+                                    const ea = layoutPh.rPr.getElementsByTagNameNS('*', 'ea')[0];
+
+                                    const runs = Array.from(txBody.getElementsByTagNameNS('*', 'r'));
+                                    runs.forEach(r => {
+                                        let rPr = r.getElementsByTagNameNS('*', 'rPr')[0];
+                                        if (!rPr) {
+                                            rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
+                                            r.insertBefore(rPr, r.firstChild);
+                                        }
+                                        if (targetSz) rPr.setAttribute('sz', targetSz);
+                                        if (targetB) rPr.setAttribute('b', targetB);
+                                        if (latin && latin.getAttribute('typeface')) {
+                                            let rLatin = rPr.getElementsByTagNameNS('*', 'latin')[0];
+                                            if (!rLatin) {
+                                                rLatin = xmlDoc.createElementNS(nsA, 'a:latin');
+                                                rPr.appendChild(rLatin);
+                                            }
+                                            rLatin.setAttribute('typeface', latin.getAttribute('typeface'));
+                                        }
+                                        if (ea && ea.getAttribute('typeface')) {
+                                            let rEa = rPr.getElementsByTagNameNS('*', 'ea')[0];
+                                            if (!rEa) {
+                                                rEa = xmlDoc.createElementNS(nsA, 'a:ea');
+                                                rPr.appendChild(rEa);
+                                            }
+                                            rEa.setAttribute('typeface', ea.getAttribute('typeface'));
+                                        }
+                                        fileChanged = true;
+                                        hasChanges = true;
+                                    });
+                                }
+                            }
+
+                            totalFormatResetCount++;
+                        }
+                    }
+                    // ── [케이스 2] 플레이스홀더가 없는 일반 상단 목차/타이틀 도형 ──
+                    else {
+                        let yVal = null;
+                        const xfrm = sp.getElementsByTagNameNS('*', 'xfrm')[0];
+                        if (xfrm) {
+                            const off = xfrm.getElementsByTagNameNS('*', 'off')[0];
+                            if (off && off.getAttribute('y')) {
+                                yVal = parseInt(off.getAttribute('y'), 10);
+                            }
+                        }
+
+                        let isNamedHeader = false;
+                        const cNvPr = sp.getElementsByTagNameNS('*', 'cNvPr')[0];
+                        if (cNvPr) {
+                            const spName = (cNvPr.getAttribute('name') || '').toLowerCase();
+                            if (spName.includes('title') || spName.includes('header') || spName.includes('제목') || spName.includes('목차') || spName.includes('헤더')) {
+                                isNamedHeader = true;
+                            }
+                        }
+
+                        const isTopHeader = (yVal !== null && yVal < 1600000) || (isNamedHeader && (yVal === null || yVal < 2500000));
+                        const tNodes = sp.getElementsByTagNameNS('*', 't');
+                        const hasText = tNodes.length > 0 && Array.from(tNodes).some(n => (n.textContent || '').trim().length > 0);
+
+                        if (isTopHeader && hasText && topHeaderMiddleAlign) {
+                            const txBody = sp.getElementsByTagNameNS('*', 'txBody')[0];
+                            if (txBody) {
+                                let bodyPr = txBody.getElementsByTagNameNS('*', 'bodyPr')[0];
+                                if (!bodyPr) {
+                                    bodyPr = xmlDoc.createElementNS(nsA, 'a:bodyPr');
+                                    txBody.insertBefore(bodyPr, txBody.firstChild);
+                                }
+                                if (bodyPr.getAttribute('anchor') !== 'ctr') {
+                                    bodyPr.setAttribute('anchor', 'ctr');
+                                    totalFormatResetCount++;
+                                    fileChanged = true;
+                                    hasChanges = true;
+                                }
+                            }
+                        }
+                    }
+                });
             }
 
             // 💡 [핵심 수리] DOM 수정사항(테이블 및 헤더 디자인, 서식 재설정)을 최종 slideXmlStr에 재직렬화하여 100% 반영!
