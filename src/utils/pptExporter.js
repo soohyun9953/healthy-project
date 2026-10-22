@@ -1247,11 +1247,58 @@ export async function processPptBatch(pptFile, options) {
     }
 
     // 💡 [옵션 O: 슬라이드 마스터/레이아웃 플레이스홀더 사양 사전 캐싱 (홈 > 다시 설정 자동화)]
-    const layoutSpecMap = {}; // layoutPath -> { [phKey]: { xfrm, bodyPr, spPr, pPr, rPr, name } }
+    const layoutSpecMap = {}; // layoutPath -> { [phKey]: { xfrm, bodyPr, spPr, pPr, defRPr, fontName } }
     if (applyFormatReset) {
+        // 1. 테마 글꼴 맵 구축 (themePath -> { majorEa, minorEa, majorLatin, minorLatin })
+        const themeFontMap = {};
+        const themeFiles = allFiles.filter(k => k.startsWith('ppt/theme/') && k.endsWith('.xml'));
+        themeFiles.forEach(tPath => {
+            try {
+                const tXml = zip.file(tPath).asText();
+                const tDoc = parser.parseFromString(tXml, 'application/xml');
+                const fontScheme = tDoc.getElementsByTagNameNS('*', 'fontScheme')[0];
+                if (fontScheme) {
+                    const majorFont = fontScheme.getElementsByTagNameNS('*', 'majorFont')[0];
+                    const minorFont = fontScheme.getElementsByTagNameNS('*', 'minorFont')[0];
+                    const mjEa = majorFont ? majorFont.getElementsByTagNameNS('*', 'ea')[0] : null;
+                    const mnEa = minorFont ? minorFont.getElementsByTagNameNS('*', 'ea')[0] : null;
+                    const mjLatin = majorFont ? majorFont.getElementsByTagNameNS('*', 'latin')[0] : null;
+                    const mnLatin = minorFont ? minorFont.getElementsByTagNameNS('*', 'latin')[0] : null;
+                    themeFontMap[tPath] = {
+                        majorEa: (mjEa && mjEa.getAttribute('typeface')) ? mjEa.getAttribute('typeface') : 'KoPub돋움체 Bold',
+                        minorEa: (mnEa && mnEa.getAttribute('typeface')) ? mnEa.getAttribute('typeface') : 'KoPub돋움체 Medium',
+                        majorLatin: (mjLatin && mjLatin.getAttribute('typeface')) ? mjLatin.getAttribute('typeface') : 'KoPub돋움체 Bold',
+                        minorLatin: (mnLatin && mnLatin.getAttribute('typeface')) ? mnLatin.getAttribute('typeface') : 'KoPub돋움체 Medium'
+                    };
+                }
+            } catch (tErr) {
+                console.warn(`테마 파싱 건너뜀 (${tPath}):`, tErr);
+            }
+        });
+
+        // 2. 슬라이드 레이아웃 파싱 및 마스터/테마 글꼴 연계
         const layoutFiles = allFiles.filter(k => k.startsWith('ppt/slideLayouts/slideLayout') && k.endsWith('.xml'));
         layoutFiles.forEach(lPath => {
             try {
+                const lFileName = lPath.split('/').pop();
+                const lRelsPath = `ppt/slideLayouts/_rels/${lFileName}.rels`;
+                let themeFonts = { majorEa: 'KoPub돋움체 Bold', minorEa: 'KoPub돋움체 Medium' };
+
+                if (zip.files[lRelsPath]) {
+                    const relsStr = zip.file(lRelsPath).asText();
+                    const masterMatch = relsStr.match(/Target="(?:\.\.\/)?slideMasters\/(slideMaster\d+\.xml)"/i);
+                    if (masterMatch) {
+                        const mRelsPath = `ppt/slideMasters/_rels/${masterMatch[1]}.rels`;
+                        if (zip.files[mRelsPath]) {
+                            const mRelsStr = zip.file(mRelsPath).asText();
+                            const themeMatch = mRelsStr.match(/Target="(?:\.\.\/)?theme\/(theme\d+\.xml)"/i);
+                            if (themeMatch && themeFontMap[`ppt/theme/${themeMatch[1]}`]) {
+                                themeFonts = themeFontMap[`ppt/theme/${themeMatch[1]}`];
+                            }
+                        }
+                    }
+                }
+
                 const lXml = zip.file(lPath).asText();
                 const lDoc = parser.parseFromString(lXml, 'application/xml');
                 const sps = Array.from(lDoc.getElementsByTagNameNS('*', 'sp'));
@@ -1268,11 +1315,29 @@ export async function processPptBatch(pptFile, options) {
                     const bodyPr = sp.getElementsByTagNameNS('*', 'bodyPr')[0];
                     const spPr = sp.getElementsByTagNameNS('*', 'spPr')[0];
                     const txBody = sp.getElementsByTagNameNS('*', 'txBody')[0];
-                    const pPr = txBody ? txBody.getElementsByTagNameNS('*', 'pPr')[0] : null;
+                    const pPr = txBody ? (txBody.getElementsByTagNameNS('*', 'lvl1pPr')[0] || txBody.getElementsByTagNameNS('*', 'pPr')[0]) : null;
 
-                    let sampleRPr = null;
+                    // defRPr 탐색: lvl1pPr, pPr, lstStyle 내부의 defRPr 중 서식이 실질적으로 정의된 노드 추출
+                    let defRPr = null;
                     if (txBody) {
-                        sampleRPr = txBody.getElementsByTagNameNS('*', 'rPr')[0] || txBody.getElementsByTagNameNS('*', 'defRPr')[0] || null;
+                        const defRPrs = txBody.getElementsByTagNameNS('*', 'defRPr');
+                        for (let d = 0; d < defRPrs.length; d++) {
+                            const cur = defRPrs[d];
+                            if (cur.hasAttribute('sz') || cur.getElementsByTagNameNS('*', 'ea').length > 0 || cur.getElementsByTagNameNS('*', 'solidFill').length > 0) {
+                                defRPr = cur;
+                                break;
+                            }
+                        }
+                        if (!defRPr && defRPrs.length > 0) defRPr = defRPrs[0];
+                    }
+
+                    // 테마 참조(+mj-ea, +mn-ea)를 실제 마스터 글꼴명으로 해석
+                    let fontName = themeFonts.majorEa;
+                    if (defRPr) {
+                        const eaNode = defRPr.getElementsByTagNameNS('*', 'ea')[0];
+                        const eaTf = eaNode ? eaNode.getAttribute('typeface') : null;
+                        if (eaTf === '+mn-ea') fontName = themeFonts.minorEa;
+                        else if (eaTf && eaTf !== '+mj-ea') fontName = eaTf;
                     }
 
                     // 레이아웃 자체의 상단 목차/타이틀 플레이스홀더 bodyPr도 텍스트 맞춤 중간(anchor="ctr") 보장
@@ -1291,7 +1356,8 @@ export async function processPptBatch(pptFile, options) {
                         bodyPr: bodyPr ? bodyPr.cloneNode(true) : null,
                         spPr: spPr ? spPr.cloneNode(true) : null,
                         pPr: pPr ? pPr.cloneNode(true) : null,
-                        rPr: sampleRPr ? sampleRPr.cloneNode(true) : null
+                        defRPr: defRPr ? defRPr.cloneNode(true) : null,
+                        fontName: fontName
                     };
                 });
 
@@ -2154,17 +2220,19 @@ export async function processPptBatch(pptFile, options) {
                         if (layoutPh) {
                             // 1) 위치 및 크기 (<a:xfrm>) 복원
                             if (layoutPh.xfrm) {
-                                const spPr = sp.getElementsByTagNameNS('*', 'spPr')[0];
-                                const sXfrm = sp.getElementsByTagNameNS('*', 'xfrm')[0];
-                                if (spPr) {
-                                    if (sXfrm) {
-                                        spPr.replaceChild(layoutPh.xfrm.cloneNode(true), sXfrm);
-                                    } else {
-                                        spPr.insertBefore(layoutPh.xfrm.cloneNode(true), spPr.firstChild);
-                                    }
-                                    fileChanged = true;
-                                    hasChanges = true;
+                                let spPr = sp.getElementsByTagNameNS('*', 'spPr')[0];
+                                if (!spPr) {
+                                    spPr = xmlDoc.createElementNS(nsP, 'p:spPr');
+                                    sp.appendChild(spPr);
                                 }
+                                const sXfrm = spPr.getElementsByTagNameNS('*', 'xfrm')[0];
+                                if (sXfrm) {
+                                    spPr.replaceChild(layoutPh.xfrm.cloneNode(true), sXfrm);
+                                } else {
+                                    spPr.insertBefore(layoutPh.xfrm.cloneNode(true), spPr.firstChild);
+                                }
+                                fileChanged = true;
+                                hasChanges = true;
                             }
 
                             // 2) 바디 서식 (<a:bodyPr>) 복원 및 상단 목차 텍스트 맞춤 중간(anchor="ctr") 적용
@@ -2191,28 +2259,28 @@ export async function processPptBatch(pptFile, options) {
                                     }
                                 }
 
-                                // 3) 단락 서식 (<a:pPr>) 복원 (정렬, 줄간격, 탭 설정 등)
+                                // 3) 단락 서식 (<a:pPr>) 복원 (정렬, 줄간격 등)
                                 if (layoutPh.pPr) {
+                                    const algn = layoutPh.pPr.getAttribute('algn');
                                     const paragraphs = Array.from(txBody.getElementsByTagNameNS('*', 'p'));
                                     paragraphs.forEach(p => {
                                         let spPrNode = p.getElementsByTagNameNS('*', 'pPr')[0];
-                                        const clonedPPr = layoutPh.pPr.cloneNode(true);
-                                        if (spPrNode) {
-                                            p.replaceChild(clonedPPr, spPrNode);
-                                        } else {
-                                            p.insertBefore(clonedPPr, p.firstChild);
+                                        if (!spPrNode) {
+                                            spPrNode = xmlDoc.createElementNS(nsA, 'a:pPr');
+                                            p.insertBefore(spPrNode, p.firstChild);
                                         }
+                                        if (algn) spPrNode.setAttribute('algn', algn);
                                         fileChanged = true;
                                         hasChanges = true;
                                     });
                                 }
 
-                                // 4) 폰트 런 (<a:rPr>) 서식 복원 (마스터 글꼴, 크기, 볼드)
-                                if (layoutPh.rPr) {
-                                    const targetSz = layoutPh.rPr.getAttribute('sz');
-                                    const targetB = layoutPh.rPr.getAttribute('b');
-                                    const latin = layoutPh.rPr.getElementsByTagNameNS('*', 'latin')[0];
-                                    const ea = layoutPh.rPr.getElementsByTagNameNS('*', 'ea')[0];
+                                // 4) 폰트 런 (<a:rPr>) 서식 복원 (마스터 글꼴, 크기, 굵기, 색상 1:1 완전 동기화 및 로컬 외곽선 제거)
+                                if (layoutPh.defRPr) {
+                                    const targetSz = layoutPh.defRPr.getAttribute('sz');
+                                    const targetB = layoutPh.defRPr.getAttribute('b');
+                                    const fillNode = layoutPh.defRPr.getElementsByTagNameNS('*', 'solidFill')[0];
+                                    const fontName = layoutPh.fontName || 'KoPub돋움체 Bold';
 
                                     const runs = Array.from(txBody.getElementsByTagNameNS('*', 'r'));
                                     runs.forEach(r => {
@@ -2221,24 +2289,54 @@ export async function processPptBatch(pptFile, options) {
                                             rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
                                             r.insertBefore(rPr, r.firstChild);
                                         }
+
+                                        // 글꼴 크기 복원
                                         if (targetSz) rPr.setAttribute('sz', targetSz);
-                                        if (targetB) rPr.setAttribute('b', targetB);
-                                        if (latin && latin.getAttribute('typeface')) {
-                                            let rLatin = rPr.getElementsByTagNameNS('*', 'latin')[0];
-                                            if (!rLatin) {
-                                                rLatin = xmlDoc.createElementNS(nsA, 'a:latin');
-                                                rPr.appendChild(rLatin);
-                                            }
-                                            rLatin.setAttribute('typeface', latin.getAttribute('typeface'));
+
+                                        // 굵기(Bold) 복원
+                                        if (targetB !== null && targetB !== undefined) {
+                                            if (targetB === '0') rPr.removeAttribute('b');
+                                            else rPr.setAttribute('b', targetB);
+                                        } else {
+                                            rPr.setAttribute('b', '1');
                                         }
-                                        if (ea && ea.getAttribute('typeface')) {
-                                            let rEa = rPr.getElementsByTagNameNS('*', 'ea')[0];
-                                            if (!rEa) {
-                                                rEa = xmlDoc.createElementNS(nsA, 'a:ea');
-                                                rPr.appendChild(rEa);
-                                            }
-                                            rEa.setAttribute('typeface', ea.getAttribute('typeface'));
+
+                                        // 글꼴(Typeface) 복원: 기존 맑은 고딕 등 로컬 서식 제거 후 마스터 글꼴 적용
+                                        const oldFonts = Array.from(rPr.childNodes).filter(n => n.nodeType === 1 && ['latin', 'ea', 'cs'].includes(n.localName || n.tagName.split(':').pop()));
+                                        oldFonts.forEach(n => rPr.removeChild(n));
+
+                                        ['latin', 'ea', 'cs'].forEach(ft => {
+                                            const fontEl = xmlDoc.createElementNS(nsA, `a:${ft}`);
+                                            fontEl.setAttribute('typeface', fontName);
+                                            rPr.appendChild(fontEl);
+                                        });
+
+                                        // 글자 색상 복원
+                                        if (fillNode) {
+                                            const oldFills = Array.from(rPr.childNodes).filter(n => n.nodeType === 1 && ['solidFill', 'schemeClr', 'sysClr', 'gradFill', 'pattFill'].includes(n.localName || n.tagName.split(':').pop()));
+                                            oldFills.forEach(n => rPr.removeChild(n));
+                                            rPr.insertBefore(fillNode.cloneNode(true), rPr.firstChild);
                                         }
+
+                                        // 로컬 불필요 윤곽선(a:ln) 제거
+                                        const oldLns = Array.from(rPr.childNodes).filter(n => n.nodeType === 1 && (n.localName === 'ln' || n.tagName.endsWith(':ln')));
+                                        oldLns.forEach(n => rPr.removeChild(n));
+
+                                        fileChanged = true;
+                                        hasChanges = true;
+                                    });
+
+                                    // endParaRPr 도 동기화
+                                    const endParaRPrs = Array.from(txBody.getElementsByTagNameNS('*', 'endParaRPr'));
+                                    endParaRPrs.forEach(ep => {
+                                        if (targetSz) ep.setAttribute('sz', targetSz);
+                                        const oldFonts = Array.from(ep.childNodes).filter(n => n.nodeType === 1 && ['latin', 'ea', 'cs'].includes(n.localName || n.tagName.split(':').pop()));
+                                        oldFonts.forEach(n => ep.removeChild(n));
+                                        ['latin', 'ea', 'cs'].forEach(ft => {
+                                            const fontEl = xmlDoc.createElementNS(nsA, `a:${ft}`);
+                                            fontEl.setAttribute('typeface', fontName);
+                                            ep.appendChild(fontEl);
+                                        });
                                         fileChanged = true;
                                         hasChanges = true;
                                     });
