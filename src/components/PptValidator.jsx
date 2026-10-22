@@ -281,11 +281,10 @@ const find_pii_matches = (text) => {
 // ── 괄호 짝 불일치 검출 헬퍼 ─────────────────────────
 // 한 문단/문장 내에서 "(" 와 ")" 개수가 다른 경우, 스택 기반으로 정확히
 // 어느 괄호가 짝을 이루지 못했는지 위치와 주변 문맥을 찾아 반환한다.
+// 단, 문서에서 글머리 기호나 예시 표기로 흔히 단독 사용되는 "예시)", "예)", "에시)", "ex)" 및 "숫자)" 형태는
+// 여는 괄호 "("가 없더라도 짝 불일치 오류에서 제외한다.
 const find_paren_mismatches = (text) => {
   if (!text.includes('(') && !text.includes(')')) return [];
-  const openCount = (text.match(/\(/g) || []).length;
-  const closeCount = (text.match(/\)/g) || []).length;
-  if (openCount === closeCount) return [];
 
   const unmatched = [];
   const stack = [];
@@ -294,6 +293,27 @@ const find_paren_mismatches = (text) => {
     if (ch === '(') {
       stack.push(i);
     } else if (ch === ')') {
+      const before = text.slice(0, i);
+      // 예시 표기 판정: "예)", "예시)", "에시)", "ex)", "Ex)"
+      const isExample = /(?:^|[^(\w가-힣])(예|예시|에시|ex|Ex)\s*$/i.test(before) || /^(?:예|예시|에시|ex|Ex)\s*$/i.test(before.trim());
+      // 단독 숫자 글머리 판정: "1)", "2)", "1.1)" 등
+      const isSingleNumber = (/(?:^|[^\d.(])(\d+(?:\.\d+)*)\s*$/.test(before) || /^\d+(?:\.\d+)*\s*$/.test(before.trim())) && !/\(\s*\d+(?:\.\d+)*\s*$/.test(before);
+
+      // 만약 스택에 여는 괄호가 있고 그 괄호가 바로 이 예시나 숫자를 감싸고 있다면 -> (예시), (1) 정상 쌍이므로 stack.pop()으로 매칭
+      let isEnclosed = false;
+      if (stack.length > 0) {
+        const lastOpen = stack[stack.length - 1];
+        const inner = text.slice(lastOpen + 1, i).trim();
+        if (/^(?:예|예시|에시|ex|Ex|\d+(?:\.\d+)*)$/i.test(inner)) {
+          isEnclosed = true;
+        }
+      }
+
+      if ((isExample || isSingleNumber) && !isEnclosed) {
+        // 단독 글머리/예시 기호이므로 짝 불일치 오류에서 제외
+        continue;
+      }
+
       if (stack.length > 0) {
         stack.pop();
       } else {
