@@ -25,10 +25,13 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [fontSize, setFontSize] = useState('');
     const [roundFontSizes, setRoundFontSizes] = useState(false); // 옵션 C 추가 옵션: 소수점 폰트 크기 반올림/올림
     const [roundFontSizeMode, setRoundFontSizeMode] = useState('ceil'); // 'ceil' (7.2 -> 8) or 'round' (7.2 -> 7, 7.5 -> 8)
+    const [optimizeTableFont, setOptimizeTableFont] = useState(false); // 옵션 C 추가: 표 내부 작은 폰트 가독성 자동 보정
     const [applyDesignChecked, setApplyDesignChecked] = useState(true);
     const [applyTableDesignChecked, setApplyTableDesignChecked] = useState(false);
     const [applyFirstRowHeaderStyle, setApplyFirstRowHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 행 특별 포맷팅 적용 여부 (기본 true)
     const [applyFirstColHeaderStyle, setApplyFirstColHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 열(2행부터) 특별 포맷팅 적용 여부 (기본 true)
+    const [applyTableBodyStyle, setApplyTableBodyStyle] = useState(true); // 옵션 E 하위: 표 본문 가독성 폰트 적용
+    const [tableBodyFontSize, setTableBodyFontSize] = useState('10'); // 옵션 E 하위: 표 본문 폰트 크기 (기본 10pt)
     const [designTargetText, setDesignTargetText] = useState('');
     const [applySpecialCharClean, setApplySpecialCharClean] = useState(false); // 옵션 F 활성화 여부
     const [replaceNbs, setReplaceNbs] = useState(true); // 하위 옵션 1: NBS 일반 공백 변환
@@ -351,7 +354,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !roundFontSizes && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset) {
+        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset) {
             setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 대체 텍스트 일괄 제거, 언어 태그/맞춤법 오류 표시 보정, 슬라이드 노트 일괄 삭제, 또는 슬라이드 서식 다시 설정 중 하나 이상을 입력/선택해주세요.');
             return;
         }
@@ -382,6 +385,9 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         applyTableDesign: applyTableDesignChecked,
                         applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
                         applyFirstColHeaderStyle: applyTableDesignChecked && applyFirstColHeaderStyle,
+                                                applyTableBodyStyle: applyTableDesignChecked && applyTableBodyStyle,
+                        tableBodyFontSize: parseFloat(tableBodyFontSize) || 10,
+                        optimizeTableFont: optimizeTableFont,
                         targetText: designTargetText,
                         applySpecialCharClean: applySpecialCharClean,
                         replaceNbs: replaceNbs,
@@ -919,6 +925,20 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                 </label>
                             </div>
                         )}
+
+                        {/* 표 폰트 가독성 자동 보정 옵션 */}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13.5px', color: 'var(--text-primary)', marginTop: '8px' }}>
+                            <input
+                                type="checkbox"
+                                checked={optimizeTableFont}
+                                onChange={(e) => setOptimizeTableFont(e.target.checked)}
+                                style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#a855f7' }}
+                            />
+                            추가 옵션: 표(테이블) 작은 폰트 가독성 자동 보정 (8.5pt 이하 ➔ 10pt 상향)
+                        </label>
+                        <div style={{ paddingLeft: '24px', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                            💡 표의 크기(너비/행 높이)는 그대로 유지하면서, 셀에 비해 너무 작게 들어간 표 내부 글씨(7~8pt)를 가독성 권장 크기(10pt)로 일괄 상향합니다.
+                        </div>
                     </div>
                 </div>
 
@@ -1041,6 +1061,61 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             </label>
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
                                 (첫 열 2번째 행부터 배경 #F2F2F2, 글자 검은색 11pt KoPubDotum Bold, 가운데 정렬)
+                            </div>
+                        </div>
+
+                        {/* 하위 3: 표 본문(데이터 셀) 가독성 폰트 크기 자동 조정 */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                                <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
+                                    fontSize: '13px',
+                                    color: applyTableDesignChecked ? 'var(--text-primary)' : 'var(--text-muted)',
+                                    fontWeight: 600
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={applyTableBodyStyle}
+                                        disabled={!applyTableDesignChecked}
+                                        onChange={(e) => setApplyTableBodyStyle(e.target.checked)}
+                                        style={{
+                                            width: '16px',
+                                            height: '16px',
+                                            cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
+                                            accentColor: '#a855f7'
+                                        }}
+                                    />
+                                    표 본문(데이터 셀) 가독성 폰트 크기 자동 조정 (표 크기 유지)
+                                </label>
+                                
+                                {applyTableBodyStyle && applyTableDesignChecked && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '24px' }}>
+                                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>본문 폰트 크기:</span>
+                                        <select
+                                            value={tableBodyFontSize}
+                                            onChange={(e) => setTableBodyFontSize(e.target.value)}
+                                            style={{
+                                                padding: '4px 8px', borderRadius: '6px',
+                                                background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)',
+                                                color: 'var(--text-primary)', fontSize: '12.5px', fontWeight: 600,
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <option value="9">9 pt</option>
+                                            <option value="9.5">9.5 pt</option>
+                                            <option value="10">10 pt (가독성 권장)</option>
+                                            <option value="10.5">10.5 pt</option>
+                                            <option value="11">11 pt</option>
+                                            <option value="12">12 pt</option>
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
+                                (표의 너비와 행 높이는 유지하면서, 셀에 비해 너무 작게 들어간 글자(7~8pt)를 지정한 폰트 크기로 시원하게 확대합니다.)
                             </div>
                         </div>
                     </div>

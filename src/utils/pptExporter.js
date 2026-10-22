@@ -743,6 +743,18 @@ function parseColorToHex(colorStr) {
 /**
  * [신규] 엘리먼트(r, fld, br, endParaRPr, defRPr)의 실질적인 폰트 크기(sz)를 상속 관계를 고려하여 정밀 추적합니다.
  */
+function isElementInsideTable(el) {
+    let curr = el ? el.parentNode : null;
+    while (curr) {
+        if (curr.nodeType === 1) {
+            const name = curr.localName || (curr.tagName ? curr.tagName.split(':').pop() : '');
+            if (name === 'tbl') return true;
+        }
+        curr = curr.parentNode;
+    }
+    return false;
+}
+
 function getEffectiveFontSize(el) {
     if (!el) return null;
     let sz = el.getAttribute ? el.getAttribute('sz') : null;
@@ -815,6 +827,11 @@ export async function processPptBatch(pptFile, options) {
         fontSizeRules = [],
         roundFontSizes = false,
         roundFontSizeMode = 'ceil',
+        optimizeTableFont = false,
+        applyTableBodyStyle = true,
+        tableBodyFontSize = 10,
+        tableHeaderFontSize = 11,
+        tableFirstColFontSize = 11,
         applyDesign = false, 
         applyTableDesign = false, 
         applyFirstRowHeaderStyle = true,
@@ -836,7 +853,7 @@ export async function processPptBatch(pptFile, options) {
         topHeaderMiddleAlign = true
     } = options;
 
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !roundFontSizes && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -1467,7 +1484,7 @@ export async function processPptBatch(pptFile, options) {
             }
 
             // 폰트 크기 변경 (전체 일괄 적용, 매핑 적용 및 소수점 반올림/올림 적용)
-            if ((fontSizeRules.length > 0 || roundFontSizes) && !slidePath.startsWith('ppt/theme/')) {
+            if ((fontSizeRules.length > 0 || roundFontSizes || optimizeTableFont) && !slidePath.startsWith('ppt/theme/')) {
                 // 1. 텍스트 런 및 필드 수준 처리 (r, fld, br)
                 if (localName === 'r' || localName === 'fld' || localName === 'br') {
                     let rPr = null;
@@ -1526,6 +1543,27 @@ export async function processPptBatch(pptFile, options) {
                                     matchedRule = true;
                                     break;
                                 }
+                            }
+                        }
+                    }
+
+                    // 💡 [신규 추가 옵션] 표 작은 폰트 가독성 자동 보정 (8.5pt 이하 -> 10pt 상향)
+                    if (!matchedRule && optimizeTableFont && effectiveSz !== null && isElementInsideTable(el)) {
+                        if (effectiveSz < 900) {
+                            const newSzVal = '1000'; // 10pt
+                            if (effectiveSz.toString() !== newSzVal) {
+                                if (!rPr) {
+                                    rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
+                                    if (el.firstChild) el.insertBefore(rPr, el.firstChild);
+                                    else el.appendChild(rPr);
+                                }
+                                if (rPr.getAttribute('sz') !== newSzVal) {
+                                    rPr.setAttribute('sz', newSzVal);
+                                    totalReplacedFontSizes++;
+                                    fileChanged = true;
+                                    hasChanges = true;
+                                }
+                                matchedRule = true;
                             }
                         }
                     }
@@ -1590,6 +1628,20 @@ export async function processPptBatch(pptFile, options) {
                                     break;
                                 }
                             }
+                        }
+                    }
+
+                    // 💡 [신규 추가 옵션] defRPr 표 작은 폰트 가독성 자동 보정 (8.5pt 이하 -> 10pt 상향)
+                    if (!matchedRule && optimizeTableFont && effectiveSz !== null && isElementInsideTable(el)) {
+                        if (effectiveSz < 900) {
+                            const newSzVal = '1000';
+                            if (el.getAttribute('sz') !== newSzVal) {
+                                el.setAttribute('sz', newSzVal);
+                                totalReplacedFontSizes++;
+                                fileChanged = true;
+                                hasChanges = true;
+                            }
+                            matchedRule = true;
                         }
                     }
 
@@ -2178,6 +2230,70 @@ export async function processPptBatch(pptFile, options) {
                                                 fontEl.setAttribute('typeface', fontName);
                                                 rPr.appendChild(fontEl);
                                             });
+                                        }
+                                    }
+                                }
+                                // 4단계: [신규] 표 본문(2행 이상 & 2열 이상) 데이터 셀 가독성 폰트 크기 및 서식 최적화!
+                                // 표의 사이즈(너비 및 행 높이)는 100% 온전히 유지하면서, 폰트 크기만 10pt 등으로 확대 적용
+                                else if (applyTableBodyStyle && rowIdx > 0 && c > 0) {
+                                    // 상하 가운데 정렬(anchor="ctr") 및 셀 내부 최적 여백 설정 (좌우 0.1cm=36000, 상하 0.05cm=18000)
+                                    tcPr.setAttribute('anchor', 'ctr');
+                                    if (!tcPr.getAttribute('marL')) tcPr.setAttribute('marL', '36000');
+                                    if (!tcPr.getAttribute('marR')) tcPr.setAttribute('marR', '36000');
+                                    if (!tcPr.getAttribute('marT')) tcPr.setAttribute('marT', '18000');
+                                    if (!tcPr.getAttribute('marB')) tcPr.setAttribute('marB', '18000');
+
+                                    const bodySzVal = String(Math.round(tableBodyFontSize * 100)); // 기본 1000 (10pt)
+
+                                    const paragraphs = Array.from(tc.getElementsByTagName('a:p')).concat(Array.from(tc.getElementsByTagName('p')));
+                                    const uniqueParagraphs = Array.from(new Set(paragraphs));
+
+                                    for (let pIdx = 0; pIdx < uniqueParagraphs.length; pIdx++) {
+                                        const p = uniqueParagraphs[pIdx];
+                                        let pPrList = Array.from(p.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'pPr' || node.tagName.endsWith(':pPr')));
+                                        let pPr = pPrList[0];
+                                        if (!pPr) {
+                                            pPr = xmlDoc.createElementNS(nsA, 'a:pPr');
+                                            if (p.firstChild) p.insertBefore(pPr, p.firstChild);
+                                            else p.appendChild(pPr);
+                                        }
+
+                                        // defRPr 처리
+                                        let defRPrList = Array.from(pPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'defRPr' || node.tagName.endsWith(':defRPr')));
+                                        let defRPr = defRPrList[0];
+                                        if (!defRPr) {
+                                            defRPr = xmlDoc.createElementNS(nsA, 'a:defRPr');
+                                            pPr.appendChild(defRPr);
+                                        }
+                                        defRPr.setAttribute('sz', bodySzVal);
+
+                                        // a:r 및 a:fld 순회
+                                        const runs = Array.from(p.getElementsByTagName('a:r'))
+                                            .concat(Array.from(p.getElementsByTagName('r')))
+                                            .concat(Array.from(p.getElementsByTagName('a:fld')))
+                                            .concat(Array.from(p.getElementsByTagName('fld')));
+                                        const uniqueRuns = Array.from(new Set(runs));
+
+                                        for (let rIdx = 0; rIdx < uniqueRuns.length; rIdx++) {
+                                            const r = uniqueRuns[rIdx];
+                                            let rPrList = Array.from(r.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'rPr' || node.tagName.endsWith(':rPr')));
+                                            let rPr = rPrList[0];
+                                            if (!rPr) {
+                                                rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
+                                                if (r.firstChild) r.insertBefore(rPr, r.firstChild);
+                                                else r.appendChild(rPr);
+                                            }
+                                            rPr.setAttribute('sz', bodySzVal);
+
+                                            // 폰트가 지정되지 않은 경우 기본 KoPubDotum Medium 주입
+                                            const hasFont = Array.from(rPr.childNodes).some(node => node.nodeType === 1 && ['latin', 'ea', 'cs'].includes(node.localName || node.tagName.split(':').pop()));
+                                            if (!hasFont) {
+                                                ['latin', 'ea', 'cs'].forEach(fontType => {
+                                                    const fontEl = xmlDoc.createElementNS(nsA, `a:${fontType}`);
+                                                    fontEl.setAttribute('typeface', 'KoPubDotum Medium');
+                                                    rPr.appendChild(fontEl);
+                                                });
+                                            }
                                         }
                                     }
                                 }
