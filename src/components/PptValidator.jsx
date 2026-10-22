@@ -3831,6 +3831,60 @@ TBD
               <span style={{ fontSize: '13px', color: checkParenMismatch ? '#facc15' : 'var(--text-muted)', fontWeight: 600 }}>괄호 짝 불일치 건수</span>
               <span style={{ fontSize: '24px', fontWeight: 900, color: checkParenMismatch ? '#eab308' : 'var(--text-muted)' }}>{checkParenMismatch ? `${parenResults.length}건` : '비활성'}</span>
             </div>
+            {(() => {
+              const invalidCount = pageRangeResults.filter(p => p.isContinuous === false).length;
+              const hasData = pageRangeResults.length > 0;
+              const isAllValid = hasData && invalidCount === 0;
+
+              return (
+                <div 
+                  onClick={() => hasData && setActiveResultTab('pageRange')}
+                  style={{ 
+                    background: !hasData 
+                      ? 'rgba(255, 255, 255, 0.01)' 
+                      : isAllValid 
+                        ? 'rgba(16, 185, 129, 0.05)' 
+                        : 'rgba(239, 68, 68, 0.05)', 
+                    border: !hasData 
+                      ? '1px solid var(--panel-border)' 
+                      : isAllValid 
+                        ? '1px solid rgba(16, 185, 129, 0.2)' 
+                        : '1px solid rgba(239, 68, 68, 0.25)', 
+                    padding: '16px 20px', 
+                    borderRadius: '12px', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '6px',
+                    cursor: hasData ? 'pointer' : 'default',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={hasData ? "클릭 시 페이지 범위 분석 탭으로 이동" : ""}
+                >
+                  <span style={{ 
+                    fontSize: '13px', 
+                    color: !hasData 
+                      ? 'var(--text-muted)' 
+                      : isAllValid 
+                        ? '#34d399' 
+                        : '#f87171', 
+                    fontWeight: 600 
+                  }}>
+                    페이지범위 분석결과
+                  </span>
+                  <span style={{ 
+                    fontSize: '24px', 
+                    fontWeight: 900, 
+                    color: !hasData 
+                      ? 'var(--text-muted)' 
+                      : isAllValid 
+                        ? '#10b981' 
+                        : '#ef4444' 
+                  }}>
+                    {!hasData ? '-' : isAllValid ? '정상 (0건)' : `비정상 ${invalidCount}건`}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* 결과 상세 확인 테이블 탭 */}
