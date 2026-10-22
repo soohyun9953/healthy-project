@@ -2066,51 +2066,57 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
               }
             }
 
-            // 2) 2레벨(좌측상단 중분류) 검증
-            if (level2) {
-              const m2 = level2.match(num_regex);
-              if (m2) {
-                const parts = m2[1].split('.').map(n => parseInt(n, 10));
-                const majorPart = parts[0];
-                const subPart = parts[1];
+            // 💡 1) 2레벨(좌측상단 중분류) 검증: " " (공백)은 아무것도 없는 것으로 인식!
+            const cleanL2 = (level2 || '').trim();
+            const m2 = cleanL2 ? cleanL2.match(num_regex) : null;
+            const l2Parts = (m2 && m2[1].split('.').length === 2) ? m2[1].split('.').map(n => parseInt(n, 10)) : null;
 
-                // 1레벨과 상위 번호 일치 검증
-                if (lastL1Val !== null && majorPart !== lastL1Val) {
+            if (l2Parts) {
+              const majorPart = l2Parts[0];
+              const subPart = l2Parts[1];
+              const l2NumStr = m2[1];
+
+              // 1레벨(대주제)과 상위 계층 일치 검증
+              if (lastL1Val !== null && majorPart !== lastL1Val) {
+                allNumberings.push({
+                  fileName: file.name,
+                  slideNum: slide.slideNum,
+                  area: '2레벨 (좌측상단 중분류)',
+                  text: cleanL2,
+                  error: `2레벨 상위 계층 불일치 (${l2NumStr})`,
+                  guide: `현재 대주제(1레벨) 번호는 "${lastL1Val}"인데, 중분류(2레벨)의 앞자리 번호는 "${majorPart}"로 서로 모순됩니다.`
+                });
+                fileNumErrorsCount++;
+              }
+
+              // 동일 1레벨 내에서 2레벨 순차 증가 검증
+              if (lastL2NumStr && l2NumStr !== lastL2NumStr) {
+                const prevParts = lastL2NumStr.split('.').map(n => parseInt(n, 10));
+                if (prevParts[0] === majorPart && subPart !== lastL2SubVal + 1) {
                   allNumberings.push({
                     fileName: file.name,
                     slideNum: slide.slideNum,
                     area: '2레벨 (좌측상단 중분류)',
-                    text: level2,
-                    error: `2레벨 상위 계층 불일치 (${m2[1]})`,
-                    guide: `현재 대주제(1레벨) 번호는 "${lastL1Val}"인데, 중분류(2레벨)의 앞자리 번호는 "${majorPart}"로 서로 모순됩니다.`
+                    text: cleanL2,
+                    error: `2레벨 중분류 순차성 단절 (${l2NumStr})`,
+                    guide: `중분류 일련번호가 순차적으로 증가하지 않고 단절되었습니다. (이전: ${lastL2NumStr} ➜ 현재: ${l2NumStr})`
                   });
                   fileNumErrorsCount++;
                 }
-
-                // 동일 1레벨 내에서 2레벨 순차 증가 검증 (이미 3레벨을 통해 동기화된 2레벨과 다를 때만 점검)
-                if (lastL2NumStr && m2[1] !== lastL2NumStr) {
-                  if (subPart !== lastL2SubVal + 1) {
-                    allNumberings.push({
-                      fileName: file.name,
-                      slideNum: slide.slideNum,
-                      area: '2레벨 (좌측상단 중분류)',
-                      text: level2,
-                      error: `2레벨 중분류 순차성 단절 (${m2[1]})`,
-                      guide: `중분류 일련번호가 순차적으로 증가하지 않고 단절되었습니다. (이전: ${lastL2NumStr} ➜ 현재: ${m2[1]})`
-                    });
-                    fileNumErrorsCount++;
-                  }
-                }
-                lastL2NumStr = m2[1];
-                lastL2SubVal = subPart;
               }
+
+              lastL2NumStr = l2NumStr;
+              lastL2SubVal = subPart;
             }
 
-            // 💡 3) 3레벨(좌측하단 소분류/메인타이틀) 검증
-            if (level3) {
-              const m3 = level3.match(num_regex);
-              const altMatch = level3.match(/\((\d+)\/(\d+)\)\s*$/);
-              const pureTitle = level3.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
+            // 💡 2) 3레벨(좌측하단 소분류/메인타이틀) 검증
+            // [사용자 규칙] 2레벨이 없는 것은 3레벨에 X.X 형태로 순차적으로 넘버링되는 것이 규칙!
+            const cleanL3 = (level3 || '').trim();
+
+            if (cleanL3) {
+              const m3 = cleanL3.match(num_regex);
+              const altMatch = cleanL3.match(/\((\d+)\/(\d+)\)\s*$/);
+              const pureTitle = cleanL3.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
               const l3MainTitle = pureTitle.split('>')[0].trim();
               const l4SubTopic = pureTitle.includes('>') ? pureTitle.split('>').slice(1).join('>').trim() : '';
 
@@ -2118,28 +2124,75 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                 const rawNum = m3[1];
                 const parts = rawNum.split('.').map(n => parseInt(n, 10));
 
-                if (parts.length >= 3) {
-                  const l2Prefix = `${parts[0]}.${parts[1]}`;
-                  const l3SubVal = parts[2];
+                // 💡 [규칙 반영] 2레벨이 없는 슬라이드는 3레벨에 X.X 형태로 순차적으로 넘버링되는 것이 규칙!
+                if (parts.length === 2) {
+                  const majorPart = parts[0];
+                  const subPart = parts[1];
 
-                  // 2레벨과의 상위 계층 번호 일치 검증 (현재 슬라이드에 2레벨이 명시되어 있는 경우)
-                  if (level2 && lastL2NumStr && l2Prefix !== lastL2NumStr) {
+                  // 1레벨(대주제)과 상위 번호 일치 검증
+                  if (lastL1Val !== null && majorPart !== lastL1Val) {
                     allNumberings.push({
                       fileName: file.name,
                       slideNum: slide.slideNum,
                       area: '3레벨 (좌측하단 소분류)',
-                      text: level3,
+                      text: cleanL3,
+                      error: `상위 계층 불일치 (${rawNum})`,
+                      guide: `현재 대주제(1레벨) 번호는 "${lastL1Val}"인데, 제목 번호의 앞자리는 "${majorPart}"입니다.`
+                    });
+                    fileNumErrorsCount++;
+                  }
+
+                  // 3레벨에 온 X.X 형태의 순차적 넘버링 검증
+                  if (lastL2NumStr && rawNum !== lastL2NumStr) {
+                    const prevParts = lastL2NumStr.split('.').map(n => parseInt(n, 10));
+                    if (prevParts[0] === majorPart && subPart !== lastL2SubVal + 1) {
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '3레벨 (좌측하단 소분류)',
+                        text: cleanL3,
+                        error: `2레벨 순차성 단절 (${rawNum})`,
+                        guide: `2레벨 없는 슬라이드의 3레벨 일련번호(X.X)가 순차적으로 증가하지 않고 단절되었습니다. (이전: ${lastL2NumStr} ➜ 현재: ${rawNum})`
+                      });
+                      fileNumErrorsCount++;
+                    }
+                  }
+
+                  // 3레벨의 X.X가 2레벨 및 3레벨 상태로 승계됨
+                  lastL2NumStr = rawNum;
+                  lastL2SubVal = subPart;
+                  lastL3NumStr = rawNum;
+                  lastL3L2Prefix = rawNum;
+                  lastL3SubVal = null;
+                  if (altMatch) {
+                    lastAltInfo = { pureTitle, l3MainTitle, l4SubTopic, curPage: parseInt(altMatch[1], 10), totPage: parseInt(altMatch[2], 10) };
+                  } else {
+                    lastAltInfo = { pureTitle, l3MainTitle, l4SubTopic, curPage: 1, totPage: 1 };
+                  }
+
+                } else if (parts.length >= 3) {
+                  // 일반적인 3레벨 X.X.X 형태
+                  const l2Prefix = `${parts[0]}.${parts[1]}`;
+                  const l3SubVal = parts[2];
+
+                  // 2레벨과의 상위 계층 번호 일치 검증 (슬라이드에 명시적 2레벨이 있는 경우)
+                  if (cleanL2 && lastL2NumStr && l2Prefix !== lastL2NumStr) {
+                    allNumberings.push({
+                      fileName: file.name,
+                      slideNum: slide.slideNum,
+                      area: '3레벨 (좌측하단 소분류)',
+                      text: cleanL3,
                       error: `3레벨 상위 계층 불일치 (${rawNum})`,
                       guide: `소제목 번호("${rawNum}")의 상위 계층은 "${l2Prefix}"이나, 현재 중분류는 "${lastL2NumStr}"입니다.`
                     });
                     fileNumErrorsCount++;
                   }
 
-                  // 3레벨 번호의 l2Prefix를 통해 2레벨 상시 동기화 (간지/도형 누락 시 단절 오탐 방지)
+                  // 3레벨 번호의 l2Prefix를 통해 2레벨 상시 동기화
                   lastL2NumStr = l2Prefix;
                   lastL2SubVal = parts[1];
 
-                  // 💡 2레벨 변경 감지: 3레벨 번호 접두사(l2Prefix) 기준!
+                  // 💡 2레벨 변경 감지: 3레벨 접두사(l2Prefix) 기준!
                   const isL2Changed = lastL3L2Prefix !== null && l2Prefix !== lastL3L2Prefix;
 
                   if (isL2Changed) {
@@ -2153,7 +2206,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                           fileName: file.name,
                           slideNum: slide.slideNum,
                           area: '2레벨 (중분류 번호)',
-                          text: level3,
+                          text: cleanL3,
                           error: `2레벨 중분류 순차성 단절 (${l2Prefix})`,
                           guide: `중분류 일련번호가 순차적으로 증가하지 않고 단절되었습니다. (이전: ${lastL3L2Prefix} ➜ 현재: ${l2Prefix})`
                         });
@@ -2170,7 +2223,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                         fileName: file.name,
                         slideNum: slide.slideNum,
                         area: '3레벨 (좌측하단 소분류)',
-                        text: level3,
+                        text: cleanL3,
                         error: `3레벨 소분류 시작 번호 오류 (${rawNum})`,
                         guide: `중분류가 변경("${lastL3L2Prefix}" ➜ "${l2Prefix}")된 후 첫 소분류는 "${l2Prefix}.1"부터 순차 시작해야 합니다. (현재: ${rawNum})`
                       });
@@ -2185,7 +2238,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                           fileName: file.name,
                           slideNum: slide.slideNum,
                           area: '3레벨 (좌측하단 소분류)',
-                          text: level3,
+                          text: cleanL3,
                           error: `연속 페이지 시작 번호 오류`,
                           guide: `새로운 연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${curPage}/${altMatch[2]})`
                         });
@@ -2195,17 +2248,17 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                   } else if (lastL3NumStr !== null) {
                     // 동일 2레벨 내에서의 검증
                     if (rawNum === lastL3NumStr) {
-                      // 💡 동일 3레벨 번호: 4레벨 세부 주제(>)가 변경되거나 동일 세부 주제가 연속되는 경우
+                      // 동일 3레벨 번호: 4레벨 세부 주제(>)가 변경되거나 동일 세부 주제가 연속되는 경우
                       const isSameDetailTopic = (lastAltInfo && lastAltInfo.l3MainTitle === l3MainTitle && lastAltInfo.l4SubTopic === l4SubTopic);
 
                       if (isSameDetailTopic) {
-                        // 완전히 동일한 세부 주제가 연속되는 경우 -> (순번/총페이지수) 점검
+                        // 동일 세부 주제 연속 -> (순번/총페이지수) 점검
                         if (!altMatch) {
                           allNumberings.push({
                             fileName: file.name,
                             slideNum: slide.slideNum,
                             area: '3레벨 (좌측하단 소분류)',
-                            text: level3,
+                            text: cleanL3,
                             error: `연속 슬라이드 페이지 표기 누락 (${rawNum})`,
                             guide: `이전 슬라이드와 동일한 소제목("${pureTitle}")이 연속되고 있으나, 제목 끝에 "(순번/총페이지수)" (예: (1/2), (2/2)) 표기가 누락되었습니다.`
                           });
@@ -2218,7 +2271,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                               fileName: file.name,
                               slideNum: slide.slideNum,
                               area: '3레벨 (좌측하단 소분류)',
-                              text: level3,
+                              text: cleanL3,
                               error: `연속 페이지 총 페이지수 불일치`,
                               guide: `연속된 목차의 총 페이지수(분모)가 이전 슬라이드(${lastAltInfo.totPage}장)와 현재 슬라이드(${totPage}장)가 일치하지 않습니다.`
                             });
@@ -2229,7 +2282,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                               fileName: file.name,
                               slideNum: slide.slideNum,
                               area: '3레벨 (좌측하단 소분류)',
-                              text: level3,
+                              text: cleanL3,
                               error: `연속 페이지 순번 단절`,
                               guide: `연속 페이지 번호(분자)가 순차적으로 증가하지 않았습니다. (이전: ${lastAltInfo.curPage} ➜ 현재: ${curPage})`
                             });
@@ -2244,7 +2297,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                             fileName: file.name,
                             slideNum: slide.slideNum,
                             area: '3레벨 (좌측하단 소분류)',
-                            text: level3,
+                            text: cleanL3,
                             error: `연속 페이지 시작 번호 오류`,
                             guide: `새로운 세부 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${curPage}/${altMatch[2]})`
                           });
@@ -2258,7 +2311,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                           fileName: file.name,
                           slideNum: slide.slideNum,
                           area: '3레벨 (좌측하단 소분류)',
-                          text: level3,
+                          text: cleanL3,
                           error: `3레벨 소분류 순차성 단절 (${rawNum})`,
                           guide: `소분류 번호가 순차적으로 1씩 증가하지 않고 단절되었습니다. (이전: ${lastL3NumStr} ➜ 현재: ${rawNum})`
                         });
@@ -2271,7 +2324,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                             fileName: file.name,
                             slideNum: slide.slideNum,
                             area: '3레벨 (좌측하단 소분류)',
-                            text: level3,
+                            text: cleanL3,
                             error: `연속 페이지 시작 번호 오류`,
                             guide: `새로운 연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${curPage}/${altMatch[2]})`
                           });
@@ -2289,7 +2342,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                         fileName: file.name,
                         slideNum: slide.slideNum,
                         area: '3레벨 (좌측하단 소분류)',
-                        text: level3,
+                        text: cleanL3,
                         error: `3레벨 소분류 시작 번호 오류 (${rawNum})`,
                         guide: `새로운 중분류 하위의 첫 소분류는 ${l2Prefix}.1부터 순차 시작해야 합니다. (현재: ${rawNum})`
                       });
@@ -2305,8 +2358,6 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                   } else {
                     lastAltInfo = { pureTitle, l3MainTitle, l4SubTopic, curPage: 1, totPage: 1 };
                   }
-                } else if (parts.length <= 2) {
-                  // 규칙 4: 3레벨이 하위에 없어서 2레벨이 단독으로 작성된 경우 ➔ 정상 허용
                 }
               }
             }
