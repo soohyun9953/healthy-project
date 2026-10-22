@@ -836,6 +836,7 @@ export async function processPptBatch(pptFile, options) {
         applyTableDesign = false, 
         applyFirstRowHeaderStyle = true,
         applyFirstColHeaderStyle = false,
+        excludeSingleRowHeaderStyle = true,
         targetText = '',
         applySpecialCharClean = false,
         replaceNbs = false,
@@ -1947,7 +1948,6 @@ export async function processPptBatch(pptFile, options) {
                     
                     for (let t = 0; t < tables.length; t++) {
                         totalTablesCount++;
-                        if (useHeaderStyle) totalHeaderRowsApplied++;
                         
                         const tbl = tables[t];
 
@@ -1969,13 +1969,17 @@ export async function processPptBatch(pptFile, options) {
                         }
 
                         const rows = Array.from(tbl.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'tr' || node.tagName.endsWith(':tr')));
+                        const isSingleRow = (rows.length === 1);
+                        // 💡 1개 행으로 된 표이고 제외 옵션이 활성화된 경우 첫 행 특별 포맷팅 제외
+                        const effectiveUseHeaderStyle = useHeaderStyle && (!isSingleRow || !excludeSingleRowHeaderStyle);
+                        if (effectiveUseHeaderStyle) totalHeaderRowsApplied++;
 
                         for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
                             const tr = rows[rowIdx];
                             const isFirstRow = (rowIdx === 0);
 
                             // 첫 행(헤더) 특별 포맷팅 시 행 높이가 0.9cm(324000 EMU)를 초과하면 0.9cm로 제한
-                            if (isFirstRow && useHeaderStyle) {
+                            if (isFirstRow && effectiveUseHeaderStyle) {
                                 const MAX_HEADER_ROW_HEIGHT_EMU = 324000; // 0.9cm = 0.9 * 360000 EMU
                                 const currentTrH = parseInt(tr.getAttribute('h') || '0', 10);
                                 if (currentTrH > MAX_HEADER_ROW_HEIGHT_EMU) {
@@ -2005,7 +2009,7 @@ export async function processPptBatch(pptFile, options) {
                                 // 💡 1행(헤더): "열과 열 사이의 내부 세로선"만 흰색(#FFFFFF), 외곽선 및 2행과의 경계(하단선)는 회색(#7F7F7F)
                                 // 💡 2행 이하: 모든 내부/외부 가로선 및 세로선이 100% 빠짐없이 회색(#7F7F7F)으로 적용됩니다.
                                 const isLastCol = (c === cells.length - 1);
-                                if (applyTableDesign || (isFirstRow && useHeaderStyle) || (isFirstColBody && applyFirstColHeaderStyle)) {
+                                if (applyTableDesign || (isFirstRow && effectiveUseHeaderStyle) || (isFirstColBody && applyFirstColHeaderStyle)) {
                                     // 1-1. tcPr 내부의 기존 모든 테두리 노드(lnL, lnR, lnT, lnB, lnTlToBr, lnBlToTr) 완전 제거
                                     const borderTagNames = ['lnL', 'lnR', 'lnT', 'lnB', 'lnTlToBr', 'lnBlToTr'];
                                     const oldBorders = Array.from(tcPr.childNodes).filter(node => 
@@ -2018,7 +2022,7 @@ export async function processPptBatch(pptFile, options) {
                                     const firstNonBorderNode = tcPr.firstChild;
                                     borderSides.forEach(side => {
                                         let borderColor = '7F7F7F';
-                                        if (isFirstRow && useHeaderStyle) {
+                                        if (isFirstRow && effectiveUseHeaderStyle) {
                                             const isInnerVertical = (side === 'lnL' && !isFirstCol) || (side === 'lnR' && !isLastCol);
                                             borderColor = isInnerVertical ? 'FFFFFF' : '7F7F7F';
                                         }
@@ -2042,7 +2046,7 @@ export async function processPptBatch(pptFile, options) {
                                 }
                                 
                                 // 2단계: 첫 행 헤더 배경색 (#0072BA) 및 흰색 텍스트 포맷팅
-                                if (isFirstRow && useHeaderStyle) {
+                                if (isFirstRow && effectiveUseHeaderStyle) {
                                     const oldFills = Array.from(tcPr.childNodes).filter(node => node.nodeType === 1 && ['noFill', 'solidFill', 'gradFill', 'pattFill', 'blipFill'].includes(node.localName || node.tagName.split(':').pop()));
                                     oldFills.forEach(sf => tcPr.removeChild(sf));
                                     
@@ -2235,7 +2239,7 @@ export async function processPptBatch(pptFile, options) {
                                 }
                                 // 4단계: [신규] 표 본문(2행 이상 & 2열 이상) 데이터 셀 가독성 폰트 크기 및 서식 최적화!
                                 // 표의 사이즈(너비 및 행 높이)는 100% 온전히 유지하면서, 폰트 크기만 10pt 등으로 확대 적용
-                                else if (applyTableBodyStyle && rowIdx > 0 && c > 0) {
+                                else if (applyTableBodyStyle && ((rowIdx > 0 && c > 0) || (isSingleRow && !effectiveUseHeaderStyle))) {
                                     // 상하 가운데 정렬(anchor="ctr") 및 셀 내부 최적 여백 설정 (좌우 0.1cm=36000, 상하 0.05cm=18000)
                                     tcPr.setAttribute('anchor', 'ctr');
                                     if (!tcPr.getAttribute('marL')) tcPr.setAttribute('marL', '36000');

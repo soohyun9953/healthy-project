@@ -29,6 +29,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [applyDesignChecked, setApplyDesignChecked] = useState(true);
     const [applyTableDesignChecked, setApplyTableDesignChecked] = useState(false);
     const [applyFirstRowHeaderStyle, setApplyFirstRowHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 행 특별 포맷팅 적용 여부 (기본 true)
+    const [excludeSingleRowHeaderStyle, setExcludeSingleRowHeaderStyle] = useState(true); // 옵션 E 하위: 1개 행 표는 첫 행 특별 포맷팅 제외
     const [applyFirstColHeaderStyle, setApplyFirstColHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 열(2행부터) 특별 포맷팅 적용 여부 (기본 true)
     const [applyTableBodyStyle, setApplyTableBodyStyle] = useState(true); // 옵션 E 하위: 표 본문 가독성 폰트 적용
     const [tableBodyFontSize, setTableBodyFontSize] = useState('10'); // 옵션 E 하위: 표 본문 폰트 크기 (기본 10pt)
@@ -384,6 +385,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         applyDesign: applyDesignChecked,
                         applyTableDesign: applyTableDesignChecked,
                         applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
+                                                excludeSingleRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle && excludeSingleRowHeaderStyle,
                         applyFirstColHeaderStyle: applyTableDesignChecked && applyFirstColHeaderStyle,
                                                 applyTableBodyStyle: applyTableDesignChecked && applyTableBodyStyle,
                         tableBodyFontSize: parseFloat(tableBodyFontSize) || 10,
@@ -480,7 +482,11 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             applyDesign: applyDesignChecked,
                             applyTableDesign: applyTableDesignChecked,
                             applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
+                            excludeSingleRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle && excludeSingleRowHeaderStyle,
                             applyFirstColHeaderStyle: applyTableDesignChecked && applyFirstColHeaderStyle,
+                            applyTableBodyStyle: applyTableDesignChecked && applyTableBodyStyle,
+                            tableBodyFontSize: parseFloat(tableBodyFontSize) || 10,
+                            optimizeTableFont: optimizeTableFont,
                             targetText: designTargetText,
                             applySpecialCharClean: applySpecialCharClean,
                             replaceNbs: replaceNbs,
@@ -1032,6 +1038,38 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
                                 (첫 행 배경 RGB(0,114,186), 글자 흰색 11pt KoPubDotum Bold, 가운데 정렬, 첫 행 내부 실선 흰색 적용)
                             </div>
+
+                            {/* 하위 1-1: 1개 행으로 된 표는 첫 행 헤더 특별 포맷팅 제외 */}
+                            {applyFirstRowHeaderStyle && (
+                                <div style={{ paddingLeft: '24px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                    <label style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
+                                        fontSize: '12.5px',
+                                        color: applyTableDesignChecked ? 'var(--text-primary)' : 'var(--text-muted)',
+                                        fontWeight: 600
+                                    }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={excludeSingleRowHeaderStyle}
+                                            disabled={!applyTableDesignChecked || !applyFirstRowHeaderStyle}
+                                            onChange={(e) => setExcludeSingleRowHeaderStyle(e.target.checked)}
+                                            style={{
+                                                width: '15px',
+                                                height: '15px',
+                                                cursor: (applyTableDesignChecked && applyFirstRowHeaderStyle) ? 'pointer' : 'not-allowed',
+                                                accentColor: '#a855f7'
+                                            }}
+                                        />
+                                        1개 행으로 된 표는 첫 행 특별 포맷팅 제외
+                                    </label>
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', paddingLeft: '23px', lineHeight: '1.3' }}>
+                                        (표가 단 1개의 행으로만 구성된 경우, 헤더 파란색 배경 및 흰색 글씨를 적용하지 않고 본문 서식으로 유지합니다.)
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* 하위 2: 첫 번째 열(구분열) 특별 포맷팅 */}
