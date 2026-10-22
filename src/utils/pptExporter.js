@@ -829,10 +829,12 @@ export async function processPptBatch(pptFile, options) {
         clearAltText = false,
         fixLangErrFlags = false,
         clearSpeakerNotes = false,
-        customFirstSlideNum = null
+        customFirstSlideNum = null,
+        applyFormatReset = false,
+        topHeaderMiddleAlign = true
     } = options;
 
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -969,6 +971,7 @@ export async function processPptBatch(pptFile, options) {
     let totalWordWrapPrevented = 0;
     let totalLangFixed = 0;
     let totalErrFlagsCleared = 0;
+    let totalFormatResetCount = 0;
 
     // 💡 [1단계: 모든 슬라이드 제목 괄호 앞 공백 전수 보정]
     // add_title_page_numbers 실행 여부나 동일 제목 반복 여부와 무관하게,
@@ -2005,7 +2008,71 @@ export async function processPptBatch(pptFile, options) {
                 }
             }
 
-            // 💡 [핵심 수리] DOM 수정사항(테이블 및 헤더 디자인)을 최종 slideXmlStr에 재직렬화하여 100% 반영!
+            // 💡 [옵션 O: 슬라이드 서식 자동 다시 설정 (상단 목차 텍스트 맞춤: 중간)]
+            if (applyFormatReset) {
+                const spElements = xmlDoc.getElementsByTagNameNS('*', 'sp');
+                for (let sIdx = 0; sIdx < spElements.length; sIdx++) {
+                    const sp = spElements[sIdx];
+
+                    // y 좌표 확인 (a:off y="...")
+                    let yVal = null;
+                    const xfrm = sp.getElementsByTagNameNS('*', 'xfrm')[0];
+                    if (xfrm) {
+                        const off = xfrm.getElementsByTagNameNS('*', 'off')[0];
+                        if (off && off.getAttribute('y')) {
+                            yVal = parseInt(off.getAttribute('y'), 10);
+                        }
+                    }
+
+                    // placeholder 확인
+                    let isPhTitle = false;
+                    const ph = sp.getElementsByTagNameNS('*', 'ph')[0];
+                    if (ph) {
+                        const phType = ph.getAttribute('type') || '';
+                        if (['title', 'ctrTitle', 'subTitle', 'hdr'].includes(phType)) {
+                            isPhTitle = true;
+                        }
+                    }
+
+                    // 도형 이름(name) 확인
+                    let isNamedHeader = false;
+                    const cNvPr = sp.getElementsByTagNameNS('*', 'cNvPr')[0];
+                    if (cNvPr) {
+                        const spName = (cNvPr.getAttribute('name') || '').toLowerCase();
+                        if (spName.includes('title') || spName.includes('header') || spName.includes('제목') || spName.includes('목차') || spName.includes('헤더')) {
+                            isNamedHeader = true;
+                        }
+                    }
+
+                    // 상단 영역 (y < 1600000 EMU) 또는 제목/목차 도형 판정
+                    const isTopHeader = (yVal !== null && yVal < 1600000) || isPhTitle || (isNamedHeader && (yVal === null || yVal < 2500000));
+
+                    // 텍스트 내용 확인
+                    const tNodes = sp.getElementsByTagNameNS('*', 't');
+                    const hasText = tNodes.length > 0 && Array.from(tNodes).some(n => (n.textContent || '').trim().length > 0);
+
+                    if (isTopHeader && hasText) {
+                        const txBody = sp.getElementsByTagNameNS('*', 'txBody')[0];
+                        if (txBody) {
+                            let bodyPr = txBody.getElementsByTagNameNS('*', 'bodyPr')[0];
+                            if (!bodyPr) {
+                                bodyPr = xmlDoc.createElementNS(nsA, 'a:bodyPr');
+                                txBody.insertBefore(bodyPr, txBody.firstChild);
+                            }
+
+                            // 텍스트 맞춤 중간 (anchor="ctr")
+                            if (topHeaderMiddleAlign && bodyPr.getAttribute('anchor') !== 'ctr') {
+                                bodyPr.setAttribute('anchor', 'ctr');
+                                totalFormatResetCount++;
+                                fileChanged = true;
+                                hasChanges = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 💡 [핵심 수리] DOM 수정사항(테이블 및 헤더 디자인, 서식 재설정)을 최종 slideXmlStr에 재직렬화하여 100% 반영!
             if (fileChanged) {
                 slideXmlStr = serializer.serializeToString(xmlDoc);
             }
@@ -2044,6 +2111,7 @@ export async function processPptBatch(pptFile, options) {
     blob.totalNotesDeleted = totalNotesDeleted;
     blob.appliedFirstSlideNum = appliedFirstSlideNum;
     blob.totalSlideCount = totalSlideCount;
+    blob.totalFormatResetCount = totalFormatResetCount;
 
     return blob;
 }

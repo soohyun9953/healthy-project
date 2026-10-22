@@ -53,6 +53,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [clearSpeakerNotes, setClearSpeakerNotes] = useState(false); // 옵션 L: 슬라이드 노트 일괄 삭제
     const [applySequentialSlideNum, setApplySequentialSlideNum] = useState(false); // 옵션 M: 슬라이드 시작 번호 순차 지정
     const [initialFirstSlideNum, setInitialFirstSlideNum] = useState(1); // 첫 파일 시작 번호 (기본 1)
+    const [applyFormatReset, setApplyFormatReset] = useState(false); // 옵션 O: 슬라이드 서식 자동 다시 설정 (상단 목차 텍스트 맞춤: 중간)
+    const [topHeaderMiddleAlign, setTopHeaderMiddleAlign] = useState(true); // 옵션 O 하위 옵션: 상단 목차 세로 중간 맞춤
     const [mergeToOneFile, setMergeToOneFile] = useState(false); // 옵션 N: 다중 PPT를 하나의 PPT 파일로 병합 (최하단)
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
@@ -236,6 +238,12 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             changes.push(`슬라이드 시작번호: ${sNum}p ~ ${eNum}p (총 ${count}장)`);
         }
 
+        // 14. 슬라이드 서식 다시 설정 & 상단 목차 텍스트 맞춤 중간
+        if (applyFormatReset) {
+            const count = modifiedBlob.totalFormatResetCount || 0;
+            changes.push(`상단 목차 텍스트 맞춤(중간) 서식 재설정 ${count}개`);
+        }
+
         if (changes.length > 0) {
             // 실질적인 변경이 하나라도 존재하는지 확인 (표 없음 제외)
             const hasRealChanges = (modifiedBlob.totalReplacedWords || 0) > 0 ||
@@ -250,6 +258,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                   clearAltText ||
                                   (fixLangErrFlags && ((modifiedBlob.totalLangFixed || 0) > 0 || (modifiedBlob.totalErrFlagsCleared || 0) > 0)) ||
                                   (clearSpeakerNotes && (modifiedBlob.totalNotesDeleted || 0) > 0) ||
+                                  (applyFormatReset && (modifiedBlob.totalFormatResetCount || 0) > 0) ||
                                   (applySequentialSlideNum && modifiedBlob.appliedFirstSlideNum !== null && modifiedBlob.appliedFirstSlideNum !== undefined) ||
                                   (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
 
@@ -332,8 +341,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes) {
-            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 대체 텍스트 일괄 제거, 언어 태그/맞춤법 오류 표시 보정, 또는 슬라이드 노트 일괄 삭제 중 하나 이상을 입력/선택해주세요.');
+        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset) {
+            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 대체 텍스트 일괄 제거, 언어 태그/맞춤법 오류 표시 보정, 슬라이드 노트 일괄 삭제, 또는 슬라이드 서식 다시 설정 중 하나 이상을 입력/선택해주세요.');
             return;
         }
 
@@ -373,7 +382,9 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         clearAltText: clearAltText,
                         fixLangErrFlags: fixLangErrFlags,
                         clearSpeakerNotes: clearSpeakerNotes,
-                        customFirstSlideNum: applySequentialSlideNum ? (parseInt(initialFirstSlideNum, 10) || 1) : null
+                        customFirstSlideNum: applySequentialSlideNum ? (parseInt(initialFirstSlideNum, 10) || 1) : null,
+                        applyFormatReset: applyFormatReset,
+                        topHeaderMiddleAlign: topHeaderMiddleAlign
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -460,7 +471,9 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             clearAltText: clearAltText,
                             fixLangErrFlags: fixLangErrFlags,
                             clearSpeakerNotes: clearSpeakerNotes,
-                            customFirstSlideNum: applySequentialSlideNum ? runningStartSlideNum : null
+                            customFirstSlideNum: applySequentialSlideNum ? runningStartSlideNum : null,
+                            applyFormatReset: applyFormatReset,
+                            topHeaderMiddleAlign: topHeaderMiddleAlign
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         modifiedBlobs.push(modifiedBlob);
@@ -1273,6 +1286,26 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                         💡 여러 개의 PPT 파일을 업로드했을 때, <strong>입력된 파일 순서대로 앞 파일의 마지막 페이지 번호 다음 번호를 다음 파일의 슬라이드 시작 번호(firstSlideNum)로 자동 지정</strong>합니다.<br/>
                         <span style={{ color: 'var(--accent-blue)', fontSize: '12px' }}>예: 1번째 파일(4장) ➔ 1~4페이지 종료 시, 2번째 파일은 자동으로 5페이지부터 시작 (5~N페이지)</span>
+                    </div>
+                </div>
+
+                {/* 옵션 O: 슬라이드 서식 자동 다시 설정 (상단 목차 텍스트 맞춤: 중간) */}
+                <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                        <input
+                            id="checkbox-option-o"
+                            type="checkbox"
+                            checked={applyFormatReset}
+                            onChange={(e) => setApplyFormatReset(e.target.checked)}
+                            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
+                        />
+                        옵션 O: PPT 서식 자동 다시 설정 (상단 목차 텍스트 맞춤: 중간)
+                    </label>
+                    <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                        💡 PPT 슬라이드의 서식을 표준으로 다시 설정(재배치/정규화)하며, 특히 <strong>슬라이드 상단의 목차·헤더·소분류 텍스트 상자의 텍스트 맞춤을 '중간(Middle, 세로 가운데 맞춤)'으로 일괄 자동 설정</strong>합니다.<br/>
+                        <span style={{ color: 'var(--accent-blue)', fontSize: '12px' }}>
+                            PowerPoint [홈] ➔ [단락] ➔ [텍스트 맞춤: 중간] 및 [슬라이드 서식 다시 설정] 작업을 자동화하여 상단 목차 텍스트가 위로 쏠리지 않고 중앙에 깔끔하게 정렬됩니다.
+                        </span>
                     </div>
                 </div>
 
