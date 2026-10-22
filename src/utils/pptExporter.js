@@ -828,6 +828,8 @@ export async function processPptBatch(pptFile, options) {
         roundFontSizes = false,
         roundFontSizeMode = 'ceil',
         optimizeTableFont = false,
+        optimizeTableFontThreshold = 8.5,
+        optimizeTableFontTargetSize = 10,
         applyTableBodyStyle = true,
         tableBodyFontSize = 10,
         tableHeaderFontSize = 11,
@@ -1550,16 +1552,19 @@ export async function processPptBatch(pptFile, options) {
 
                     // 💡 [신규 추가 옵션] 표 작은 폰트 가독성 자동 보정 (8.5pt 이하 -> 10pt 상향)
                     if (!matchedRule && optimizeTableFont && effectiveSz !== null && isElementInsideTable(el)) {
-                        if (effectiveSz < 900) {
-                            const newSzVal = '1000'; // 10pt
-                            if (effectiveSz.toString() !== newSzVal) {
+                        const threshold_pt = parseFloat(optimizeTableFontThreshold) || 8.5;
+                        const threshold_val = Math.round(threshold_pt * 100);
+                        if (effectiveSz <= threshold_val + 10) {
+                            const target_pt = parseFloat(optimizeTableFontTargetSize) || 10;
+                            const new_sz_val = Math.round(target_pt * 100).toString();
+                            if (effectiveSz.toString() !== new_sz_val) {
                                 if (!rPr) {
                                     rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
                                     if (el.firstChild) el.insertBefore(rPr, el.firstChild);
                                     else el.appendChild(rPr);
                                 }
-                                if (rPr.getAttribute('sz') !== newSzVal) {
-                                    rPr.setAttribute('sz', newSzVal);
+                                if (rPr.getAttribute('sz') !== new_sz_val) {
+                                    rPr.setAttribute('sz', new_sz_val);
                                     totalReplacedFontSizes++;
                                     fileChanged = true;
                                     hasChanges = true;
@@ -1634,10 +1639,13 @@ export async function processPptBatch(pptFile, options) {
 
                     // 💡 [신규 추가 옵션] defRPr 표 작은 폰트 가독성 자동 보정 (8.5pt 이하 -> 10pt 상향)
                     if (!matchedRule && optimizeTableFont && effectiveSz !== null && isElementInsideTable(el)) {
-                        if (effectiveSz < 900) {
-                            const newSzVal = '1000';
-                            if (el.getAttribute('sz') !== newSzVal) {
-                                el.setAttribute('sz', newSzVal);
+                        const threshold_pt = parseFloat(optimizeTableFontThreshold) || 8.5;
+                        const threshold_val = Math.round(threshold_pt * 100);
+                        if (effectiveSz <= threshold_val + 10) {
+                            const target_pt = parseFloat(optimizeTableFontTargetSize) || 10;
+                            const new_sz_val = Math.round(target_pt * 100).toString();
+                            if (el.getAttribute('sz') !== new_sz_val) {
+                                el.setAttribute('sz', new_sz_val);
                                 totalReplacedFontSizes++;
                                 fileChanged = true;
                                 hasChanges = true;
