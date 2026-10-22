@@ -51,7 +51,9 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [clearAltText, setClearAltText] = useState(false); // 옵션 J: 대체 텍스트 일괄 제거 여부
     const [fixLangErrFlags, setFixLangErrFlags] = useState(false); // 옵션 K: 언어 태그/맞춤법 오류 표시 보정
     const [clearSpeakerNotes, setClearSpeakerNotes] = useState(false); // 옵션 L: 슬라이드 노트 일괄 삭제
-    const [mergeToOneFile, setMergeToOneFile] = useState(false); // 옵션 M: 다중 PPT를 하나의 PPT 파일로 병합
+    const [applySequentialSlideNum, setApplySequentialSlideNum] = useState(false); // 옵션 M: 슬라이드 시작 번호 순차 지정
+    const [initialFirstSlideNum, setInitialFirstSlideNum] = useState(1); // 첫 파일 시작 번호 (기본 1)
+    const [mergeToOneFile, setMergeToOneFile] = useState(false); // 옵션 N: 다중 PPT를 하나의 PPT 파일로 병합 (최하단)
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -226,6 +228,14 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             changes.push(`슬라이드 노트 삭제 ${count}개`);
         }
 
+        // 13. 슬라이드 시작 번호 순차 지정
+        if (applySequentialSlideNum && modifiedBlob.appliedFirstSlideNum !== null && modifiedBlob.appliedFirstSlideNum !== undefined) {
+            const sNum = modifiedBlob.appliedFirstSlideNum;
+            const count = modifiedBlob.totalSlideCount || 0;
+            const eNum = count > 0 ? (sNum + count - 1) : sNum;
+            changes.push(`슬라이드 시작번호: ${sNum}p ~ ${eNum}p (총 ${count}장)`);
+        }
+
         if (changes.length > 0) {
             // 실질적인 변경이 하나라도 존재하는지 확인 (표 없음 제외)
             const hasRealChanges = (modifiedBlob.totalReplacedWords || 0) > 0 ||
@@ -240,6 +250,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                   clearAltText ||
                                   (fixLangErrFlags && ((modifiedBlob.totalLangFixed || 0) > 0 || (modifiedBlob.totalErrFlagsCleared || 0) > 0)) ||
                                   (clearSpeakerNotes && (modifiedBlob.totalNotesDeleted || 0) > 0) ||
+                                  (applySequentialSlideNum && modifiedBlob.appliedFirstSlideNum !== null && modifiedBlob.appliedFirstSlideNum !== undefined) ||
                                   (applyTableDesignChecked && (modifiedBlob.totalTablesCount || 0) > 0);
 
             if (hasRealChanges) {
@@ -361,7 +372,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         preventWordWrap: preventWordWrap,
                         clearAltText: clearAltText,
                         fixLangErrFlags: fixLangErrFlags,
-                        clearSpeakerNotes: clearSpeakerNotes
+                        clearSpeakerNotes: clearSpeakerNotes,
+                        customFirstSlideNum: applySequentialSlideNum ? (parseInt(initialFirstSlideNum, 10) || 1) : null
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -410,7 +422,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             preventWordWrap,
                             clearAltText,
                             fixLangErrFlags,
-                            clearSpeakerNotes
+                            clearSpeakerNotes,
+                            applySequentialSlideNum
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -423,6 +436,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 // 다중 파일: 모두 처리 후 개별 ZIP 압축 또는 단일 PPT 파일로 병합 다운로드
                 const zip = new JSZip();
                 const modifiedBlobs = [];
+                let runningStartSlideNum = Math.max(0, parseInt(initialFirstSlideNum, 10) || 1);
 
                 for (const file of batchPptFiles) {
                     try {
@@ -445,10 +459,16 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             preventWordWrap: preventWordWrap,
                             clearAltText: clearAltText,
                             fixLangErrFlags: fixLangErrFlags,
-                            clearSpeakerNotes: clearSpeakerNotes
+                            clearSpeakerNotes: clearSpeakerNotes,
+                            customFirstSlideNum: applySequentialSlideNum ? runningStartSlideNum : null
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         modifiedBlobs.push(modifiedBlob);
+
+                        if (applySequentialSlideNum) {
+                            const thisCount = modifiedBlob.totalSlideCount || 0;
+                            runningStartSlideNum += thisCount;
+                        }
 
                         if (!mergeToOneFile) {
                             const fileName = `수정_${file.name}`;
@@ -468,7 +488,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             preventWordWrap,
                             clearAltText,
                             fixLangErrFlags,
-                            clearSpeakerNotes
+                            clearSpeakerNotes,
+                            applySequentialSlideNum
                         });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
@@ -1211,17 +1232,61 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
                 </div>
 
-                {/* 옵션 M: 다중 PPT 파일을 하나의 통합 PPT 파일로 병합 (제일 하단) */}
+                {/* 옵션 M: 입력된 파일 순서로 슬라이드 시작 번호 순차 지정 (연속 번호 부여) */}
+                <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                            <input
+                                id="checkbox-option-m"
+                                type="checkbox"
+                                checked={applySequentialSlideNum}
+                                onChange={(e) => setApplySequentialSlideNum(e.target.checked)}
+                                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
+                            />
+                            옵션 M: 입력된 파일 순서로 슬라이드 시작 번호 순차 지정 (연속 번호 부여)
+                        </label>
+                        {applySequentialSlideNum && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '28px' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 500 }}>첫 파일 시작 번호:</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="9999"
+                                    value={initialFirstSlideNum}
+                                    onChange={(e) => setInitialFirstSlideNum(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                    style={{
+                                        width: '70px',
+                                        padding: '4px 8px',
+                                        fontSize: '13px',
+                                        fontWeight: 700,
+                                        textAlign: 'center',
+                                        color: 'var(--text-primary)',
+                                        background: 'var(--bg-primary)',
+                                        border: '1px solid var(--panel-border)',
+                                        borderRadius: '6px'
+                                    }}
+                                />
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>페이지</span>
+                            </div>
+                        )}
+                    </div>
+                    <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                        💡 여러 개의 PPT 파일을 업로드했을 때, <strong>입력된 파일 순서대로 앞 파일의 마지막 페이지 번호 다음 번호를 다음 파일의 슬라이드 시작 번호(firstSlideNum)로 자동 지정</strong>합니다.<br/>
+                        <span style={{ color: 'var(--accent-blue)', fontSize: '12px' }}>예: 1번째 파일(4장) ➔ 1~4페이지 종료 시, 2번째 파일은 자동으로 5페이지부터 시작 (5~N페이지)</span>
+                    </div>
+                </div>
+
+                {/* 옵션 N: 다중 PPT 파일을 하나의 통합 PPT 파일로 합치기 (병합) [최하단] */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
                         <input
-                            id="checkbox-option-m"
+                            id="checkbox-option-n"
                             type="checkbox"
                             checked={mergeToOneFile}
                             onChange={(e) => setMergeToOneFile(e.target.checked)}
                             style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
                         />
-                        옵션 M: 다중 PPT 파일을 하나의 통합 PPT 파일로 합치기 (병합)
+                        옵션 N: 다중 PPT 파일을 하나의 통합 PPT 파일로 합치기 (병합)
                     </label>
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                         💡 여러 개의 PPT 파일을 일괄 수정한 뒤, <strong>순서대로 결합하여 1개의 PPTX 파일로 통합 저장</strong>합니다. (미선택 시 기본 개별 ZIP 압축 파일로 다운로드됩니다.)
@@ -1234,17 +1299,17 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     id="btn-batch-process"
                     className="interactive"
                     onClick={handleBatchProcess}
-                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes)}
+                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)}
                     style={{
                         width: '100%',
                         padding: '16px',
-                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes)) ? 'var(--text-muted)' : 'white',
+                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'var(--text-muted)' : 'white',
                         border: 'none',
                         borderRadius: '12px',
                         fontSize: '16px',
                         fontWeight: 700,
-                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes)) ? 'not-allowed' : 'pointer',
+                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'not-allowed' : 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                     }}
                 >

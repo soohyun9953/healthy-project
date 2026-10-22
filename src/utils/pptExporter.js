@@ -828,10 +828,11 @@ export async function processPptBatch(pptFile, options) {
         preventWordWrap = false,
         clearAltText = false,
         fixLangErrFlags = false,
-        clearSpeakerNotes = false
+        clearSpeakerNotes = false,
+        customFirstSlideNum = null
     } = options;
 
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -871,6 +872,8 @@ export async function processPptBatch(pptFile, options) {
     let hasChanges = false;
     let total_cleaned_vt = 0;
     let totalNotesDeleted = 0;
+    let appliedFirstSlideNum = null;
+    let totalSlideCount = 0;
 
     // 💡 [옵션 L: 슬라이드 노트(발표자 노트) 일괄 삭제]
     if (clearSpeakerNotes) {
@@ -919,6 +922,40 @@ export async function processPptBatch(pptFile, options) {
     const parser = new DOMParser();
     const serializer = new XMLSerializer();
     const nsA = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+
+    // 슬라이드 파일 장수 추출
+    const slideFileList = allFiles
+        .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml') && !k.includes('_rels'))
+        .sort((a, b) => {
+            const num_a = parseInt(a.match(/\d+/)[0]);
+            const num_b = parseInt(b.match(/\d+/)[0]);
+            return num_a - num_b;
+        });
+    totalSlideCount = slideFileList.length;
+
+    // 💡 [옵션 M: 슬라이드 시작 번호(firstSlideNum) 순차/개별 지정]
+    if (customFirstSlideNum !== null && customFirstSlideNum !== undefined && !isNaN(customFirstSlideNum)) {
+        if (zip.files['ppt/presentation.xml']) {
+            const presXmlStr = zip.file('ppt/presentation.xml').asText();
+            const presDoc = parser.parseFromString(presXmlStr, 'application/xml');
+            let presEl = presDoc.getElementsByTagName('p:presentation')[0];
+            if (!presEl) {
+                const allEls = presDoc.getElementsByTagName('*');
+                for (let i = 0; i < allEls.length; i++) {
+                    if ((allEls[i].localName || allEls[i].tagName.split(':').pop()) === 'presentation') {
+                        presEl = allEls[i];
+                        break;
+                    }
+                }
+            }
+            if (presEl) {
+                presEl.setAttribute('firstSlideNum', String(customFirstSlideNum));
+                zip.file('ppt/presentation.xml', serializer.serializeToString(presDoc));
+                hasChanges = true;
+                appliedFirstSlideNum = customFirstSlideNum;
+            }
+        }
+    }
     
     let totalTablesCount = 0; // PPT 내에 감지된 총 테이블(표) 요소 개수 누적기
     let totalHeaderRowsApplied = 0; // 첫 행 헤더 스타일이 적용된 표 개수 카운터
@@ -2005,6 +2042,8 @@ export async function processPptBatch(pptFile, options) {
     blob.totalLangFixed = totalLangFixed;
     blob.totalErrFlagsCleared = totalErrFlagsCleared;
     blob.totalNotesDeleted = totalNotesDeleted;
+    blob.appliedFirstSlideNum = appliedFirstSlideNum;
+    blob.totalSlideCount = totalSlideCount;
 
     return blob;
 }
