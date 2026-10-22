@@ -2024,6 +2024,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
           let lastL2NumStr = null;
           let lastL2SubVal = null;
           let lastL3NumStr = null;
+          let lastL3L2Prefix = null;
           let lastL3SubVal = null;
           let lastAltInfo = null;
 
@@ -2110,6 +2111,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
             // 2레벨이 바뀌었으면 하위 3레벨 추적기 초기화
             if (l2Changed) {
               lastL3NumStr = null;
+              lastL3L2Prefix = null;
               lastL3SubVal = null;
               lastAltInfo = null;
             }
@@ -2128,8 +2130,8 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                   const l2Prefix = `${parts[0]}.${parts[1]}`;
                   const l3SubVal = parts[2];
 
-                  // 2레벨과의 상위 계층 번호 일치 검증
-                  if (lastL2NumStr && l2Prefix !== lastL2NumStr) {
+                  // 2레벨과의 상위 계층 번호 일치 검증 (현재 슬라이드에 2레벨이 명시되어 있는 경우)
+                  if (level2 && lastL2NumStr && l2Prefix !== lastL2NumStr) {
                     allNumberings.push({
                       fileName: file.name,
                       slideNum: slide.slideNum,
@@ -2141,8 +2143,58 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                     fileNumErrorsCount++;
                   }
 
-                  // 순차성 및 규칙 5(동일 목차 연속 페이지 표기) 검증
-                  if (lastL3NumStr !== null) {
+                  // 💡 2레벨 변경 여부 확인 (이전 3레벨의 2레벨 prefix와 비교)
+                  const isL2Changed = lastL3L2Prefix !== null && l2Prefix !== lastL3L2Prefix;
+
+                  if (isL2Changed) {
+                    // 2레벨 자체의 순차성 점검 (동일 1레벨 내에서 2레벨이 1씩 증가하는지)
+                    const prevL2Parts = lastL3L2Prefix.split('.').map(n => parseInt(n, 10));
+                    if (prevL2Parts[0] === parts[0]) {
+                      const prevSub = prevL2Parts[1];
+                      const curSub = parts[1];
+                      if (curSub !== prevSub + 1) {
+                        allNumberings.push({
+                          fileName: file.name,
+                          slideNum: slide.slideNum,
+                          area: '2레벨 (중분류 번호)',
+                          text: level3,
+                          error: `2레벨 중분류 순차성 단절 (${l2Prefix})`,
+                          guide: `중분류 일련번호가 순차적으로 증가하지 않고 단절되었습니다. (이전: ${lastL3L2Prefix} ➜ 현재: ${l2Prefix})`
+                        });
+                        fileNumErrorsCount++;
+                      }
+                    }
+
+                    // 새로운 2레벨 하위의 첫 3레벨 소분류는 .1부터 시작해야 함
+                    if (l3SubVal !== 1) {
+                      allNumberings.push({
+                        fileName: file.name,
+                        slideNum: slide.slideNum,
+                        area: '3레벨 (좌측하단 소분류)',
+                        text: level3,
+                        error: `3레벨 소분류 시작 번호 오류 (${rawNum})`,
+                        guide: `중분류가 변경("${lastL3L2Prefix}" ➜ "${l2Prefix}")된 후 첫 소분류는 "${l2Prefix}.1"부터 순차 시작해야 합니다. (현재: ${rawNum})`
+                      });
+                      fileNumErrorsCount++;
+                    }
+
+                    // 새 목차인데 연속 페이지 표기가 붙어있으면 1부터 시작해야 함
+                    if (altMatch) {
+                      const curPage = parseInt(altMatch[1], 10);
+                      if (curPage !== 1) {
+                        allNumberings.push({
+                          fileName: file.name,
+                          slideNum: slide.slideNum,
+                          area: '3레벨 (좌측하단 소분류)',
+                          text: level3,
+                          error: `연속 페이지 시작 번호 오류`,
+                          guide: `새로운 연속 목차가 시작될 때는 1페이지부터 시작해야 합니다. (현재: ${curPage}/${altMatch[2]})`
+                        });
+                        fileNumErrorsCount++;
+                      }
+                    }
+                  } else if (lastL3NumStr !== null) {
+                    // 동일 2레벨 내에서의 검증 (예: 둘 다 5.2)
                     const isSameTopic = (rawNum === lastL3NumStr) && (lastAltInfo && lastAltInfo.pureTitle === pureTitle);
 
                     if (isSameTopic) {
@@ -2184,7 +2236,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                         }
                       }
                     } else {
-                      // 번호가 다른 새로운 소분류인 경우
+                      // 번호가 다른 새로운 소분류인 경우 (예: 5.2.4 ➜ 5.2.6)
                       if (rawNum !== lastL3NumStr) {
                         if (lastL3SubVal !== null && l3SubVal !== lastL3SubVal + 1) {
                           allNumberings.push({
@@ -2230,6 +2282,7 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
                   }
 
                   lastL3NumStr = rawNum;
+                  lastL3L2Prefix = l2Prefix;
                   lastL3SubVal = l3SubVal;
                   if (altMatch) {
                     lastAltInfo = { pureTitle, curPage: parseInt(altMatch[1], 10), totPage: parseInt(altMatch[2], 10) };
