@@ -2756,6 +2756,38 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
       XLSX.utils.book_append_sheet(workbook, parenSheet, '괄호짝불일치_점검결과');
     }
 
+    // 모든 시트의 열 너비 서식 적용 (💡 대상 파일명 셀 너비 300픽셀 설정 및 전체 열 최적화)
+    const formatSheetColumns = (sheet) => {
+      if (!sheet || !sheet['!ref']) return;
+      const range = XLSX.utils.decode_range(sheet['!ref']);
+      const cols = [];
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: range.s.r, c: C });
+        const cell = sheet[cellAddress];
+        const header = cell ? String(cell.v).trim() : '';
+
+        // 💡 [사용자 요청] 대상 파일명 셀의 너비를 300픽셀로 설정
+        if (header === '대상 파일명' || header === '파일명' || header === '대상 파일' || header.includes('파일명')) {
+          cols[C] = { wpx: 300 };
+        } else if (header === '순번' || header === '번호') {
+          cols[C] = { wpx: 55 };
+        } else if (header.includes('페이지')) {
+          cols[C] = { wpx: 105 };
+        } else if (header.includes('문장') || header.includes('내용') || header.includes('텍스트 일부')) {
+          cols[C] = { wch: 45 };
+        } else if (header.includes('가이드') || header.includes('오류') || header.includes('설명')) {
+          cols[C] = { wch: 35 };
+        } else {
+          cols[C] = { wch: 18 };
+        }
+      }
+      sheet['!cols'] = cols;
+    };
+
+    workbook.SheetNames.forEach(sheetName => {
+      formatSheetColumns(workbook.Sheets[sheetName]);
+    });
+
     // 엑셀 파일 다운로드 실행
     const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
     XLSX.writeFile(workbook, `PPT_산출물_검증결과_${dateStr}.xlsx`);

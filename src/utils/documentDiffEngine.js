@@ -391,10 +391,10 @@ export async function exportDiffToExcel(diffResult) {
     ws1.columns = [
         { header: '순번', key: 'index', width: 7 },
         { header: '변경 구분', key: 'typeLabel', width: 12 },
-        { header: '원본(A) 파일명', key: 'fileAName', width: 22 },
+        { header: '원본(A) 파일명', key: 'fileAName', width: 42 }, // 💡 300픽셀 상당 ((300-5)/7 ≈ 42.1)
         { header: '원본(A) 페이지/위치', key: 'fileAPage', width: 18 },
         { header: '원본(A) 내용 (수정 전)', key: 'fileAText', width: 45 },
-        { header: '비교본(B) 파일명', key: 'fileBName', width: 22 },
+        { header: '비교본(B) 파일명', key: 'fileBName', width: 42 }, // 💡 300픽셀 상당
         { header: '비교본(B) 페이지/위치', key: 'fileBPage', width: 18 },
         { header: '비교본(B) 변경 내용 (수정 후)', key: 'fileBText', width: 45 },
         { header: '상세 변경 차이점 (요약)', key: 'summary', width: 38 }

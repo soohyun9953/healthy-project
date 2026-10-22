@@ -12,8 +12,17 @@ async function exportToExcel(data, isTypoMode = false) {
             views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }] // 1행(헤더) 고정
         });
         
+        // 💡 [사용자 요청] 파일명 관련 열 너비 300픽셀(width: 42) 자동 적용
+        const adjustedHeaders = headers.map(h => {
+            const headerText = String(h.header || '');
+            if (headerText.includes('파일명') || headerText === '대상 파일' || headerText === '대상 파일명') {
+                return { ...h, width: 42 };
+            }
+            return h;
+        });
+
         // set headers
-        ws.columns = headers;
+        ws.columns = adjustedHeaders;
         
         // add rows
         ws.addRows(rowsData);
