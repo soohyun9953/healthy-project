@@ -813,6 +813,8 @@ export async function processPptBatch(pptFile, options) {
         replaceRules = [], 
         fontRules = [], 
         fontSizeRules = [],
+        roundFontSizes = false,
+        roundFontSizeMode = 'ceil',
         applyDesign = false, 
         applyTableDesign = false, 
         applyFirstRowHeaderStyle = true,
@@ -834,7 +836,7 @@ export async function processPptBatch(pptFile, options) {
         topHeaderMiddleAlign = true
     } = options;
 
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !roundFontSizes && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -1398,8 +1400,8 @@ export async function processPptBatch(pptFile, options) {
                 }
             }
 
-            // 폰트 크기 변경 (전체 일괄 적용 및 매핑 적용)
-            if (fontSizeRules.length > 0 && !slidePath.startsWith('ppt/theme/')) {
+            // 폰트 크기 변경 (전체 일괄 적용, 매핑 적용 및 소수점 반올림/올림 적용)
+            if ((fontSizeRules.length > 0 || roundFontSizes) && !slidePath.startsWith('ppt/theme/')) {
                 // 1. 텍스트 런 및 필드 수준 처리 (r, fld, br)
                 if (localName === 'r' || localName === 'fld' || localName === 'br') {
                     let rPr = null;
@@ -1412,32 +1414,14 @@ export async function processPptBatch(pptFile, options) {
                     }
                     
                     const effectiveSz = getEffectiveFontSize(el);
+                    let matchedRule = false;
                     
-                    for (const rule of fontSizeRules) {
-                        const newSzVal = Math.round(rule.newSize * 100).toString();
-                        
-                        if (rule.oldSize === null) {
-                            // 전체 적용 모드
-                            if (!rPr) {
-                                rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
-                                if (el.firstChild) {
-                                    el.insertBefore(rPr, el.firstChild);
-                                } else {
-                                    el.appendChild(rPr);
-                                }
-                            }
-                            if (rPr.getAttribute('sz') !== newSzVal) {
-                                rPr.setAttribute('sz', newSzVal);
-                                totalReplacedFontSizes++;
-                                fileChanged = true;
-                                hasChanges = true;
-                            }
-                            break;
-                        } else {
-                            // 매핑 모드
-                            const oldSzVal = Math.round(rule.oldSize * 100);
-                            // 소수점 폰트 크기 미세 오차(인코딩에 따라 sz=998 등이 9.9pt 혹은 10pt로 보임)를 완벽 대응하기 위해 ±50(±0.5pt) 범위의 오차 허용 매칭 반영
-                            if (effectiveSz !== null && Math.abs(effectiveSz - oldSzVal) <= 50) {
+                    if (fontSizeRules.length > 0) {
+                        for (const rule of fontSizeRules) {
+                            const newSzVal = Math.round(rule.newSize * 100).toString();
+                            
+                            if (rule.oldSize === null) {
+                                // 전체 적용 모드
                                 if (!rPr) {
                                     rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
                                     if (el.firstChild) {
@@ -1452,7 +1436,58 @@ export async function processPptBatch(pptFile, options) {
                                     fileChanged = true;
                                     hasChanges = true;
                                 }
+                                matchedRule = true;
                                 break;
+                            } else {
+                                // 매핑 모드
+                                const oldSzVal = Math.round(rule.oldSize * 100);
+                                // 소수점 폰트 크기 미세 오차(인코딩에 따라 sz=998 등이 9.9pt 혹은 10pt로 보임)를 완벽 대응하기 위해 ±50(±0.5pt) 범위의 오차 허용 매칭 반영
+                                if (effectiveSz !== null && Math.abs(effectiveSz - oldSzVal) <= 50) {
+                                    if (!rPr) {
+                                        rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
+                                        if (el.firstChild) {
+                                            el.insertBefore(rPr, el.firstChild);
+                                        } else {
+                                            el.appendChild(rPr);
+                                        }
+                                    }
+                                    if (rPr.getAttribute('sz') !== newSzVal) {
+                                        rPr.setAttribute('sz', newSzVal);
+                                        totalReplacedFontSizes++;
+                                        fileChanged = true;
+                                        hasChanges = true;
+                                    }
+                                    matchedRule = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // 💡 [신규 추가 옵션] 소수점 폰트 크기 반올림/올림 반영 (예: 7.2pt -> 8pt)
+                    if (!matchedRule && roundFontSizes && effectiveSz !== null) {
+                        const roundedIntPt = Math.round(effectiveSz / 100);
+                        const diff = Math.abs(effectiveSz - roundedIntPt * 100);
+                        if (diff > 2) {
+                            const pt = effectiveSz / 100;
+                            const targetPt = roundFontSizeMode === 'round' ? Math.round(pt) : Math.ceil(pt);
+                            const newSzVal = Math.round(targetPt * 100).toString();
+                            
+                            if (effectiveSz.toString() !== newSzVal) {
+                                if (!rPr) {
+                                    rPr = xmlDoc.createElementNS(nsA, 'a:rPr');
+                                    if (el.firstChild) {
+                                        el.insertBefore(rPr, el.firstChild);
+                                    } else {
+                                        el.appendChild(rPr);
+                                    }
+                                }
+                                if (rPr.getAttribute('sz') !== newSzVal) {
+                                    rPr.setAttribute('sz', newSzVal);
+                                    totalReplacedFontSizes++;
+                                    fileChanged = true;
+                                    hasChanges = true;
+                                }
                             }
                         }
                     }
@@ -1461,28 +1496,51 @@ export async function processPptBatch(pptFile, options) {
                 // 2. 단락 기본 및 종료 스타일 처리 (defRPr, endParaRPr)
                 if (localName === 'defRPr' || localName === 'endParaRPr') {
                     const effectiveSz = getEffectiveFontSize(el);
+                    let matchedRule = false;
                     
-                    for (const rule of fontSizeRules) {
-                        const newSzVal = Math.round(rule.newSize * 100).toString();
-                        
-                        if (rule.oldSize === null) {
-                            if (el.getAttribute('sz') !== newSzVal) {
-                                el.setAttribute('sz', newSzVal);
-                                totalReplacedFontSizes++;
-                                fileChanged = true;
-                                hasChanges = true;
-                            }
-                            break;
-                        } else {
-                            const oldSzVal = Math.round(rule.oldSize * 100);
-                            if (effectiveSz !== null && Math.abs(effectiveSz - oldSzVal) <= 50) {
+                    if (fontSizeRules.length > 0) {
+                        for (const rule of fontSizeRules) {
+                            const newSzVal = Math.round(rule.newSize * 100).toString();
+                            
+                            if (rule.oldSize === null) {
                                 if (el.getAttribute('sz') !== newSzVal) {
                                     el.setAttribute('sz', newSzVal);
                                     totalReplacedFontSizes++;
                                     fileChanged = true;
                                     hasChanges = true;
                                 }
+                                matchedRule = true;
                                 break;
+                            } else {
+                                const oldSzVal = Math.round(rule.oldSize * 100);
+                                if (effectiveSz !== null && Math.abs(effectiveSz - oldSzVal) <= 50) {
+                                    if (el.getAttribute('sz') !== newSzVal) {
+                                        el.setAttribute('sz', newSzVal);
+                                        totalReplacedFontSizes++;
+                                        fileChanged = true;
+                                        hasChanges = true;
+                                    }
+                                    matchedRule = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // 💡 [신규 추가 옵션] 소수점 폰트 크기 반올림/올림 반영 (defRPr, endParaRPr)
+                    if (!matchedRule && roundFontSizes && effectiveSz !== null) {
+                        const roundedIntPt = Math.round(effectiveSz / 100);
+                        const diff = Math.abs(effectiveSz - roundedIntPt * 100);
+                        if (diff > 2) {
+                            const pt = effectiveSz / 100;
+                            const targetPt = roundFontSizeMode === 'round' ? Math.round(pt) : Math.ceil(pt);
+                            const newSzVal = Math.round(targetPt * 100).toString();
+                            
+                            if (el.getAttribute('sz') !== newSzVal) {
+                                el.setAttribute('sz', newSzVal);
+                                totalReplacedFontSizes++;
+                                fileChanged = true;
+                                hasChanges = true;
                             }
                         }
                     }

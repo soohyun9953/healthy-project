@@ -23,6 +23,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     });
     const [fontRules, setFontRules] = useState('');
     const [fontSize, setFontSize] = useState('');
+    const [roundFontSizes, setRoundFontSizes] = useState(false); // 옵션 C 추가 옵션: 소수점 폰트 크기 반올림/올림
+    const [roundFontSizeMode, setRoundFontSizeMode] = useState('ceil'); // 'ceil' (7.2 -> 8) or 'round' (7.2 -> 7, 7.5 -> 8)
     const [applyDesignChecked, setApplyDesignChecked] = useState(true);
     const [applyTableDesignChecked, setApplyTableDesignChecked] = useState(false);
     const [applyFirstRowHeaderStyle, setApplyFirstRowHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 행 특별 포맷팅 적용 여부 (기본 true)
@@ -145,6 +147,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             parsedRules,
             parsedFontRules,
             parsedFontSizeRules,
+            roundFontSizes,
+            roundFontSizeMode,
             applyDesignChecked,
             applySpecialCharClean,
             add_space_before_parenthesis,
@@ -166,10 +170,16 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             const count = modifiedBlob.totalReplacedFonts || 0;
             changes.push(`폰트 변경 ${count}개`);
         }
-        // 3. 폰트 크기 변경
-        if (parsedFontSizeRules.length > 0) {
+        // 3. 폰트 크기 변경 및 소수점 반올림/올림
+        if (parsedFontSizeRules.length > 0 || roundFontSizes) {
             const count = modifiedBlob.totalReplacedFontSizes || 0;
-            changes.push(`폰트 크기 변경 ${count}개`);
+            if (roundFontSizes && parsedFontSizeRules.length === 0) {
+                changes.push(`소수점 폰트 크기 정수화(${roundFontSizeMode === 'round' ? '반올림' : '올림'}) ${count}개`);
+            } else if (roundFontSizes) {
+                changes.push(`폰트 크기 변경 및 소수점 정수화 ${count}개`);
+            } else {
+                changes.push(`폰트 크기 변경 ${count}개`);
+            }
         }
         // 4. 특수문자 일괄 정제
         if (applySpecialCharClean) {
@@ -341,7 +351,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset) {
+        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !roundFontSizes && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset) {
             setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 대체 텍스트 일괄 제거, 언어 태그/맞춤법 오류 표시 보정, 슬라이드 노트 일괄 삭제, 또는 슬라이드 서식 다시 설정 중 하나 이상을 입력/선택해주세요.');
             return;
         }
@@ -366,6 +376,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         replaceRules: parsedRules,
                         fontRules: parsedFontRules,
                         fontSizeRules: parsedFontSizeRules,
+                        roundFontSizes: roundFontSizes,
+                        roundFontSizeMode: roundFontSizeMode,
                         applyDesign: applyDesignChecked,
                         applyTableDesign: applyTableDesignChecked,
                         applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
@@ -426,6 +438,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             parsedRules,
                             parsedFontRules,
                             parsedFontSizeRules,
+                            roundFontSizes,
+                            roundFontSizeMode,
                             applyDesignChecked,
                             applySpecialCharClean,
                             add_space_before_parenthesis,
@@ -455,6 +469,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             replaceRules: parsedRules,
                             fontRules: parsedFontRules,
                             fontSizeRules: parsedFontSizeRules,
+                            roundFontSizes: roundFontSizes,
+                            roundFontSizeMode: roundFontSizeMode,
                             applyDesign: applyDesignChecked,
                             applyTableDesign: applyTableDesignChecked,
                             applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
@@ -494,6 +510,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             parsedRules,
                             parsedFontRules,
                             parsedFontSizeRules,
+                            roundFontSizes,
+                            roundFontSizeMode,
                             applyDesignChecked,
                             applySpecialCharClean,
                             add_space_before_parenthesis,
@@ -594,6 +612,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 setBatchPptFiles([]);
                 setFontRules('');
                 setFontSize('');
+                setRoundFontSizes(false);
+                setRoundFontSizeMode('ceil');
                 setApplyDesignChecked(false);
                 setApplyTableDesignChecked(false);
                 setApplyFirstRowHeaderStyle(true);
@@ -854,6 +874,51 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     />
                     <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                         형식: <code>기존크기(변경크기)</code> (단일 숫자 입력 시 전체 적용)
+                    </div>
+
+                    {/* 추가 옵션: 소수점 폰트 크기 반올림/올림 반영 */}
+                    <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px dashed var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13.5px', color: 'var(--text-primary)' }}>
+                            <input
+                                id="checkbox-round-fontsize"
+                                type="checkbox"
+                                checked={roundFontSizes}
+                                onChange={(e) => setRoundFontSizes(e.target.checked)}
+                                style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#a855f7' }}
+                            />
+                            추가 옵션: 소수점 폰트 크기 반올림/올림 자동 반영 (정수 크기로 정규화)
+                        </label>
+                        <div style={{ paddingLeft: '24px', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                            💡 PPT 텍스트 상자 자동 맞춤 등으로 소수점으로 축소된 글자 크기(예: 7.2pt, 8.4pt 등)를 정수 단위로 일괄 올림/반올림하여 작성합니다.
+                        </div>
+
+                        {roundFontSizes && (
+                            <div className="animate-slide-up" style={{ paddingLeft: '24px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px' }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>반영 방식:</span>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                    <input
+                                        type="radio"
+                                        name="roundFontSizeMode"
+                                        value="ceil"
+                                        checked={roundFontSizeMode === 'ceil'}
+                                        onChange={() => setRoundFontSizeMode('ceil')}
+                                        style={{ cursor: 'pointer', accentColor: '#a855f7' }}
+                                    />
+                                    <strong>올림(Ceil)</strong> <span style={{ color: 'var(--accent-blue)', fontSize: '12px' }}>(예: 7.2pt ➔ 8pt, 8.4pt ➔ 9pt) [권장]</span>
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                    <input
+                                        type="radio"
+                                        name="roundFontSizeMode"
+                                        value="round"
+                                        checked={roundFontSizeMode === 'round'}
+                                        onChange={() => setRoundFontSizeMode('round')}
+                                        style={{ cursor: 'pointer', accentColor: '#a855f7' }}
+                                    />
+                                    <strong>사사오입 반올림(Round)</strong> <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>(예: 7.2pt ➔ 7pt, 7.5pt ➔ 8pt)</span>
+                                </label>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -1332,17 +1397,17 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     id="btn-batch-process"
                     className="interactive"
                     onClick={handleBatchProcess}
-                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)}
+                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)}
                     style={{
                         width: '100%',
                         padding: '16px',
-                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'var(--text-muted)' : 'white',
+                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'var(--text-muted)' : 'white',
                         border: 'none',
                         borderRadius: '12px',
                         fontSize: '16px',
                         fontWeight: 700,
-                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'not-allowed' : 'pointer',
+                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'not-allowed' : 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                     }}
                 >
