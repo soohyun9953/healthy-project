@@ -2136,8 +2136,8 @@ export async function processPptBatch(pptFile, options) {
                                                 rPr.appendChild(rFill);
                                             }
 
-                                            // 💡 2. 첫 행 헤더 폰트에 사용자 지정 "KoPubDotum Bold" 명시적 폰트 노드 주입
-                                            const fontName = 'KoPubDotum Bold';
+                                            // 💡 2. 첫 행 헤더 폰트에 사용자 지정 "KoPub돋움체 Bold" 명시적 폰트 노드 주입
+                                            const fontName = 'KoPub돋움체 Bold';
                                             const oldFonts = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && ['latin', 'ea', 'cs', 'sym'].includes(node.localName || node.tagName.split(':').pop()));
                                             oldFonts.forEach(f => rPr.removeChild(f));
                                             
@@ -2232,8 +2232,8 @@ export async function processPptBatch(pptFile, options) {
                                                 rPr.appendChild(rFill);
                                             }
 
-                                            // 💡 2. 첫 열 폰트에 "KoPubDotum Bold" 명시적 폰트 노드 주입
-                                            const fontName = 'KoPubDotum Bold';
+                                            // 💡 2. 첫 열 폰트에 "KoPub돋움체 Bold" 명시적 폰트 노드 주입
+                                            const fontName = 'KoPub돋움체 Bold';
                                             const oldFonts = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && ['latin', 'ea', 'cs', 'sym'].includes(node.localName || node.tagName.split(':').pop()));
                                             oldFonts.forEach(f => rPr.removeChild(f));
                                             
@@ -2297,12 +2297,12 @@ export async function processPptBatch(pptFile, options) {
                                             }
                                             rPr.setAttribute('sz', bodySzVal);
 
-                                            // 폰트가 지정되지 않은 경우 기본 KoPubDotum Medium 주입
+                                            // 폰트가 지정되지 않은 경우 기본 KoPub돋움체 Medium 주입
                                             const hasFont = Array.from(rPr.childNodes).some(node => node.nodeType === 1 && ['latin', 'ea', 'cs'].includes(node.localName || node.tagName.split(':').pop()));
                                             if (!hasFont) {
                                                 ['latin', 'ea', 'cs'].forEach(fontType => {
                                                     const fontEl = xmlDoc.createElementNS(nsA, `a:${fontType}`);
-                                                    fontEl.setAttribute('typeface', 'KoPubDotum Medium');
+                                                    fontEl.setAttribute('typeface', 'KoPub돋움체 Medium');
                                                     rPr.appendChild(fontEl);
                                                 });
                                             }

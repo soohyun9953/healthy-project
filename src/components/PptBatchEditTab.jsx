@@ -860,7 +860,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
                     <input
                         type="text"
-                        placeholder="예: Arial(KoPubDotum Bold), Calibri(Pretendard)"
+                        placeholder="예: Arial(KoPub돋움체 Bold), Calibri(Pretendard)"
                         value={fontRules}
                         onChange={(e) => setFontRules(e.target.value)}
                         style={{
@@ -1099,7 +1099,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                 첫 번째 행(헤더) 특별 포맷팅 적용
                             </label>
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
-                                (첫 행 배경 RGB(0,114,186), 글자 흰색 11pt KoPubDotum Bold, 가운데 정렬, 첫 행 내부 실선 흰색 적용)
+                                (첫 행 배경 RGB(0,114,186), 글자 흰색 11pt KoPub돋움체 Bold, 가운데 정렬, 첫 행 내부 실선 흰색 적용)
                             </div>
 
                             {/* 하위 1-1: 1개 행으로 된 표는 첫 행 헤더 특별 포맷팅 제외 */}
@@ -1161,7 +1161,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                 첫 번째 열(구분열) 특별 포맷팅 적용 (2번째 행부터 적용)
                             </label>
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
-                                (첫 열 2번째 행부터 배경 #F2F2F2, 글자 검은색 11pt KoPubDotum Bold, 가운데 정렬)
+                                (첫 열 2번째 행부터 배경 #F2F2F2, 글자 검은색 11pt KoPub돋움체 Bold, 가운데 정렬)
                             </div>
                         </div>
 
