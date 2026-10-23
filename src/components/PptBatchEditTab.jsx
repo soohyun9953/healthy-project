@@ -28,6 +28,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [optimizeTableFont, setOptimizeTableFont] = useState(false); // 옵션 C 추가: 표 내부 작은 폰트 가독성 자동 보정
     const [optimizeTableFontThreshold, setOptimizeTableFontThreshold] = useState('8.5'); // 옵션 C 추가: 보정 기준 폰트 크기 (기본: 8.5pt 이하)
     const [optimizeTableFontTargetSize, setOptimizeTableFontTargetSize] = useState('10'); // 옵션 C 추가: 변경할 목표 폰트 크기 (기본: 10pt)
+    const [optimizeSmallFontScope, setOptimizeSmallFontScope] = useState('all'); // 'all' (전체: 표 + 텍스트 상자) or 'table' (표만)
     const [applyDesignChecked, setApplyDesignChecked] = useState(true);
     const [applyTableDesignChecked, setApplyTableDesignChecked] = useState(false);
     const [applyFirstRowHeaderStyle, setApplyFirstRowHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 행 특별 포맷팅 적용 여부 (기본 true)
@@ -394,6 +395,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         optimizeTableFont: optimizeTableFont,
                         optimizeTableFontThreshold: parseFloat(optimizeTableFontThreshold) || 8.5,
                         optimizeTableFontTargetSize: parseFloat(optimizeTableFontTargetSize) || 10,
+                                                optimizeSmallFontScope: optimizeSmallFontScope,
                         targetText: designTargetText,
                         applySpecialCharClean: applySpecialCharClean,
                         replaceNbs: replaceNbs,
@@ -938,8 +940,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             </div>
                         )}
 
-                        {/* 표 폰트 가독성 자동 보정 옵션 */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                        {/* 작은 폰트 가독성 자동 보정 옵션 (슬라이드 전체: 표 및 텍스트 상자) */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13.5px', color: 'var(--text-primary)' }}>
                                 <input
                                     type="checkbox"
@@ -947,66 +949,97 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                     onChange={(e) => setOptimizeTableFont(e.target.checked)}
                                     style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#a855f7' }}
                                 />
-                                추가 옵션: 표(테이블) 작은 폰트 가독성 자동 보정 ({optimizeTableFontThreshold || 8.5}pt 이하 ➔ {optimizeTableFontTargetSize || 10}pt 변경)
+                                추가 옵션: 작은 폰트 가독성 자동 보정 ({optimizeTableFontThreshold || 8.5}pt 이하 ➔ {optimizeTableFontTargetSize || 10}pt 변경)
                             </label>
 
                             {optimizeTableFont && (
-                                <div className="animate-slide-up" style={{ paddingLeft: '24px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: '13px', color: 'var(--text-primary)', marginTop: '4px' }}>
-                                    <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>보정 기준:</span>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        <input
-                                            type="number"
-                                            step="0.5"
-                                            min="1"
-                                            max="72"
-                                            value={optimizeTableFontThreshold}
-                                            onChange={(e) => setOptimizeTableFontThreshold(e.target.value)}
-                                            placeholder="8.5"
-                                            style={{
-                                                width: '65px',
-                                                padding: '4px 8px',
-                                                borderRadius: '6px',
-                                                border: '1px solid var(--panel-border)',
-                                                background: 'var(--bg-primary)',
-                                                color: 'var(--text-primary)',
-                                                fontSize: '13px',
-                                                fontWeight: 700,
-                                                textAlign: 'center'
-                                            }}
-                                        />
-                                        <span style={{ color: 'var(--text-secondary)' }}>pt 이하 ➔</span>
+                                <div className="animate-slide-up" style={{ paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', fontSize: '13px', color: 'var(--text-primary)' }}>
+                                        {/* 보정 기준 */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>보정 기준:</span>
+                                            <input
+                                                type="number"
+                                                step="0.5"
+                                                min="1"
+                                                max="72"
+                                                value={optimizeTableFontThreshold}
+                                                onChange={(e) => setOptimizeTableFontThreshold(e.target.value)}
+                                                placeholder="8.5"
+                                                style={{
+                                                    width: '65px',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid var(--panel-border)',
+                                                    background: 'var(--bg-primary)',
+                                                    color: 'var(--text-primary)',
+                                                    fontSize: '13px',
+                                                    fontWeight: 700,
+                                                    textAlign: 'center'
+                                                }}
+                                            />
+                                            <span style={{ color: 'var(--text-secondary)' }}>pt 이하 ➔</span>
+                                        </div>
+
+                                        {/* 변경할 폰트 크기 */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>변경할 폰트 크기:</span>
+                                            <input
+                                                type="number"
+                                                step="0.5"
+                                                min="1"
+                                                max="72"
+                                                value={optimizeTableFontTargetSize}
+                                                onChange={(e) => setOptimizeTableFontTargetSize(e.target.value)}
+                                                placeholder="10"
+                                                style={{
+                                                    width: '65px',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid var(--accent-purple, #a855f7)',
+                                                    background: 'var(--bg-primary)',
+                                                    color: 'var(--text-primary)',
+                                                    fontSize: '13px',
+                                                    fontWeight: 700,
+                                                    textAlign: 'center'
+                                                }}
+                                            />
+                                            <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>pt</span>
+                                        </div>
+
+                                        {/* 적용 대상 범위: 전체(표 + 텍스트 상자) vs 표만 */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: '6px' }}>
+                                            <span style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600 }}>적용 대상:</span>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12.5px', color: 'var(--text-primary)' }}>
+                                                <input
+                                                    type="radio"
+                                                    name="optimizeSmallFontScope"
+                                                    value="all"
+                                                    checked={optimizeSmallFontScope === 'all'}
+                                                    onChange={() => setOptimizeSmallFontScope('all')}
+                                                    style={{ cursor: 'pointer', accentColor: '#a855f7' }}
+                                                />
+                                                <strong>슬라이드 전체 (표 + 텍스트 상자)</strong>
+                                            </label>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                                                <input
+                                                    type="radio"
+                                                    name="optimizeSmallFontScope"
+                                                    value="table"
+                                                    checked={optimizeSmallFontScope === 'table'}
+                                                    onChange={() => setOptimizeSmallFontScope('table')}
+                                                    style={{ cursor: 'pointer', accentColor: '#a855f7' }}
+                                                />
+                                                <span>표(테이블)만</span>
+                                            </label>
+                                        </div>
                                     </div>
 
-                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', marginLeft: '4px' }}>변경할 폰트 크기:</span>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        <input
-                                            type="number"
-                                            step="0.5"
-                                            min="1"
-                                            max="72"
-                                            value={optimizeTableFontTargetSize}
-                                            onChange={(e) => setOptimizeTableFontTargetSize(e.target.value)}
-                                            placeholder="10"
-                                            style={{
-                                                width: '65px',
-                                                padding: '4px 8px',
-                                                borderRadius: '6px',
-                                                border: '1px solid var(--accent-purple, #a855f7)',
-                                                background: 'var(--bg-primary)',
-                                                color: 'var(--text-primary)',
-                                                fontSize: '13px',
-                                                fontWeight: 700,
-                                                textAlign: 'center'
-                                            }}
-                                        />
-                                        <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>pt</span>
+                                    <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                                        💡 {optimizeSmallFontScope === 'all' ? '슬라이드 전체의 모든 텍스트 상자 및 표(테이블)에서' : '표(테이블) 내부에서'} 너무 작게 축소된 글씨({optimizeTableFontThreshold || 8.5}pt 이하)를 입력하신 권장 크기({optimizeTableFontTargetSize || 10}pt)로 일괄 변경합니다. (표 사이즈는 100% 유지)
                                     </div>
                                 </div>
                             )}
-
-                            <div style={{ paddingLeft: '24px', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                                💡 표의 크기(너비/행 높이)는 그대로 유지하면서, 셀에 비해 너무 작게 들어간 표 내부 글씨({optimizeTableFontThreshold || 8.5}pt 이하)를 입력하신 권장 크기({optimizeTableFontTargetSize || 10}pt)로 일괄 변경합니다.
-                            </div>
                         </div>
                     </div>
                 </div>

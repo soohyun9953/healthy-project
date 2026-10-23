@@ -830,6 +830,7 @@ export async function processPptBatch(pptFile, options) {
         optimizeTableFont = false,
         optimizeTableFontThreshold = 8.5,
         optimizeTableFontTargetSize = 10,
+        optimizeSmallFontScope = 'all',
         applyTableBodyStyle = true,
         tableBodyFontSize = 10,
         tableHeaderFontSize = 11,
@@ -1550,8 +1551,9 @@ export async function processPptBatch(pptFile, options) {
                         }
                     }
 
-                    // 💡 [신규 추가 옵션] 표 작은 폰트 가독성 자동 보정 (8.5pt 이하 -> 10pt 상향)
-                    if (!matchedRule && optimizeTableFont && effectiveSz !== null && isElementInsideTable(el)) {
+                    // 💡 [신규 추가 옵션] 작은 폰트 가독성 자동 보정 (표뿐만 아니라 슬라이드 전체 적용 가능)
+                    const isTargetRun = (optimizeSmallFontScope === 'all') || (optimizeSmallFontScope === 'table' && isElementInsideTable(el));
+                    if (!matchedRule && optimizeTableFont && effectiveSz !== null && isTargetRun) {
                         const threshold_pt = parseFloat(optimizeTableFontThreshold) || 8.5;
                         const threshold_val = Math.round(threshold_pt * 100);
                         if (effectiveSz <= threshold_val + 10) {
@@ -1637,8 +1639,9 @@ export async function processPptBatch(pptFile, options) {
                         }
                     }
 
-                    // 💡 [신규 추가 옵션] defRPr 표 작은 폰트 가독성 자동 보정 (8.5pt 이하 -> 10pt 상향)
-                    if (!matchedRule && optimizeTableFont && effectiveSz !== null && isElementInsideTable(el)) {
+                    // 💡 [신규 추가 옵션] defRPr 작은 폰트 가독성 자동 보정 (표뿐만 아니라 슬라이드 전체 적용 가능)
+                    const isTargetPara = (optimizeSmallFontScope === 'all') || (optimizeSmallFontScope === 'table' && isElementInsideTable(el));
+                    if (!matchedRule && optimizeTableFont && effectiveSz !== null && isTargetPara) {
                         const threshold_pt = parseFloat(optimizeTableFontThreshold) || 8.5;
                         const threshold_val = Math.round(threshold_pt * 100);
                         if (effectiveSz <= threshold_val + 10) {
