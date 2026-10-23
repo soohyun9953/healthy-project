@@ -32,8 +32,10 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [applyDesignChecked, setApplyDesignChecked] = useState(true);
     const [applyTableDesignChecked, setApplyTableDesignChecked] = useState(false);
     const [applyFirstRowHeaderStyle, setApplyFirstRowHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 행 특별 포맷팅 적용 여부 (기본 true)
+    const [tableHeaderFontSize, setTableHeaderFontSize] = useState('11'); // 옵션 E 하위: 1행(헤더) 폰트 크기 (기본 11pt)
     const [excludeSingleRowHeaderStyle, setExcludeSingleRowHeaderStyle] = useState(true); // 옵션 E 하위: 1개 행 표는 첫 행 특별 포맷팅 제외
     const [applyFirstColHeaderStyle, setApplyFirstColHeaderStyle] = useState(true); // 옵션 E 하위 옵션: 첫 열(2행부터) 특별 포맷팅 적용 여부 (기본 true)
+    const [tableFirstColFontSize, setTableFirstColFontSize] = useState('10'); // 옵션 E 하위: 1열(구분열) 폰트 크기 (기본 10pt)
     const [applyTableBodyStyle, setApplyTableBodyStyle] = useState(true); // 옵션 E 하위: 표 본문 가독성 폰트 적용
     const [tableBodyFontSize, setTableBodyFontSize] = useState('10'); // 옵션 E 하위: 표 본문 폰트 크기 (기본 10pt)
     const [designTargetText, setDesignTargetText] = useState('');
@@ -210,7 +212,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
         if (applyFirstRowHeaderStyle !== false) {
             const count = modifiedBlob.totalHeaderRowsApplied || 0;
             if (count > 0) {
-                changes.push(`🎯 첫 행 헤더 특별 포맷팅 적용 ${count}개 표`);
+                changes.push(`🎯 첫 행 헤더(${options.tableHeaderFontSize || '11'}pt) 특별 포맷팅 적용 ${count}개 표`);
             } else {
                 changes.push(`첫 행 헤더 스타일 적용 0개(대상 표 없음)`);
             }
@@ -388,8 +390,10 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         applyDesign: applyDesignChecked,
                         applyTableDesign: applyTableDesignChecked,
                         applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
+                                                tableHeaderFontSize: parseFloat(tableHeaderFontSize) || 11,
                                                 excludeSingleRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle && excludeSingleRowHeaderStyle,
                         applyFirstColHeaderStyle: applyTableDesignChecked && applyFirstColHeaderStyle,
+                        tableFirstColFontSize: parseFloat(tableFirstColFontSize) || 10,
                                                 applyTableBodyStyle: applyTableDesignChecked && applyTableBodyStyle,
                         tableBodyFontSize: parseFloat(tableBodyFontSize) || 10,
                         optimizeTableFont: optimizeTableFont,
@@ -448,6 +452,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     if (saved) {
                         const detailMsg = buildBatchReportDetail(modifiedBlob, {
                             applyTableDesignChecked,
+                            tableHeaderFontSize,
+                            tableFirstColFontSize,
                             applyFirstRowHeaderStyle,
                             parsedRules,
                             parsedFontRules,
@@ -488,13 +494,16 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             applyDesign: applyDesignChecked,
                             applyTableDesign: applyTableDesignChecked,
                             applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
+                            tableHeaderFontSize: parseFloat(tableHeaderFontSize) || 11,
                             excludeSingleRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle && excludeSingleRowHeaderStyle,
                             applyFirstColHeaderStyle: applyTableDesignChecked && applyFirstColHeaderStyle,
+                            tableFirstColFontSize: parseFloat(tableFirstColFontSize) || 10,
                             applyTableBodyStyle: applyTableDesignChecked && applyTableBodyStyle,
                             tableBodyFontSize: parseFloat(tableBodyFontSize) || 10,
                             optimizeTableFont: optimizeTableFont,
                             optimizeTableFontThreshold: parseFloat(optimizeTableFontThreshold) || 8.5,
                             optimizeTableFontTargetSize: parseFloat(optimizeTableFontTargetSize) || 10,
+                            optimizeSmallFontScope: optimizeSmallFontScope,
                             targetText: designTargetText,
                             applySpecialCharClean: applySpecialCharClean,
                             replaceNbs: replaceNbs,
@@ -526,6 +535,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
 
                         const detailMsg = buildBatchReportDetail(modifiedBlob, {
                             applyTableDesignChecked,
+                            tableHeaderFontSize,
+                            tableFirstColFontSize,
                             applyFirstRowHeaderStyle,
                             parsedRules,
                             parsedFontRules,
@@ -637,6 +648,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 setApplyDesignChecked(false);
                 setApplyTableDesignChecked(false);
                 setApplyFirstRowHeaderStyle(true);
+                setTableHeaderFontSize('11');
+                setTableFirstColFontSize('10');
                 setDesignTargetText('');
                 setApplySpecialCharClean(false);
                 setReplaceNbs(true);
@@ -1108,31 +1121,59 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     }}>
                         {/* 하위 1: 첫 번째 행(헤더) 특별 포맷팅 */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
-                                fontSize: '13px',
-                                color: applyTableDesignChecked ? 'var(--text-primary)' : 'var(--text-muted)',
-                                fontWeight: 600
-                            }}>
-                                <input
-                                    type="checkbox"
-                                    checked={applyFirstRowHeaderStyle}
-                                    disabled={!applyTableDesignChecked}
-                                    onChange={(e) => setApplyFirstRowHeaderStyle(e.target.checked)}
-                                    style={{
-                                        width: '16px',
-                                        height: '16px',
-                                        cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
-                                        accentColor: '#a855f7'
-                                    }}
-                                />
-                                첫 번째 행(헤더) 특별 포맷팅 적용
-                            </label>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                                <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
+                                    fontSize: '13px',
+                                    color: applyTableDesignChecked ? 'var(--text-primary)' : 'var(--text-muted)',
+                                    fontWeight: 600
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={applyFirstRowHeaderStyle}
+                                        disabled={!applyTableDesignChecked}
+                                        onChange={(e) => setApplyFirstRowHeaderStyle(e.target.checked)}
+                                        style={{
+                                            width: '16px',
+                                            height: '16px',
+                                            cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
+                                            accentColor: '#a855f7'
+                                        }}
+                                    />
+                                    첫 번째 행(헤더) 특별 포맷팅 적용
+                                </label>
+
+                                {applyFirstRowHeaderStyle && applyTableDesignChecked && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '24px' }}>
+                                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>헤더 폰트 크기:</span>
+                                        <select
+                                            value={tableHeaderFontSize}
+                                            onChange={(e) => setTableHeaderFontSize(e.target.value)}
+                                            style={{
+                                                padding: '4px 8px', borderRadius: '6px',
+                                                background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)',
+                                                color: 'var(--text-primary)', fontSize: '12.5px', fontWeight: 600,
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <option value="9">9 pt</option>
+                                            <option value="9.5">9.5 pt</option>
+                                            <option value="10">10 pt</option>
+                                            <option value="10.5">10.5 pt</option>
+                                            <option value="11">11 pt (기본)</option>
+                                            <option value="11.5">11.5 pt</option>
+                                            <option value="12">12 pt</option>
+                                            <option value="13">13 pt</option>
+                                            <option value="14">14 pt</option>
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
-                                (첫 행 배경 RGB(0,114,186), 글자 흰색 11pt KoPub돋움체 Bold, 가운데 정렬, 첫 행 내부 실선 흰색 적용)
+                                (첫 행 배경 RGB(0,114,186), 글자 흰색 {tableHeaderFontSize}pt KoPub돋움체 Bold, 가운데 정렬, 첫 행 내부 실선 흰색 적용)
                             </div>
 
                             {/* 하위 1-1: 1개 행으로 된 표는 첫 행 헤더 특별 포맷팅 제외 */}
@@ -1170,31 +1211,58 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
 
                         {/* 하위 2: 첫 번째 열(구분열) 특별 포맷팅 */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
-                                fontSize: '13px',
-                                color: applyTableDesignChecked ? 'var(--text-primary)' : 'var(--text-muted)',
-                                fontWeight: 600
-                            }}>
-                                <input
-                                    type="checkbox"
-                                    checked={applyFirstColHeaderStyle}
-                                    disabled={!applyTableDesignChecked}
-                                    onChange={(e) => setApplyFirstColHeaderStyle(e.target.checked)}
-                                    style={{
-                                        width: '16px',
-                                        height: '16px',
-                                        cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
-                                        accentColor: '#a855f7'
-                                    }}
-                                />
-                                첫 번째 열(구분열) 특별 포맷팅 적용 (2번째 행부터 적용)
-                            </label>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                                <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
+                                    fontSize: '13px',
+                                    color: applyTableDesignChecked ? 'var(--text-primary)' : 'var(--text-muted)',
+                                    fontWeight: 600
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={applyFirstColHeaderStyle}
+                                        disabled={!applyTableDesignChecked}
+                                        onChange={(e) => setApplyFirstColHeaderStyle(e.target.checked)}
+                                        style={{
+                                            width: '16px',
+                                            height: '16px',
+                                            cursor: applyTableDesignChecked ? 'pointer' : 'not-allowed',
+                                            accentColor: '#a855f7'
+                                        }}
+                                    />
+                                    첫 번째 열(구분열) 특별 포맷팅 적용 (2번째 행부터 적용)
+                                </label>
+
+                                {applyFirstColHeaderStyle && applyTableDesignChecked && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '24px' }}>
+                                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>1열 폰트 크기:</span>
+                                        <select
+                                            value={tableFirstColFontSize}
+                                            onChange={(e) => setTableFirstColFontSize(e.target.value)}
+                                            style={{
+                                                padding: '4px 8px', borderRadius: '6px',
+                                                background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)',
+                                                color: 'var(--text-primary)', fontSize: '12.5px', fontWeight: 600,
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <option value="8">8 pt</option>
+                                            <option value="8.5">8.5 pt</option>
+                                            <option value="9">9 pt</option>
+                                            <option value="9.5">9.5 pt</option>
+                                            <option value="10">10 pt (가독성 권장)</option>
+                                            <option value="10.5">10.5 pt</option>
+                                            <option value="11">11 pt</option>
+                                            <option value="12">12 pt</option>
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
-                                (첫 열 2번째 행부터 배경 #F2F2F2, 글자 검은색 11pt KoPub돋움체 Bold, 가운데 정렬)
+                                (첫 열 2번째 행부터 배경 #F2F2F2, 글자 검은색 {tableFirstColFontSize}pt KoPub돋움체 Bold, 가운데 정렬)
                             </div>
                         </div>
 

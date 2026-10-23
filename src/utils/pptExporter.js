@@ -834,7 +834,7 @@ export async function processPptBatch(pptFile, options) {
         applyTableBodyStyle = true,
         tableBodyFontSize = 10,
         tableHeaderFontSize = 11,
-        tableFirstColFontSize = 11,
+        tableFirstColFontSize = 10,
         applyDesign = false, 
         applyTableDesign = false, 
         applyFirstRowHeaderStyle = true,
@@ -1956,6 +1956,9 @@ export async function processPptBatch(pptFile, options) {
                 if (tables.length > 0) {
                     const useHeaderStyle = Boolean(applyFirstRowHeaderStyle);
                     const useColStyle = Boolean(applyFirstColHeaderStyle);
+                    const headerSzVal = String(Math.round((parseFloat(tableHeaderFontSize) || 11) * 100));
+                    const firstColSzVal = String(Math.round((parseFloat(tableFirstColFontSize) || 10) * 100));
+                    const bodySzVal = String(Math.round((parseFloat(tableBodyFontSize) || 10) * 100));
                     
                     for (let t = 0; t < tables.length; t++) {
                         totalTablesCount++;
@@ -2088,7 +2091,7 @@ export async function processPptBatch(pptFile, options) {
                                             defRPr = xmlDoc.createElementNS(nsA, 'a:defRPr');
                                             pPr.appendChild(defRPr);
                                         }
-                                        defRPr.setAttribute('sz', '1100');
+                                        defRPr.setAttribute('sz', headerSzVal);
                                         defRPr.setAttribute('b', '1');
                                         const oldDefFills = Array.from(defRPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill')));
                                         oldDefFills.forEach(f => defRPr.removeChild(f));
@@ -2115,7 +2118,7 @@ export async function processPptBatch(pptFile, options) {
                                                 if (r.firstChild) r.insertBefore(rPr, r.firstChild);
                                                 else r.appendChild(rPr);
                                             }
-                                            rPr.setAttribute('sz', '1100');
+                                            rPr.setAttribute('sz', headerSzVal);
                                             rPr.setAttribute('b', '1');
                                             
                                             // 💡 1. 기존 모든 채우기 태그 삭제 후 순백색(FFFFFF)을 rPr 최상단 자식으로 삽입 (XSD 스키마 순서 엄수)
@@ -2184,7 +2187,7 @@ export async function processPptBatch(pptFile, options) {
                                             defRPr = xmlDoc.createElementNS(nsA, 'a:defRPr');
                                             pPr.appendChild(defRPr);
                                         }
-                                        defRPr.setAttribute('sz', '1100');
+                                        defRPr.setAttribute('sz', firstColSzVal);
                                         defRPr.setAttribute('b', '1');
                                         const oldDefFills = Array.from(defRPr.childNodes).filter(node => node.nodeType === 1 && (node.localName === 'solidFill' || node.tagName.endsWith(':solidFill')));
                                         oldDefFills.forEach(f => defRPr.removeChild(f));
@@ -2211,7 +2214,7 @@ export async function processPptBatch(pptFile, options) {
                                                 if (r.firstChild) r.insertBefore(rPr, r.firstChild);
                                                 else r.appendChild(rPr);
                                             }
-                                            rPr.setAttribute('sz', '1100');
+                                            rPr.setAttribute('sz', firstColSzVal);
                                             rPr.setAttribute('b', '1');
                                             
                                             // 💡 1. 기존 모든 채우기 태그 삭제 후 검은색(000000)을 rPr 최상단 자식으로 삽입 (XSD 스키마 순서 엄수)
@@ -2250,7 +2253,7 @@ export async function processPptBatch(pptFile, options) {
                                 }
                                 // 4단계: [신규] 표 본문(2행 이상 & 2열 이상) 데이터 셀 가독성 폰트 크기 및 서식 최적화!
                                 // 표의 사이즈(너비 및 행 높이)는 100% 온전히 유지하면서, 폰트 크기만 10pt 등으로 확대 적용
-                                else if (applyTableBodyStyle && ((rowIdx > 0 && c > 0) || (isSingleRow && !effectiveUseHeaderStyle))) {
+                                else if (applyTableBodyStyle && ((rowIdx > 0 && (!useColStyle || c > 0)) || (isSingleRow && !effectiveUseHeaderStyle))) {
                                     // 상하 가운데 정렬(anchor="ctr") 및 셀 내부 최적 여백 설정 (좌우 0.1cm=36000, 상하 0.05cm=18000)
                                     tcPr.setAttribute('anchor', 'ctr');
                                     if (!tcPr.getAttribute('marL')) tcPr.setAttribute('marL', '36000');
