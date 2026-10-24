@@ -525,7 +525,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.23.0</span>
+                <span>AI 산출물 검수 v2.24.0</span>
               </div>
             )}
           </div>

@@ -23,7 +23,10 @@ import {
     Filter,
     ShieldAlert,
     ExternalLink,
-    Maximize2
+    Maximize2,
+    Zap,
+    Check,
+    ArrowRight
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -35,7 +38,9 @@ import {
     extractTablesFromFile,
     runStage1Validation,
     runStage2AIValidation,
-    exportSSOTReportToExcel
+    exportSSOTReportToExcel,
+    parseRfpContent,
+    applyRfpToMasterData
 } from '../utils/ssotValidator';
 import { extractStructuredFileContent } from '../utils/fileExtractor';
 
@@ -76,6 +81,19 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
     // 텍스트 일괄 붙여넣기 모달
     const [showBulkReqModal, setShowBulkReqModal] = useState(false);
     const [bulkReqText, setBulkReqText] = useState('');
+
+    // ── 사업 RFP 자동 분석 및 마스터 정보 동기화 상태 ────────────────
+    const [showRfpModal, setShowRfpModal] = useState(false);
+    const [rfpInputMode, setRfpInputMode] = useState('file'); // 'file' | 'text'
+    const [rfpFile, setRfpFile] = useState(null);
+    const [rfpText, setRfpText] = useState('');
+    const [rfpIsDragging, setRfpIsDragging] = useState(false);
+    const [rfpUseAI, setRfpUseAI] = useState(!!apiKey);
+    const [rfpAnalyzing, setRfpAnalyzing] = useState(false);
+    const [rfpProgress, setRfpProgress] = useState({ percent: 0, message: '' });
+    const [extractedRfpData, setExtractedRfpData] = useState(null);
+    const [rfpApplyMode, setRfpApplyMode] = useState('replace'); // 'replace' | 'merge'
+    const rfpFileInputRef = useRef(null);
 
     const fileInputRef = useRef(null);
     const glossaryExcelInputRef = useRef(null);
@@ -248,6 +266,102 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         } else {
             alert('구분자(| 또는 탭 또는 쉼표)로 [요구사항ID | 명칭 | 키워드] 형식으로 입력해주세요.');
         }
+    };
+
+    // ── 사업 제안요청서(RFP) 분석 및 마스터 반영 핸들러 ──────────
+    const handleRfpFileSelect = (e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setRfpFile(file);
+            setExtractedRfpData(null);
+        }
+        e.target.value = '';
+    };
+
+    const handleRfpFileDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setRfpIsDragging(false);
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length > 0) {
+            setRfpFile(files[0]);
+            setExtractedRfpData(null);
+        }
+    };
+
+    const handleStartRfpAnalysis = async () => {
+        if (rfpInputMode === 'file' && !rfpFile) {
+            alert('분석할 제안요청서(RFP) 파일을 먼저 등록해주세요.');
+            return;
+        }
+        if (rfpInputMode === 'text' && !rfpText.trim()) {
+            alert('분석할 제안요청서(RFP) 원문 텍스트를 입력해주세요.');
+            return;
+        }
+        if (rfpUseAI && !apiKey) {
+            alert('AI 심층 분석을 실행하려면 상단에 Gemini API Key가 등록되어 있어야 합니다.');
+            return;
+        }
+
+        setRfpAnalyzing(true);
+        setRfpProgress({ percent: 5, message: '제안요청서 데이터 추출 및 구조화 준비 중...' });
+
+        try {
+            let fullText = '';
+            let tables = [];
+
+            if (rfpInputMode === 'file') {
+                setRfpProgress({ percent: 15, message: `${rfpFile.name} 텍스트 및 표 구조 추출 중...` });
+                const fileContent = await extractStructuredFileContent(rfpFile);
+                fullText = fileContent.fullText || fileContent.text || '';
+                tables = await extractTablesFromFile(rfpFile);
+            } else {
+                fullText = rfpText;
+            }
+
+            if (!fullText.trim()) {
+                throw new Error('문서에서 텍스트를 추출할 수 없습니다. 파일 상태나 형식을 확인해주세요.');
+            }
+
+            const result = await parseRfpContent({
+                text: fullText,
+                tables,
+                apiKey,
+                modelId: selectedModel,
+                useAI: rfpUseAI,
+                onProgress: setRfpProgress
+            });
+
+            setExtractedRfpData(result);
+            setRfpProgress({ percent: 100, message: 'RFP 마스터 정보 추출이 성공적으로 완료되었습니다.' });
+        } catch (err) {
+            console.error('RFP 분석 중 오류 발생:', err);
+            alert(`RFP 분석 중 오류가 발생했습니다: ${err.message}`);
+        } finally {
+            setRfpAnalyzing(false);
+        }
+    };
+
+    const handleApplyRfpToMaster = () => {
+        if (!extractedRfpData) return;
+
+        const updated = applyRfpToMasterData(ssotData, extractedRfpData, rfpApplyMode);
+        setSsotData(updated);
+        setShowRfpModal(false);
+        setIsConfigExpanded(true);
+        setConfigTab('metadata');
+
+        alert(`✅ 제안요청서(RFP) 마스터 정보가 성공적으로 반영되었습니다!\n- 사업명: ${updated.metadata.projectName}\n- 발주기관: ${updated.metadata.clientAgency}\n- 요구사항 마스터: 총 ${updated.requirements.length}건\n- 표준 용어사전: 총 ${updated.glossary.length}건`);
+    };
+
+    const handleUpdateExtractedMetadata = (field, val) => {
+        setExtractedRfpData(prev => ({
+            ...prev,
+            metadata: {
+                ...prev.metadata,
+                [field]: val
+            }
+        }));
     };
 
     // ── 파일 드롭 및 선택 ────────────────────────────────────────
@@ -448,6 +562,28 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <button
+                        onClick={() => {
+                            setShowRfpModal(true);
+                            setExtractedRfpData(null);
+                        }}
+                        className="btn-primary"
+                        style={{
+                            padding: '8px 16px',
+                            fontSize: '13px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: 'linear-gradient(135deg, #10b981 0%, #3b82f6 100%)',
+                            border: 'none',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)'
+                        }}
+                        title="사업 제안요청서(RFP)를 입력하여 마스터 메타데이터, 요구사항, 표준용어를 자동 추출 및 동기화합니다"
+                    >
+                        <Sparkles size={15} /> 사업 RFP로 마스터 자동 구축
+                    </button>
+                    <button
                         onClick={handleResetPreset}
                         className="btn-outline"
                         style={{ padding: '8px 14px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -478,7 +614,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
             {isConfigExpanded && (
                 <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
                     {/* 탭 네비게이션 */}
-                    <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px' }}>
+                    <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px', flexWrap: 'wrap' }}>
                         <button
                             onClick={() => setConfigTab('metadata')}
                             className={`btn-tab ${configTab === 'metadata' ? 'active' : ''}`}
@@ -526,6 +662,29 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                             }}
                         >
                             ③ 요구사항 마스터 리스트 ({ssotData.requirements.length}건)
+                        </button>
+                        <button
+                            onClick={() => {
+                                setShowRfpModal(true);
+                                setExtractedRfpData(null);
+                            }}
+                            className="btn-tab"
+                            style={{
+                                padding: '6px 14px',
+                                borderRadius: '8px',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(59, 130, 246, 0.15))',
+                                color: '#10b981',
+                                border: '1px solid rgba(16, 185, 129, 0.4)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                            }}
+                            title="RFP 파일 또는 텍스트를 분석하여 마스터 정보를 일괄 갱신합니다"
+                        >
+                            <Sparkles size={14} /> ④ RFP 제안요청서 자동 분석·동기화
                         </button>
                     </div>
 
@@ -1282,6 +1441,416 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 일괄 등록하기
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 사업 RFP(제안요청서) 자동 분석 및 마스터 정보 동기화 모달 */}
+            {showRfpModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+                    background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+                    zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+                }}>
+                    <div className="glass-panel" style={{
+                        width: '100%', maxWidth: '860px', maxHeight: '92vh', overflowY: 'auto',
+                        padding: '28px', display: 'flex', flexDirection: 'column', gap: '20px',
+                        border: '1px solid rgba(16, 185, 129, 0.4)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)'
+                    }}>
+                        {/* 모달 헤더 */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{
+                                    width: '40px', height: '40px', borderRadius: '10px',
+                                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(59, 130, 246, 0.2))',
+                                    border: '1px solid rgba(16, 185, 129, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981'
+                                }}>
+                                    <Sparkles size={22} />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                        사업 제안요청서(RFP) 분석 및 마스터 정보 동기화
+                                    </h3>
+                                    <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                                        RFP 문서를 업로드하거나 텍스트를 입력하면 사업 기본정보, 요구사항 마스터 목록(고유 ID), 표준 용어사전을 자동 추출하여 SSOT 기준으로 등록합니다.
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    if (!rfpAnalyzing) {
+                                        setShowRfpModal(false);
+                                    }
+                                }}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                            >
+                                <XCircle size={20} />
+                            </button>
+                        </div>
+
+                        {/* 입력 방식 탭 */}
+                        <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '10px' }}>
+                            <button
+                                onClick={() => setRfpInputMode('file')}
+                                className={`btn-tab ${rfpInputMode === 'file' ? 'active' : ''}`}
+                                style={{
+                                    padding: '6px 16px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600,
+                                    background: rfpInputMode === 'file' ? 'var(--accent-blue)' : 'rgba(255,255,255,0.04)',
+                                    color: rfpInputMode === 'file' ? '#fff' : 'var(--text-secondary)', border: 'none', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', gap: '6px'
+                                }}
+                            >
+                                <Upload size={14} /> RFP 파일 업로드 (.hwpx, .docx, .pdf, .xlsx, .txt)
+                            </button>
+                            <button
+                                onClick={() => setRfpInputMode('text')}
+                                className={`btn-tab ${rfpInputMode === 'text' ? 'active' : ''}`}
+                                style={{
+                                    padding: '6px 16px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600,
+                                    background: rfpInputMode === 'text' ? 'var(--accent-blue)' : 'rgba(255,255,255,0.04)',
+                                    color: rfpInputMode === 'text' ? '#fff' : 'var(--text-secondary)', border: 'none', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', gap: '6px'
+                                }}
+                            >
+                                <FileText size={14} /> 제안요청서 텍스트 직접 붙여넣기
+                            </button>
+                        </div>
+
+                        {/* 파일 업로드 드롭존 */}
+                        {rfpInputMode === 'file' && (
+                            <div>
+                                <input
+                                    type="file"
+                                    ref={rfpFileInputRef}
+                                    style={{ display: 'none' }}
+                                    accept=".hwpx,.docx,.pdf,.xlsx,.xls,.txt,.md"
+                                    onChange={handleRfpFileSelect}
+                                />
+                                <div
+                                    onDragOver={(e) => { e.preventDefault(); setRfpIsDragging(true); }}
+                                    onDragLeave={() => setRfpIsDragging(false)}
+                                    onDrop={handleRfpFileDrop}
+                                    onClick={() => rfpFileInputRef.current?.click()}
+                                    style={{
+                                        border: `2px dashed ${rfpIsDragging ? '#10b981' : rfpFile ? 'var(--accent-blue)' : 'var(--panel-border)'}`,
+                                        borderRadius: '10px',
+                                        padding: '28px 20px',
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        background: rfpIsDragging ? 'rgba(16, 185, 129, 0.06)' : rfpFile ? 'rgba(59, 130, 246, 0.05)' : 'rgba(255,255,255,0.02)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    {rfpFile ? (
+                                        <>
+                                            <FileCheck2 size={32} style={{ color: '#10b981' }} />
+                                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                {rfpFile.name}
+                                            </div>
+                                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                                {(rfpFile.size / 1024 / 1024).toFixed(2)} MB • 클릭하여 다른 파일로 변경
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Upload size={30} style={{ color: 'var(--text-muted)' }} />
+                                            <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                이곳을 클릭하거나 제안요청서(RFP) 파일을 드래그 앤 드롭하세요
+                                            </div>
+                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                                .hwpx, .docx, .pdf, .xlsx, .txt 형식 지원
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 텍스트 직접 입력 */}
+                        {rfpInputMode === 'text' && (
+                            <div>
+                                <textarea
+                                    rows={8}
+                                    value={rfpText}
+                                    onChange={(e) => setRfpText(e.target.value)}
+                                    placeholder="사업명, 발주기관, 사업기간, 사업예산 및 요구사항 총괄표 텍스트를 복사하여 붙여넣으세요...&#10;예:&#10;1. 사업개요&#10; - 사업명 : 공공보건의료 지능형 플랫폼 구축 ISP&#10; - 발주기관 : 국립중앙의료원&#10; - 사업예산 : 500,000,000원&#10; - 사업기간 : 계약체결일로부터 8개월간&#10;2. 요구사항 총괄표&#10; - CNR-001 : 데이터 통합 연계 체계 수립&#10; - SFR-001 : AI 진료지원 알고리즘 실증"
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--panel-border)',
+                                        background: 'rgba(0,0,0,0.3)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '12.5px',
+                                        lineHeight: '1.5'
+                                    }}
+                                />
+                            </div>
+                        )}
+
+                        {/* 분석 옵션 바 */}
+                        <div style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px',
+                            background: 'rgba(0,0,0,0.25)', padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--panel-border)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={rfpUseAI}
+                                        onChange={(e) => setRfpUseAI(e.target.checked)}
+                                        style={{ accentColor: '#a855f7' }}
+                                    />
+                                    <Sparkles size={14} style={{ color: '#a855f7' }} />
+                                    Gemini AI 정밀 심층 분석 적용
+                                </label>
+                                {rfpUseAI && (
+                                    <span style={{ fontSize: '11.5px', color: apiKey ? '#10b981' : '#f59e0b' }}>
+                                        {apiKey ? '● API Key 준비 완료' : '⚠️ API Key가 필요합니다 (미등록 시 룰 기반으로 동작)'}
+                                    </span>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={handleStartRfpAnalysis}
+                                disabled={rfpAnalyzing}
+                                className="btn-primary"
+                                style={{
+                                    padding: '8px 20px',
+                                    fontSize: '13px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    background: 'linear-gradient(135deg, #10b981, #3b82f6)',
+                                    opacity: rfpAnalyzing ? 0.7 : 1,
+                                    cursor: rfpAnalyzing ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                {rfpAnalyzing ? (
+                                    <>
+                                        <RefreshCw size={14} className="spin-animation" />
+                                        RFP 분석 중...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Zap size={14} />
+                                        RFP 마스터 정보 분석 시작
+                                    </>
+                                )}
+                            </button>
+                        </div>
+
+                        {/* 분석 진행 프로그레스 바 */}
+                        {rfpAnalyzing && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                    <span>{rfpProgress.message}</span>
+                                    <span>{rfpProgress.percent}%</span>
+                                </div>
+                                <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{
+                                        width: `${rfpProgress.percent}%`,
+                                        height: '100%',
+                                        background: 'linear-gradient(90deg, #10b981, #3b82f6)',
+                                        transition: 'width 0.3s ease'
+                                    }} />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 추출 결과 미리보기 및 승인 카드 */}
+                        {extractedRfpData && (
+                            <div style={{
+                                display: 'flex', flexDirection: 'column', gap: '16px',
+                                background: 'rgba(16, 185, 129, 0.04)', padding: '20px', borderRadius: '10px',
+                                border: '1px solid rgba(16, 185, 129, 0.3)'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <CheckCircle2 size={18} style={{ color: '#10b981' }} />
+                                        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                            RFP 분석 결과 검토 (마스터 반영 대기)
+                                        </span>
+                                    </div>
+                                    <span style={{
+                                        padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600,
+                                        background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.3)'
+                                    }}>
+                                        분석 출처: {extractedRfpData.source}
+                                    </span>
+                                </div>
+
+                                {/* 1. 메타데이터 편집기 */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '3px' }}>
+                                            사업명
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={extractedRfpData.metadata.projectName || ''}
+                                            onChange={(e) => handleUpdateExtractedMetadata('projectName', e.target.value)}
+                                            style={{ width: '100%', padding: '6px 10px', borderRadius: '5px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '12.5px' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '3px' }}>
+                                            발주기관
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={extractedRfpData.metadata.clientAgency || ''}
+                                            onChange={(e) => handleUpdateExtractedMetadata('clientAgency', e.target.value)}
+                                            style={{ width: '100%', padding: '6px 10px', borderRadius: '5px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '12.5px' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '3px' }}>
+                                            수행기간
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={extractedRfpData.metadata.period || ''}
+                                            onChange={(e) => handleUpdateExtractedMetadata('period', e.target.value)}
+                                            style={{ width: '100%', padding: '6px 10px', borderRadius: '5px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '12.5px' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '3px' }}>
+                                            총사업비
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={extractedRfpData.metadata.budget || ''}
+                                            onChange={(e) => handleUpdateExtractedMetadata('budget', e.target.value)}
+                                            style={{ width: '100%', padding: '6px 10px', borderRadius: '5px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '12.5px' }}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* 2. 요구사항 & 용어사전 탭형 또는 그리드 미리보기 */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '14px' }}>
+                                    {/* 요구사항 목록 요약 */}
+                                    <div style={{ border: '1px solid var(--panel-border)', borderRadius: '6px', padding: '10px', background: 'rgba(0,0,0,0.2)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                            <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--accent-blue)' }}>
+                                                📋 추출된 요구사항 ({extractedRfpData.requirements.length}건)
+                                            </span>
+                                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                                산출물 RTM 매핑 기준
+                                            </span>
+                                        </div>
+                                        <div style={{ maxHeight: '160px', overflowY: 'auto', fontSize: '11.5px' }}>
+                                            {extractedRfpData.requirements.length === 0 ? (
+                                                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '16px' }}>추출된 요구사항 번호가 없습니다.</div>
+                                            ) : (
+                                                extractedRfpData.requirements.slice(0, 15).map((r, i) => (
+                                                    <div key={r.id || i} style={{ display: 'flex', gap: '8px', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                                        <span style={{ fontWeight: 700, color: 'var(--accent-blue)', minWidth: '70px' }}>{r.id}</span>
+                                                        <span style={{ color: 'var(--text-primary)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                                                    </div>
+                                                ))
+                                            )}
+                                            {extractedRfpData.requirements.length > 15 && (
+                                                <div style={{ textAlign: 'center', padding: '4px 0', color: 'var(--text-muted)' }}>
+                                                    ... 외 {extractedRfpData.requirements.length - 15}건 생략
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* 용어사전 목록 요약 */}
+                                    <div style={{ border: '1px solid var(--panel-border)', borderRadius: '6px', padding: '10px', background: 'rgba(0,0,0,0.2)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                            <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#10b981' }}>
+                                                📖 추출된 표준 용어사전 ({extractedRfpData.glossary.length}건)
+                                            </span>
+                                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                                오표기/금지어 검증 기준
+                                            </span>
+                                        </div>
+                                        <div style={{ maxHeight: '160px', overflowY: 'auto', fontSize: '11.5px' }}>
+                                            {extractedRfpData.glossary.length === 0 ? (
+                                                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '16px' }}>추출된 표준 용어가 없습니다.</div>
+                                            ) : (
+                                                extractedRfpData.glossary.slice(0, 15).map((g, i) => (
+                                                    <div key={g.id || i} style={{ display: 'flex', gap: '8px', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                                        <span style={{ padding: '1px 4px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', fontSize: '10.5px' }}>{g.category || '용어'}</span>
+                                                        <span style={{ fontWeight: 600, color: '#10b981' }}>{g.approved}</span>
+                                                        <span style={{ color: 'var(--danger-color)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>({g.forbidden})</span>
+                                                    </div>
+                                                ))
+                                            )}
+                                            {extractedRfpData.glossary.length > 15 && (
+                                                <div style={{ textAlign: 'center', padding: '4px 0', color: 'var(--text-muted)' }}>
+                                                    ... 외 {extractedRfpData.glossary.length - 15}건 생략
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 3. 반영 방식 선택 */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>반영 방식:</span>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                            <input
+                                                type="radio"
+                                                name="rfpApplyMode"
+                                                value="replace"
+                                                checked={rfpApplyMode === 'replace'}
+                                                onChange={() => setRfpApplyMode('replace')}
+                                                style={{ accentColor: '#10b981' }}
+                                            />
+                                            기존 마스터 전체 대체 (새 프로젝트 기준 설정 - 권장)
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                            <input
+                                                type="radio"
+                                                name="rfpApplyMode"
+                                                value="merge"
+                                                checked={rfpApplyMode === 'merge'}
+                                                onChange={() => setRfpApplyMode('merge')}
+                                                style={{ accentColor: '#10b981' }}
+                                            />
+                                            기존 마스터에 병합 (기존 내용 유지 + 신규 추출분 추가)
+                                        </label>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button
+                                            onClick={() => setExtractedRfpData(null)}
+                                            className="btn-outline"
+                                            style={{ padding: '8px 14px', fontSize: '12.5px' }}
+                                        >
+                                            재설정
+                                        </button>
+                                        <button
+                                            onClick={handleApplyRfpToMaster}
+                                            className="btn-primary"
+                                            style={{
+                                                padding: '8px 22px',
+                                                fontSize: '13px',
+                                                fontWeight: 700,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                background: 'linear-gradient(135deg, #10b981, #059669)',
+                                                boxShadow: '0 2px 10px rgba(16, 185, 129, 0.35)'
+                                            }}
+                                        >
+                                            <Check size={16} />
+                                            마스터 정보로 즉시 적용하기
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

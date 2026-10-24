@@ -1014,3 +1014,457 @@ export async function exportSSOTReportToExcel({
     const downloadName = `통합_정합성_검수_리포트_${(fileName || '산출물').replace(/\.[^/.]+$/, '')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
     saveAs(blob, downloadName);
 }
+
+// ── 7. RFP(제안요청서) 파싱 및 마스터 정보 추출 엔진 ────────────────
+/**
+ * 룰 기반 결정론적 RFP 분석기 (초고속, 오프라인)
+ */
+export function extractRfpWithRules(text, tables = []) {
+    let projectName = '';
+    let clientAgency = '';
+    let period = '';
+    let budget = '';
+
+    const cleanText = text || '';
+
+    // 1) 사업명 탐색
+    const nameMatch = cleanText.match(/(?:사업명|과업명|용역명|프로젝트명|입찰건명|건\s*명)\s*[:：\t|]\s*([^\n\r]+)/i)
+        || cleanText.match(/(?:사업명|과업명|용역명|입찰건명)\s*\n\s*([^\n\r]+)/i);
+    if (nameMatch) {
+        projectName = nameMatch[1].replace(/^[\[<"']|[\]>"']$/g, '').trim();
+    } else {
+        const lines = cleanText.split(/\r?\n/).map(l => l.trim()).filter(Boolean).slice(0, 15);
+        for (const l of lines) {
+            if (l.includes('사업') || l.includes('플랫폼') || l.includes('시스템') || l.includes('ISP') || l.includes('ISMP') || l.includes('구축')) {
+                if (l.length >= 8 && l.length <= 60 && !l.includes('목차') && !l.includes('개요')) {
+                    projectName = l.replace(/^[\[<"']|[\]>"']$/g, '').trim();
+                    break;
+                }
+            }
+        }
+    }
+
+    // 2) 발주기관 탐색
+    const agencyMatch = cleanText.match(/(?:발주기관|수요기관|주관기관|발주처|수요기관명|발주기관명)\s*[:：\t|]\s*([^\n\r]+)/i)
+        || cleanText.match(/(?:발주기관|수요기관|주관기관|발주처)\s*\n\s*([^\n\r]+)/i);
+    if (agencyMatch) {
+        clientAgency = agencyMatch[1].replace(/^[\[<"']|[\]>"']$/g, '').trim();
+    } else {
+        const agencyRegex = /([가-힣]{2,20}(?:의료원|병원|지원센터|정보원|공단|진흥원|재단|보건복지부|질병관리청|과학기술정보통신부|행정안전부|청|부|처|원))/;
+        const am = cleanText.slice(0, 3000).match(agencyRegex);
+        if (am) {
+            clientAgency = am[1].trim();
+        }
+    }
+
+    // 3) 사업기간 탐색
+    const periodMatch = cleanText.match(/(?:사업기간|과업기간|수행기간|용역기간|계약기간)\s*[:：\t|]\s*([^\n\r]+)/i)
+        || cleanText.match(/(?:사업기간|과업기간|수행기간)\s*\n\s*([^\n\r]+)/i)
+        || cleanText.match(/(?:계약(?:체결)?일로부터\s*[^.\n\r]+(?:개월|일간|일|이내))/i)
+        || cleanText.match(/(?:\d{4}[.\-/]\d{1,2}\s*~\s*\d{4}[.\-/]\d{1,2}(?:\s*\([^)]+\))?)/);
+    if (periodMatch) {
+        period = (periodMatch[1] || periodMatch[0]).replace(/^[\[<"']|[\]>"']$/g, '').trim();
+    }
+
+    // 4) 총사업비 탐색
+    const budgetMatch = cleanText.match(/(?:총\s*사업비|사업\s*예산|배정\s*예산|추정\s*가격|기초\s*금액|소요\s*예산|사업비|소요예산액)\s*[:：\t|]\s*([^\n\r]+)/i)
+        || cleanText.match(/(?:사업예산|총\s*사업비)\s*\n\s*([^\n\r]+)/i)
+        || cleanText.match(/(\d{1,3}(?:,\d{3})+(?:원|천원|백만원|억원)(?:\s*\([^)]+\))?)/);
+    if (budgetMatch) {
+        budget = (budgetMatch[1] || budgetMatch[0]).replace(/^[\[<"']|[\]>"']$/g, '').trim();
+    }
+
+    // 5) 요구사항 목록 추출 (표 우선 -> 텍스트 보완)
+    const requirements = [];
+    const seenReqIds = new Set();
+
+    if (Array.isArray(tables)) {
+        for (const tbl of tables) {
+            const rows = tbl.rows || [];
+            if (rows.length < 2) continue;
+
+            const header = rows[0].map(c => (c || '').replace(/\s+/g, '').toLowerCase());
+            let idCol = header.findIndex(h => h.includes('id') || h.includes('번호') || h.includes('식별자') || h.includes('코드'));
+            let nameCol = header.findIndex(h => h.includes('명') || h.includes('요구사항명') || h.includes('명칭') || h.includes('제목'));
+            let descCol = header.findIndex(h => h.includes('내용') || h.includes('설명') || h.includes('정의') || h.includes('키워드'));
+
+            for (let r = 1; r < rows.length; r++) {
+                const row = rows[r];
+                let reqId = '';
+                let reqName = '';
+                let reqDesc = '';
+
+                if (idCol >= 0 && row[idCol]) {
+                    const m = row[idCol].match(/[A-Z]{2,5}-\d{2,4}/i);
+                    if (m) reqId = m[0].toUpperCase();
+                }
+
+                if (!reqId) {
+                    for (let c = 0; c < row.length; c++) {
+                        const m = (row[c] || '').match(/^[A-Z]{2,5}-\d{2,4}$/i);
+                        if (m) {
+                            reqId = m[0].toUpperCase();
+                            if (nameCol < 0 && row[c + 1]) reqName = row[c + 1];
+                            break;
+                        }
+                    }
+                }
+
+                if (reqId && !seenReqIds.has(reqId)) {
+                    if (!reqName && nameCol >= 0 && row[nameCol]) {
+                        reqName = row[nameCol].trim();
+                    }
+                    if (descCol >= 0 && row[descCol]) {
+                        reqDesc = row[descCol].trim();
+                    }
+
+                    let keywords = '';
+                    if (reqDesc) {
+                        const words = reqDesc
+                            .replace(/[()[\]{}.,~;:_!?"'`/\\|]/g, ' ')
+                            .split(/\s+/)
+                            .map(w => w.trim())
+                            .filter(w => w.length >= 2 && !['체계', '구축', '방안', '수립', '및', '관한', '위한', '지원', '제공', '등', '에', '의', '수행', '대상'].includes(w));
+                        keywords = Array.from(new Set(words)).slice(0, 5).join(', ');
+                    }
+
+                    seenReqIds.add(reqId);
+                    requirements.push({
+                        id: reqId,
+                        name: reqName || `요구사항 ${reqId}`,
+                        keywords: keywords || reqName.split(/\s+/).filter(w => w.length >= 2).slice(0, 4).join(', ')
+                    });
+                }
+            }
+        }
+    }
+
+    // 텍스트 본문 정규식 보완
+    const lineRegex = /(?:^|[•\s*-]+)([A-Z]{2,5}-\d{2,4})\s*[:：|/–—\-]\s*([^\n\r]+)/g;
+    let lm;
+    while ((lm = lineRegex.exec(cleanText)) !== null) {
+        const id = lm[1].trim().toUpperCase();
+        if (!seenReqIds.has(id)) {
+            let fullStr = lm[2].trim();
+            let keywords = '';
+            const bracketMatch = fullStr.match(/\[([^\]]+)\]/);
+            if (bracketMatch) {
+                keywords = bracketMatch[1].trim();
+                fullStr = fullStr.replace(/\[[^\]]+\]/, '').trim();
+            }
+            seenReqIds.add(id);
+            requirements.push({
+                id,
+                name: fullStr,
+                keywords: keywords || fullStr.split(/\s+/).filter(w => w.length >= 2).slice(0, 4).join(', ')
+            });
+        }
+    }
+
+    // 6) 표준 용어 추출 (RFP 내 빈출 주요 약어 및 공공 의료/행정 고유명사)
+    const glossary = [];
+    const seenTerms = new Set();
+
+    const acronymMatches = cleanText.match(/\b[A-Z]{2,6}\b/g) || [];
+    const acronymCounts = {};
+    for (const a of acronymMatches) {
+        if (!['RFP', 'HWP', 'PPT', 'DOC', 'PDF', 'URL', 'ZIP', 'JPG', 'PNG', 'VAT'].includes(a)) {
+            acronymCounts[a] = (acronymCounts[a] || 0) + 1;
+        }
+    }
+
+    const sortedAcronyms = Object.entries(acronymCounts)
+        .filter(([_, count]) => count >= 2)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8);
+
+    for (const [acronym] of sortedAcronyms) {
+        if (!seenTerms.has(acronym.toLowerCase())) {
+            seenTerms.add(acronym.toLowerCase());
+            glossary.push({
+                id: `glo-rfp-${Date.now()}-${glossary.length + 1}`,
+                category: '약어',
+                approved: acronym,
+                forbidden: `${acronym.toLowerCase()}, ${acronym.slice(0, -1)}`,
+                note: `RFP 본문 다빈도 출현 표준 약어`
+            });
+        }
+    }
+
+    if (clientAgency && !seenTerms.has(clientAgency.toLowerCase())) {
+        seenTerms.add(clientAgency.toLowerCase());
+        glossary.unshift({
+            id: `glo-rfp-agency`,
+            category: '기관명',
+            approved: clientAgency,
+            forbidden: clientAgency.replace(/(의료원|병원|지원센터|공단|진흥원)$/, ''),
+            note: 'RFP 발주기관 공식 명칭'
+        });
+    }
+
+    if (projectName) {
+        const sysMatch = projectName.match(/([가-힣A-Za-z0-9]+(?:플랫폼|시스템|포털|고속도로|데이터셋|체계))/);
+        if (sysMatch && !seenTerms.has(sysMatch[1].toLowerCase())) {
+            seenTerms.add(sysMatch[1].toLowerCase());
+            glossary.push({
+                id: `glo-rfp-sys`,
+                category: '시스템명',
+                approved: sysMatch[1],
+                forbidden: sysMatch[1].replace(/\s+/g, ' '),
+                note: 'RFP 대상 핵심 시스템 명칭'
+            });
+        }
+    }
+
+    return {
+        metadata: {
+            projectName: projectName || '제안요청서 대상 사업',
+            clientAgency: clientAgency || '발주기관',
+            period: period || '계약체결일로부터 8개월',
+            budget: budget || '사업예산액'
+        },
+        requirements,
+        glossary
+    };
+}
+
+/**
+ * Gemini AI 기반 심층 RFP 분석기
+ */
+export async function extractRfpWithAI({
+    text,
+    tables = [],
+    apiKey,
+    modelId = 'gemini-2.5-flash',
+    onProgress = () => {}
+}) {
+    onProgress({ percent: 20, message: 'RFP 핵심 요약 및 요구사항 표 데이터 선별 중...' });
+
+    const textSnippet = (text || '').slice(0, 15000);
+
+    const tableSnippets = (tables || []).slice(0, 6).map((t, idx) => {
+        const rowsStr = (t.rows || []).slice(0, 25).map(r => r.join(' | ')).join('\n');
+        return `[표 #${idx + 1} (${t.source || '표'})]:\n${rowsStr}`;
+    }).join('\n\n');
+
+    const prompt = `당신은 공공기관 정보화전략계획(ISP/ISMP) 및 IT 공공제안요청서(RFP) 분석 전문 수석 감리위원입니다.
+제공된 제안요청서(RFP) 문서 원문과 표 데이터를 정밀 분석하여, 향후 제안서 및 산출물 정합성 검증의 기준이 될 [단일 진실 원천(SSOT) 마스터 정보]를 추출하십시오.
+
+[제안요청서(RFP) 텍스트 발췌]:
+${textSnippet}
+
+${tableSnippets ? `[제안요청서 표 발췌]:\n${tableSnippets}\n` : ''}
+
+[추출 지침]:
+1. metadata:
+   - projectName: 공식 사업명 (예: 2026년 공공보건의료 AI 기반 지능형 플랫폼 구축 ISP)
+   - clientAgency: 발주기관/수요기관 공식 명칭 (예: 국립중앙의료원)
+   - period: 사업기간 (예: 계약체결일로부터 8개월간 (2026.04 ~ 2026.11))
+   - budget: 총사업비/배정예산 (숫자 및 한글 표기, 부가세 포함 여부)
+2. requirements:
+   - RFP 내에 명시된 요구사항 고유번호(ID: 예 CNR-001, SFR-001, PMR-001 등), 요구사항명, 필수 핵심키워드(쉼표 구분)
+3. glossary:
+   - RFP에서 정의하거나 자주 등장하는 핵심 기관명, 시스템명, 행정용어, 약어, 기술용어 8~15개
+   - category: '기관명' | '시스템명' | '행정용어' | '약어' | '기술용어'
+   - approved: 표준 공식 표기
+   - forbidden: 제안서 작성자가 흔히 범하는 오표기, 띄어쓰기 오류, 금지동의어 (쉼표 구분)
+   - note: 선정 사유 또는 RFP 출처
+
+반드시 아래 JSON 스키마를 만족하는 순수 JSON 객체 포맷으로만 응답하십시오. 백틱(\`\`\`json) 없이 순수 JSON만 출력하십시오.
+{
+  "metadata": {
+    "projectName": "사업명",
+    "clientAgency": "발주기관명",
+    "period": "사업기간",
+    "budget": "총사업비"
+  },
+  "requirements": [
+    { "id": "CNR-001", "name": "요구사항명", "keywords": "키워드1, 키워드2" }
+  ],
+  "glossary": [
+    { "category": "기관명", "approved": "표준어", "forbidden": "오표기, 금지어", "note": "비고" }
+  ]
+}
+`;
+
+    onProgress({ percent: 50, message: 'Gemini AI로 마스터 메타데이터, 요구사항, 표준용어 정밀 추출 중...' });
+
+    const aiRes = await callGeminiProxyWithJson({
+        apiKey,
+        modelId,
+        prompt,
+        chunkIndex: 0
+    });
+
+    onProgress({ percent: 90, message: '추출 데이터 구조화 및 정합성 검증 중...' });
+
+    let parsed = null;
+    if (aiRes) {
+        if (Array.isArray(aiRes) && aiRes.length > 0 && aiRes[0]?.metadata) {
+            parsed = aiRes[0];
+        } else if (aiRes.metadata) {
+            parsed = aiRes;
+        }
+    }
+
+    return parsed;
+}
+
+/**
+ * RFP 통합 분석 실행기 (규칙 기반 + AI 하이브리드 지원)
+ */
+export async function parseRfpContent({
+    text,
+    tables = [],
+    apiKey = '',
+    modelId = 'gemini-2.5-flash',
+    useAI = false,
+    onProgress = () => {}
+}) {
+    onProgress({ percent: 10, message: '결정론적 룰 기반 RFP 1차 파싱 중...' });
+    const ruleResult = extractRfpWithRules(text, tables);
+
+    if (!useAI || !apiKey) {
+        onProgress({ percent: 100, message: 'RFP 룰 기반 분석 완료' });
+        return {
+            ...ruleResult,
+            source: 'RULES',
+            ruleReqCount: ruleResult.requirements.length,
+            ruleGlossaryCount: ruleResult.glossary.length
+        };
+    }
+
+    try {
+        const aiResult = await extractRfpWithAI({
+            text,
+            tables,
+            apiKey,
+            modelId,
+            onProgress
+        });
+
+        if (!aiResult) {
+            return { ...ruleResult, source: 'RULES (AI 응답 없음)' };
+        }
+
+        // AI 결과와 룰 결과를 상호 보완 병합
+        const mergedMetadata = {
+            projectName: aiResult.metadata?.projectName || ruleResult.metadata.projectName,
+            clientAgency: aiResult.metadata?.clientAgency || ruleResult.metadata.clientAgency,
+            period: aiResult.metadata?.period || ruleResult.metadata.period,
+            budget: aiResult.metadata?.budget || ruleResult.metadata.budget
+        };
+
+        // 요구사항: AI 결과 우선, 룰 기반 요구사항 중 누락된 ID 보완
+        const reqMap = new Map();
+        (ruleResult.requirements || []).forEach(r => reqMap.set(r.id.toUpperCase(), r));
+        (aiResult.requirements || []).forEach(r => {
+            if (r.id) {
+                reqMap.set(r.id.toUpperCase(), {
+                    id: r.id.toUpperCase(),
+                    name: r.name || `요구사항 ${r.id}`,
+                    keywords: r.keywords || ''
+                });
+            }
+        });
+        const mergedReqs = Array.from(reqMap.values());
+
+        // 용어사전: AI 결과 + 룰 결과 병합
+        const gloMap = new Map();
+        (ruleResult.glossary || []).forEach(g => gloMap.set(g.approved.toLowerCase(), g));
+        (aiResult.glossary || []).forEach((g, idx) => {
+            if (g.approved) {
+                const key = g.approved.toLowerCase();
+                gloMap.set(key, {
+                    id: `glo-ai-${Date.now()}-${idx + 1}`,
+                    category: g.category || '행정용어',
+                    approved: g.approved,
+                    forbidden: g.forbidden || '',
+                    note: g.note || 'Gemini AI 추출 표준용어'
+                });
+            }
+        });
+        const mergedGlossary = Array.from(gloMap.values());
+
+        onProgress({ percent: 100, message: 'Gemini AI 심층 분석 및 마스터 추출 완료' });
+
+        return {
+            metadata: mergedMetadata,
+            requirements: mergedReqs,
+            glossary: mergedGlossary,
+            source: 'HYBRID_AI',
+            ruleReqCount: ruleResult.requirements.length,
+            aiReqCount: (aiResult.requirements || []).length
+        };
+    } catch (err) {
+        console.warn('AI RFP 분석 실패, 룰 결과로 폴백:', err);
+        return {
+            ...ruleResult,
+            source: 'RULES (AI 폴백)',
+            ruleReqCount: ruleResult.requirements.length
+        };
+    }
+}
+
+/**
+ * 추출된 RFP 데이터를 프로젝트 SSOT 마스터 정보에 적용하는 헬퍼
+ * mode: 'replace' (전체 대체) | 'merge' (기존 데이터에 병합)
+ */
+export function applyRfpToMasterData(currentMaster, rfpData, mode = 'replace') {
+    const newMetadata = {
+        projectName: rfpData.metadata?.projectName || currentMaster.metadata?.projectName || DEFAULT_PROJECT_METADATA.projectName,
+        clientAgency: rfpData.metadata?.clientAgency || currentMaster.metadata?.clientAgency || DEFAULT_PROJECT_METADATA.clientAgency,
+        period: rfpData.metadata?.period || currentMaster.metadata?.period || DEFAULT_PROJECT_METADATA.period,
+        budget: rfpData.metadata?.budget || currentMaster.metadata?.budget || DEFAULT_PROJECT_METADATA.budget
+    };
+
+    let newRequirements = [];
+    if (mode === 'replace') {
+        newRequirements = Array.isArray(rfpData.requirements) && rfpData.requirements.length > 0
+            ? rfpData.requirements
+            : (currentMaster.requirements || DEFAULT_REQUIREMENTS);
+    } else {
+        const reqMap = new Map();
+        (currentMaster.requirements || []).forEach(r => reqMap.set(r.id.toUpperCase(), { ...r }));
+        (rfpData.requirements || []).forEach(r => {
+            if (r.id) {
+                const key = r.id.toUpperCase();
+                reqMap.set(key, { ...(reqMap.get(key) || {}), ...r });
+            }
+        });
+        newRequirements = Array.from(reqMap.values());
+    }
+
+    let newGlossary = [];
+    if (mode === 'replace') {
+        newGlossary = Array.isArray(rfpData.glossary) && rfpData.glossary.length > 0
+            ? rfpData.glossary
+            : (currentMaster.glossary || DEFAULT_GLOSSARY);
+    } else {
+        const gloMap = new Map();
+        (currentMaster.glossary || []).forEach(g => gloMap.set(g.approved.toLowerCase(), { ...g }));
+        (rfpData.glossary || []).forEach((g, idx) => {
+            if (g.approved) {
+                const key = g.approved.toLowerCase();
+                const existing = gloMap.get(key);
+                gloMap.set(key, {
+                    id: existing?.id || `glo-${Date.now()}-${idx}`,
+                    category: g.category || existing?.category || '행정용어',
+                    approved: g.approved,
+                    forbidden: g.forbidden || existing?.forbidden || '',
+                    note: g.note || existing?.note || ''
+                });
+            }
+        });
+        newGlossary = Array.from(gloMap.values());
+    }
+
+    const updated = {
+        metadata: newMetadata,
+        requirements: newRequirements,
+        glossary: newGlossary
+    };
+
+    saveSSOTData(updated);
+    return updated;
+}
