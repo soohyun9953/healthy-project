@@ -12,6 +12,7 @@ import IsmpDaDashboard from './components/IsmpDaDashboard';
 import PptValidator from './components/PptValidator';
 import SSOTValidatorView from './components/SSOTValidatorView';
 import UniformDocGeneratorView from './components/UniformDocGeneratorView';
+import InterviewCascadeView from './components/InterviewCascadeView';
 import G2bSearch from './components/G2bSearch';
 import { get_random_quote } from './data/projectQuotes';
 import { 
@@ -24,6 +25,7 @@ import {
   Presentation,
   CheckCircle2, 
   MessageSquare, 
+  MessagesSquare,
   Database, 
   Settings, 
   Key, 
@@ -127,6 +129,39 @@ class ErrorBoundary extends React.Component {
 
 // ── 탭별 상세 가이드 데이터 ─────────────────────────
 const tab_guides = {
+  ssot: {
+    title: '정합성·용어 검증 (SSOT)',
+    desc: '프로젝트 마스터 정보(사업명/발주처/기간/예산), 표준 용어사전, 요구사항 마스터를 기준으로 산출물(HWPX, DOCX, PPTX, XLSX, PDF)의 금지어·오표기, 요구사항 ID 누락/유령ID, 수치 불일치 및 AI 심층 정합성을 검증합니다.',
+    steps: [
+      '표준 용어사전 및 요구사항 마스터 확인 (사전 프리셋 로드 또는 엑셀 일괄 업로드)',
+      '검수 대상 산출물 파일 드롭존에 업로드',
+      '[1단계 Rule 검증] 및 [2단계 Gemini AI 심층 정합성 검증] 실행',
+      '적발된 결함 내역 확인, 인라인 수정안 검토 및 검수 리포트 엑셀(.xlsx) 다운로드'
+    ],
+    tips: '금지동의어에 등록된 비표준 단어는 문서 내 정확한 위치와 대체 표준용어가 즉시 표시됩니다.'
+  },
+  'uniform-doc': {
+    title: '표준 산출물 일괄 생성 (디자인 토큰)',
+    desc: '통합 디자인 토큰(테마 색상/폰트/레이아웃)을 바탕으로 5대 표준 컨설팅 장표 템플릿(표, Before/After 비교, 프로세스, 2단 카드, 매트릭스) 기반의 PPTX/DOCX/XLSX 산출물을 일괄 스캐폴딩 생성합니다.',
+    steps: [
+      '디자인 테마 선택 (공공기관 표준 네이비 / KITC 블루 / 모던 다크)',
+      '목차 엑셀 업로드 또는 기본 8대 핵심 목차 프리셋 편집',
+      '슬라이드별 5대 레이아웃 타입 및 헤드메시지, 핵심 내용 지정',
+      '[3종 표준 산출물 일괄 생성 (ZIP)] 클릭으로 PPTX, DOCX, XLSX 동시 빌드'
+    ],
+    tips: '와이드(16:9)와 A4 인쇄용(4:3) 비율을 원클릭으로 전환하여 생성할 수 있습니다.'
+  },
+  'interview-cascade': {
+    title: '인터뷰→산출물 연쇄생성 (OSMU)',
+    desc: '다중 인터뷰/회의록 원문(.hwpx, .docx, .txt, .md)을 AI가 일괄 분석하여 요약, 현황(As-Is), 개선방향(To-Be), 요구사항정의서를 연쇄 도출하고, 엑셀·PPTX·Word 3종 산출물을 1클릭 패키징(ZIP) 다운로드합니다.',
+    steps: [
+      '인터뷰/회의록 파일들을 드래그 앤 드롭으로 업로드하거나 [샘플 회의록 3종 로드] 클릭',
+      '자동 파싱된 일자, 부서, 면담자 메타데이터 확인 및 [1-Click 연쇄 데이터 추출 시작] 클릭',
+      '4개 탭(요약, As-Is, To-Be, 요구사항)에서 도출 결과를 인라인 검토 및 수정',
+      '[연쇄 산출물 일괄 다운로드 (ZIP)] 클릭으로 Excel/PPTX/Word 3종 세트 일괄 저장 및 [SSOT 마스터로 등록]으로 정합성 마스터 연동'
+    ],
+    tips: '도출된 요구사항을 [SSOT 마스터로 등록]하면 1순위 정합성 검증기에서 실시간 누락(Missing ID) 및 유령 ID(Ghost ID) 검증에 즉시 활용할 수 있습니다.'
+  },
   ppt: {
     title: 'PPT 생성(표준산출물)',
     desc: '표준 파워포인트(.pptx) 산출물 일괄편집(단어 치환, 폰트/표 표준화, 슬라이드 노트 일괄 삭제 등), 목차 분석 기반 하위 목차별 분할 생성, 엑셀 데이터 매핑 생성, 스마트 애니메이션, PPT ➜ HWPX 양식 융합 및 포맷 변환을 통합 제공합니다.',
@@ -343,6 +378,9 @@ function App() {
   useEffect(() => {
     const tabLabels = {
       ppt: 'PPT 생성(표준산출물)',
+      'ssot': '정합성·용어 검증 (SSOT)',
+      'uniform-doc': '표준 산출물 일괄 생성',
+      'interview-cascade': '인터뷰→산출물 연쇄생성',
       hwpx: 'HWPX 생성(HWP 변환)',
       'ppt-verify': '표준산출물 검증',
       main: 'AI 기준문서 대비 산출물 검증',
@@ -422,6 +460,7 @@ function App() {
     { id: 'ppt-verify', label: '표준산출물 검증', icon: ShieldAlert, color: '#e11d48', useGemini: false },
     { id: 'ssot', label: '정합성·용어 검증 (SSOT)', icon: FileCheck2, color: '#10b981', useGemini: true },
     { id: 'uniform-doc', label: '표준 산출물 일괄 생성', icon: Layers, color: '#6366f1', useGemini: true },
+    { id: 'interview-cascade', label: '인터뷰→산출물 연쇄생성', icon: MessagesSquare, color: '#8b5cf6', useGemini: true },
     { id: 'main', label: 'AI 기준문서 대비 산출물 검증', icon: Shield, color: 'var(--accent-blue)', useGemini: true },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
     { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6', useGemini: true },
@@ -456,7 +495,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.20.0</span>
+                <span>AI 산출물 검수 v2.21.0</span>
               </div>
             )}
           </div>
@@ -1032,6 +1071,7 @@ function App() {
             { activeTab === 'ppt-verify' && <PptValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
             { activeTab === 'ssot' && <SSOTValidatorView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
             { activeTab === 'uniform-doc' && <UniformDocGeneratorView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
+            { activeTab === 'interview-cascade' && <InterviewCascadeView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
             {activeTab === 'meeting' && <MeetingMinutes apiKey={apiKey} />}
             {activeTab === 'library' && <ReferenceLibrary />}
             {activeTab === 'rag' && <RagKnowledgeBase apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
