@@ -14,6 +14,7 @@ import SSOTValidatorView from './components/SSOTValidatorView';
 import UniformDocGeneratorView from './components/UniformDocGeneratorView';
 import InterviewCascadeView from './components/InterviewCascadeView';
 import BatchAutomationView from './components/BatchAutomationView';
+import PptxMasterInspectorView from './components/PptxMasterInspectorView';
 import G2bSearch from './components/G2bSearch';
 import { get_random_quote } from './data/projectQuotes';
 import { 
@@ -28,6 +29,7 @@ import {
   MessageSquare, 
   MessagesSquare,
   Workflow,
+  SlidersHorizontal,
   Database, 
   Settings, 
   Key, 
@@ -152,6 +154,17 @@ const tab_guides = {
       '[3종 표준 산출물 일괄 생성 (ZIP)] 클릭으로 PPTX, DOCX, XLSX 동시 빌드'
     ],
     tips: '와이드(16:9)와 A4 인쇄용(4:3) 비율을 원클릭으로 전환하여 생성할 수 있습니다.'
+  },
+      'pptx-master': {
+    title: 'PPT 표준양식 검수·교정',
+    desc: '공공기관 및 보건의료 ISP 표준 골든 마스터 PPTX(v0.95D 등)의 규격(허용 폰트, 테마 컬러, 5대 표준 영역 좌표)을 추출하고, 산출물 장표의 비표준 폰트·좌표 이탈·출처 표기 오류를 정밀 적발하여 원본 이미지와 차트 손실 없이 1클릭으로 자동 교정합니다.',
+    steps: [
+      '기준 마스터 양식(.pptx)을 업로드하여 표준 규격을 추출하거나 기본 골든마스터 프리셋 사용',
+      '검수할 산출물 PPTX 파일들을 업로드하여 실시간 서식 정합성 분석',
+      '슬라이드별 위반 사항(비표준 폰트, 좌표 이탈, 출처 포맷, 마침표 누락) 검토',
+      '[원클릭 표준 서식 자동 교정 (.pptx)] 또는 [서식 검수 리포트 (.xlsx)] 다운로드'
+    ],
+    tips: '자동 교정 기능은 OpenXML DOM을 직접 조작하므로 원본의 복잡한 다이어그램, 스마트아트, 고해상도 이미지가 100% 손실 없이 보존됩니다.'
   },
     'batch-automation': {
     title: '다중 파일 일괄 자동화 (Batch)',
@@ -395,6 +408,7 @@ function App() {
       'uniform-doc': '표준 산출물 일괄 생성',
       'interview-cascade': '인터뷰→산출물 연쇄생성',
       'batch-automation': '다중 파일 일괄 자동화 (Batch)',
+      'pptx-master': 'PPT 표준양식 검수·교정',
       hwpx: 'HWPX 생성(HWP 변환)',
       'ppt-verify': '표준산출물 검증',
       main: 'AI 기준문서 대비 산출물 검증',
@@ -475,6 +489,7 @@ function App() {
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
     { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6', useGemini: true },
     { id: 'g2b', label: '나라장터 정보조회', icon: Building2, color: 'var(--accent-blue)', useGemini: false },
+    { id: 'pptx-master', label: 'PPT 표준양식 검수·교정', icon: SlidersHorizontal, color: '#f97316', useGemini: false },
     { id: 'ssot', label: '정합성·용어 검증 (SSOT)', icon: FileCheck2, color: '#10b981', useGemini: true },
     { id: 'uniform-doc', label: '표준 산출물 일괄 생성', icon: Layers, color: '#6366f1', useGemini: true },
     { id: 'interview-cascade', label: '인터뷰→산출물 연쇄생성', icon: MessagesSquare, color: '#8b5cf6', useGemini: true },
@@ -510,7 +525,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.22.0</span>
+                <span>AI 산출물 검수 v2.23.0</span>
               </div>
             )}
           </div>
@@ -1088,6 +1103,7 @@ function App() {
             { activeTab === 'uniform-doc' && <UniformDocGeneratorView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
             { activeTab === 'interview-cascade' && <InterviewCascadeView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
             { activeTab === 'batch-automation' && <BatchAutomationView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
+            { activeTab === 'pptx-master' && <PptxMasterInspectorView /> }
             {activeTab === 'meeting' && <MeetingMinutes apiKey={apiKey} />}
             {activeTab === 'library' && <ReferenceLibrary />}
             {activeTab === 'rag' && <RagKnowledgeBase apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
