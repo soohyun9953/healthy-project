@@ -13,6 +13,7 @@ import PptValidator from './components/PptValidator';
 import SSOTValidatorView from './components/SSOTValidatorView';
 import UniformDocGeneratorView from './components/UniformDocGeneratorView';
 import InterviewCascadeView from './components/InterviewCascadeView';
+import BatchAutomationView from './components/BatchAutomationView';
 import G2bSearch from './components/G2bSearch';
 import { get_random_quote } from './data/projectQuotes';
 import { 
@@ -26,6 +27,7 @@ import {
   CheckCircle2, 
   MessageSquare, 
   MessagesSquare,
+  Workflow,
   Database, 
   Settings, 
   Key, 
@@ -150,6 +152,17 @@ const tab_guides = {
       '[3종 표준 산출물 일괄 생성 (ZIP)] 클릭으로 PPTX, DOCX, XLSX 동시 빌드'
     ],
     tips: '와이드(16:9)와 A4 인쇄용(4:3) 비율을 원클릭으로 전환하여 생성할 수 있습니다.'
+  },
+    'batch-automation': {
+    title: '다중 파일 일괄 자동화 (Batch)',
+    desc: '10~30개 산출물(.pptx, .docx, .hwpx, .xlsx, .pdf)을 드래그 앤 드롭으로 일괄 등록하여 동시성 제어 큐로 검수하고, 브라우저 내장 IndexedDB RAG 가이드라인 대조와 함께 엑셀 통합 대시보드 및 Word Redline 교정본을 1클릭 ZIP 패키지로 다운로드합니다.',
+    steps: [
+      '검수 대상 파일들을 큐 드롭존에 업로드 (또는 체험용 샘플 4종 클릭)',
+      '동시 검수 수(1~4개), AI 문맥 검수 및 브라우저 RAG 가이드라인 주입 옵션 설정',
+      '[배치 검수 시작] 클릭 시 실시간 프로그레스 바 및 429 지수 백오프 자동 재시도 동작',
+      '검수 완료 후 [산출물 일괄검수 패키지 (ZIP)] 클릭으로 통합 엑셀 대시보드와 개별 Word 교정본 일괄 저장'
+    ],
+    tips: '서버가 없는 Vercel/GitHub Pages 환경에서도 브라우저 내장 IndexedDB RAG를 통해 가이드라인(PDF/HWPX/DOCX)을 직접 청킹·검색하여 AI 검수에 주입합니다.'
   },
   'interview-cascade': {
     title: '인터뷰→산출물 연쇄생성 (OSMU)',
@@ -381,6 +394,7 @@ function App() {
       'ssot': '정합성·용어 검증 (SSOT)',
       'uniform-doc': '표준 산출물 일괄 생성',
       'interview-cascade': '인터뷰→산출물 연쇄생성',
+      'batch-automation': '다중 파일 일괄 자동화 (Batch)',
       hwpx: 'HWPX 생성(HWP 변환)',
       'ppt-verify': '표준산출물 검증',
       main: 'AI 기준문서 대비 산출물 검증',
@@ -461,6 +475,7 @@ function App() {
     { id: 'ssot', label: '정합성·용어 검증 (SSOT)', icon: FileCheck2, color: '#10b981', useGemini: true },
     { id: 'uniform-doc', label: '표준 산출물 일괄 생성', icon: Layers, color: '#6366f1', useGemini: true },
     { id: 'interview-cascade', label: '인터뷰→산출물 연쇄생성', icon: MessagesSquare, color: '#8b5cf6', useGemini: true },
+    { id: 'batch-automation', label: '다중 파일 일괄 자동화 (Batch)', icon: Workflow, color: '#ec4899', useGemini: true },
     { id: 'main', label: 'AI 기준문서 대비 산출물 검증', icon: Shield, color: 'var(--accent-blue)', useGemini: true },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
     { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6', useGemini: true },
@@ -495,7 +510,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.21.0</span>
+                <span>AI 산출물 검수 v2.22.0</span>
               </div>
             )}
           </div>
@@ -1072,6 +1087,7 @@ function App() {
             { activeTab === 'ssot' && <SSOTValidatorView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
             { activeTab === 'uniform-doc' && <UniformDocGeneratorView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
             { activeTab === 'interview-cascade' && <InterviewCascadeView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
+            { activeTab === 'batch-automation' && <BatchAutomationView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
             {activeTab === 'meeting' && <MeetingMinutes apiKey={apiKey} />}
             {activeTab === 'library' && <ReferenceLibrary />}
             {activeTab === 'rag' && <RagKnowledgeBase apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
