@@ -10,10 +10,12 @@ import AiPptDesigner from './components/AiPptDesigner';
 import RagKnowledgeBase from './components/RagKnowledgeBase';
 import IsmpDaDashboard from './components/IsmpDaDashboard';
 import PptValidator from './components/PptValidator';
+import SSOTValidatorView from './components/SSOTValidatorView';
 import G2bSearch from './components/G2bSearch';
 import { get_random_quote } from './data/projectQuotes';
 import { 
   Shield, 
+  FileCheck2,
   ShieldAlert,
   Activity, 
   FileText, 
@@ -416,6 +418,7 @@ function App() {
   const tabs = [
     { id: 'ppt', label: 'PPT 생성(표준산출물)', icon: FileText, color: '#f97316', useGemini: false },
     { id: 'ppt-verify', label: '표준산출물 검증', icon: ShieldAlert, color: '#e11d48', useGemini: false },
+    { id: 'ssot', label: '정합성·용어 검증 (SSOT)', icon: FileCheck2, color: '#10b981', useGemini: true },
     { id: 'main', label: 'AI 기준문서 대비 산출물 검증', icon: Shield, color: 'var(--accent-blue)', useGemini: true },
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
     { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6', useGemini: true },
@@ -450,7 +453,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.18.18</span>
+                <span>AI 산출물 검수 v2.19.0</span>
               </div>
             )}
           </div>
@@ -571,7 +574,7 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginRight: '8px' }}>
               <span className="mobile-hide-text" style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Last Update</span>
-              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.10.23 v2.18.18</span>
+              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.10.24 v2.19.0</span>
             </div>
             
             {/* Theme Mode Toggle Button */}
@@ -1024,6 +1027,7 @@ function App() {
             { activeTab === 'ppt' && <PptGenerator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
             { activeTab === 'g2b' && <G2bSearch /> }
             { activeTab === 'ppt-verify' && <PptValidator apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
+            { activeTab === 'ssot' && <SSOTValidatorView apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} /> }
             {activeTab === 'meeting' && <MeetingMinutes apiKey={apiKey} />}
             {activeTab === 'library' && <ReferenceLibrary />}
             {activeTab === 'rag' && <RagKnowledgeBase apiKey={apiKey} llmProvider={llmProvider} omniRouteModel={omniRouteModel} />}
