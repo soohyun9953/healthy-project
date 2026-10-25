@@ -62,6 +62,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
     const [isDragging, setIsDragging] = useState(false);
 
     // 검증 옵션
+    const [inspectionScope, setInspectionScope] = useState('unit'); // 'unit' (단위 산출물/특정 장표) | 'full' (종합 제안서/최종보고서)
     const [runStage1, setRunStage1] = useState(true);
     const [runStage2, setRunStage2] = useState(false);
     const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
@@ -424,7 +425,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
             // 3. Stage 1 결정론적 Rule 검증
             if (runStage1) {
                 setAiProgress({ current: 0, total: 100, percent: 30, message: 'Stage 1 결정론적 룰 및 RTM/수치 정합성 검증 중...' });
-                stage1Result = await runStage1Validation(fileContent, tables, ssotData);
+                stage1Result = await runStage1Validation(fileContent, tables, ssotData, { inspectionScope });
             }
 
             // 4. Stage 2 Gemini AI 문맥·오탈자 검증
@@ -949,38 +950,68 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                         </span>
                     </div>
 
-                    {/* 검증 단계 선택 체크박스 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'rgba(0,0,0,0.2)', padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--text-primary)' }}>
-                            <input
-                                type="checkbox"
-                                checked={runStage1}
-                                onChange={(e) => setRunStage1(e.target.checked)}
-                                style={{ accentColor: '#10b981' }}
-                            />
-                            Stage 1: 결정론적 Rule 검증 (무료·초고속)
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--text-primary)' }}>
-                            <input
-                                type="checkbox"
-                                checked={runStage2}
-                                onChange={(e) => setRunStage2(e.target.checked)}
-                                style={{ accentColor: '#a855f7' }}
-                            />
-                            Stage 2: Gemini AI 문맥·오탈자 검증
-                        </label>
-                        {runStage2 && (
-                            <select
-                                value={selectedModel}
-                                onChange={(e) => setSelectedModel(e.target.value)}
-                                style={{ padding: '3px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--panel-border)', color: '#a855f7', fontSize: '11.5px', fontWeight: 600 }}
-                            >
-                                <option value="gemini-2.5-flash">Gemini 2.5 Flash (권장)</option>
-                                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                            </select>
-                        )}
+                    {/* 검수 범위 및 단계 선택 제어 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        {/* 검수 범위 선택 (단위 산출물 vs 종합 보고서) */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(0,0,0,0.25)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)' }}>검수 범위:</span>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer', color: inspectionScope === 'unit' ? 'var(--accent-blue)' : 'var(--text-muted)', fontWeight: inspectionScope === 'unit' ? 700 : 500 }}>
+                                <input
+                                    type="radio"
+                                    name="inspectionScope"
+                                    value="unit"
+                                    checked={inspectionScope === 'unit'}
+                                    onChange={() => setInspectionScope('unit')}
+                                    style={{ accentColor: 'var(--accent-blue)' }}
+                                />
+                                단위 산출물 (특정 장표/챕터)
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer', color: inspectionScope === 'full' ? '#10b981' : 'var(--text-muted)', fontWeight: inspectionScope === 'full' ? 700 : 500 }}>
+                                <input
+                                    type="radio"
+                                    name="inspectionScope"
+                                    value="full"
+                                    checked={inspectionScope === 'full'}
+                                    onChange={() => setInspectionScope('full')}
+                                    style={{ accentColor: '#10b981' }}
+                                />
+                                종합 보고서 (전체 제안서)
+                            </label>
+                        </div>
+
+                        {/* 검증 단계 선택 체크박스 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', background: 'rgba(0,0,0,0.2)', padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={runStage1}
+                                    onChange={(e) => setRunStage1(e.target.checked)}
+                                    style={{ accentColor: '#10b981' }}
+                                />
+                                Stage 1: 결정론적 Rule 검증 (무료·초고속)
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={runStage2}
+                                    onChange={(e) => setRunStage2(e.target.checked)}
+                                    style={{ accentColor: '#a855f7' }}
+                                />
+                                Stage 2: Gemini AI 문맥·오탈자 검증
+                            </label>
+                            {runStage2 && (
+                                <select
+                                    value={selectedModel}
+                                    onChange={(e) => setSelectedModel(e.target.value)}
+                                    style={{ padding: '3px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--panel-border)', color: '#a855f7', fontSize: '11.5px', fontWeight: 600 }}
+                                >
+                                    <option value="gemini-2.5-flash">Gemini 2.5 Flash (권장)</option>
+                                    <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                                    <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                                    <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                                </select>
+                            )}
+                        </div>
                     </div>
                 </div>
 

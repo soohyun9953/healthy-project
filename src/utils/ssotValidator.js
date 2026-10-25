@@ -311,18 +311,22 @@ export async function extractTablesFromFile(file) {
 
 // ── Stage 1: 결정론적 Rule 기반 검증 엔진 ─────────────────────────
 /**
- * 1) 금지 동의어/오표기 검출
- * 2) 요구사항 ID 추적성(RTM) 검증 (Missing ID, Ghost ID, 요구사항명/키워드 일치도)
+ * 1) 금지 동의어/오표기 검출 (표준어 보호 가드 및 단어 경계 검사)
+ * 2) 요구사항 ID 추적성(RTM) 검증 (단위 산출물 vs 종합보고서 검수 범위 모드 지원)
  * 3) 수치 및 표 산술 검증 (금액단위 불일치, 합계/총계 산술 오류)
  */
-export async function runStage1Validation(fileContent, tables, masterData) {
+export async function runStage1Validation(fileContent, tables, masterData, options = {}) {
+    const {
+        inspectionScope = 'unit' // 'unit' (단위 산출물/특정 장표) | 'full' (종합 제안서/최종보고서)
+    } = options;
+
     const { metadata, glossary, requirements } = masterData;
     const { text, pageMap } = fileContent;
 
     const issues = [];
     let issueSeq = 1;
 
-    // A. 1) 금지 동의어 / 오표기 검출
+    // A. 1) 금지 동의어 / 오표기 검출 (오탐 0건 보장 로직)
     glossary.forEach(item => {
         const approved = (item.approved || '').trim();
         const forbiddenList = (item.forbidden || '')
@@ -333,6 +337,8 @@ export async function runStage1Validation(fileContent, tables, masterData) {
         forbiddenList.forEach(forbiddenTerm => {
             if (forbiddenTerm.length < 2) return;
 
+            const isAscii = /^[A-Za-z0-9_-]+$/.test(forbiddenTerm);
+
             // 페이지별 텍스트 검색
             Object.entries(pageMap || {}).forEach(([pageNum, lines]) => {
                 const pageLines = Array.isArray(lines) ? lines : [lines];
@@ -341,6 +347,39 @@ export async function runStage1Validation(fileContent, tables, masterData) {
                     while (true) {
                         const foundIdx = line.indexOf(forbiddenTerm, searchIdx);
                         if (foundIdx === -1) break;
+
+                        // ── [오탐 방지 핵심 가드 1: 표준어 내부 포함 검사] ──
+                        // 만약 이 금지어가 이미 올바르게 작성된 표준어(approved)의 일부라면 무조건 스킵!
+                        // 예: 표준어 '국립중앙의료원' 안에 포함된 '국립중앙'은 정상 단어의 일부이므로 결함 아님
+                        let isInsideApproved = false;
+                        if (approved && approved.includes(forbiddenTerm)) {
+                            let appIdx = 0;
+                            while (true) {
+                                const foundApp = line.indexOf(approved, appIdx);
+                                if (foundApp === -1) break;
+                                if (foundIdx >= foundApp && (foundIdx + forbiddenTerm.length) <= (foundApp + approved.length)) {
+                                    isInsideApproved = true;
+                                    break;
+                                }
+                                appIdx = foundApp + approved.length;
+                            }
+                        }
+
+                        if (isInsideApproved) {
+                            searchIdx = foundIdx + forbiddenTerm.length;
+                            continue;
+                        }
+
+                        // ── [오탐 방지 핵심 가드 2: 영문/숫자 약어 단어 경계 검사] ──
+                        // 예: 'CDS' 검사 시 'CDSS'나 'LESSON' 내부에 매칭되지 않도록 앞뒤 영숫자 확인
+                        if (isAscii) {
+                            const prevChar = foundIdx > 0 ? line[foundIdx - 1] : ' ';
+                            const nextChar = (foundIdx + forbiddenTerm.length < line.length) ? line[foundIdx + forbiddenTerm.length] : ' ';
+                            if (/[A-Za-z0-9_]/.test(prevChar) || /[A-Za-z0-9_]/.test(nextChar)) {
+                                searchIdx = foundIdx + forbiddenTerm.length;
+                                continue;
+                            }
+                        }
 
                         // 문맥 발췌 (앞뒤 25자)
                         const start = Math.max(0, foundIdx - 25);
@@ -368,21 +407,43 @@ export async function runStage1Validation(fileContent, tables, masterData) {
     });
 
     // B. 2) 요구사항 ID 추적성(RTM) 검증
-    // 본문 전체에서 요구사항 ID 형태 (예: CNR-001, SFR-001, PMR-001) 정규식 전수 검색
-    const idRegex = /\b([A-Z]{2,4}-\d{3,4})\b/g;
+    // 1단계: 마스터에 등록된 요구사항 ID의 문서 내 실제 출현 여부를 100% 정밀 대조
     const matchedIdsInDoc = new Set();
     const idLocations = {}; // { [id]: number[] pages }
 
+    requirements.forEach(req => {
+        const cleanId = (req.id || '').trim();
+        if (!cleanId) return;
+        const upperId = cleanId.toUpperCase();
+
+        Object.entries(pageMap || {}).forEach(([pageNum, lines]) => {
+            const pageText = (Array.isArray(lines) ? lines.join(' ') : String(lines)).toUpperCase();
+            if (pageText.includes(upperId)) {
+                matchedIdsInDoc.add(cleanId);
+                if (!idLocations[cleanId]) idLocations[cleanId] = [];
+                const p = parseInt(pageNum, 10) || 1;
+                if (!idLocations[cleanId].includes(p)) {
+                    idLocations[cleanId].push(p);
+                }
+            }
+        });
+    });
+
+    // 2단계: 본문 정규식 전수 검색 (미등록 유령 Ghost ID 탐색용)
+    const idRegex = /\b([A-Z]{2,6}[-_]\d{2,4}(?:[-_]\d{1,3})?)\b/g;
     Object.entries(pageMap || {}).forEach(([pageNum, lines]) => {
         const pageText = Array.isArray(lines) ? lines.join(' ') : String(lines);
         let m;
         while ((m = idRegex.exec(pageText)) !== null) {
-            const detectedId = m[1];
-            matchedIdsInDoc.add(detectedId);
-            if (!idLocations[detectedId]) idLocations[detectedId] = [];
-            const p = parseInt(pageNum, 10) || 1;
-            if (!idLocations[detectedId].includes(p)) {
-                idLocations[detectedId].push(p);
+            const detectedId = m[1].toUpperCase();
+            // 공통 표준 기술 약어(ISO-9001, UTF-8 등) 제외
+            if (!['ISO-', 'UTF-', 'RFC-', 'IPV4-', 'IPV6-'].some(prefix => detectedId.startsWith(prefix))) {
+                matchedIdsInDoc.add(detectedId);
+                if (!idLocations[detectedId]) idLocations[detectedId] = [];
+                const p = parseInt(pageNum, 10) || 1;
+                if (!idLocations[detectedId].includes(p)) {
+                    idLocations[detectedId].push(p);
+                }
             }
         }
     });
@@ -391,7 +452,7 @@ export async function runStage1Validation(fileContent, tables, masterData) {
     requirements.forEach(req => {
         const cleanId = (req.id || '').trim();
         if (cleanId) {
-            masterIdMap.set(cleanId, req);
+            masterIdMap.set(cleanId.toUpperCase(), req);
         }
     });
 
@@ -399,13 +460,13 @@ export async function runStage1Validation(fileContent, tables, masterData) {
     const rtmMatrix = [];
     requirements.forEach(req => {
         const cleanId = (req.id || '').trim();
-        const isPresent = matchedIdsInDoc.has(cleanId);
-        const pages = idLocations[cleanId] || [];
+        const isPresent = matchedIdsInDoc.has(cleanId) || matchedIdsInDoc.has(cleanId.toUpperCase());
+        const pages = idLocations[cleanId] || idLocations[cleanId.toUpperCase()] || [];
 
         // 필수 키워드 검사
         let keywordsMatched = true;
         let missingKeywords = [];
-        if (req.keywords) {
+        if (req.keywords && isPresent) {
             const kwList = req.keywords.split(',').map(k => k.trim()).filter(Boolean);
             missingKeywords = kwList.filter(k => !text.includes(k));
             if (missingKeywords.length > 0) {
@@ -415,7 +476,7 @@ export async function runStage1Validation(fileContent, tables, masterData) {
 
         const status = isPresent 
             ? (keywordsMatched ? '정상' : '키워드 일부 누락')
-            : '누락(Missing)';
+            : (inspectionScope === 'unit' ? '미출현 (단위산출물 범위 외)' : '누락(Missing)');
 
         rtmMatrix.push({
             id: cleanId,
@@ -428,18 +489,22 @@ export async function runStage1Validation(fileContent, tables, masterData) {
         });
 
         if (!isPresent) {
-            issues.push({
-                id: `S1-RTM-MIS-${issueSeq++}`,
-                stage: 'Stage 1 (결정론적 룰)',
-                category: '요구사항 누락',
-                errorType: '요구사항 미출현(Missing ID)',
-                severity: 'HIGH',
-                page: 1,
-                matchedTerm: cleanId,
-                suggestedText: `요구사항 [${cleanId}] ${req.name || ''} 본문 반영`,
-                originalText: `(산출물 본문에서 [${cleanId}] 미발견)`,
-                reason: `마스터 요구사항 ID '${cleanId}' [${req.name || ''}]이(가) 문서 내에서 단 한 번도 언급되지 않았습니다.`
-            });
+            // 종합 검수(full) 모드일 때만 치명적 결함(HIGH)으로 보고서에 등록
+            // 단위 산출물(unit) 모드일 때는 RTM 표에만 미출현으로 표기하고 결함에는 등록하지 않음 (오탐 방지)
+            if (inspectionScope === 'full') {
+                issues.push({
+                    id: `S1-RTM-MIS-${issueSeq++}`,
+                    stage: 'Stage 1 (결정론적 룰)',
+                    category: '요구사항 누락',
+                    errorType: '요구사항 미출현(Missing ID)',
+                    severity: 'HIGH',
+                    page: 1,
+                    matchedTerm: cleanId,
+                    suggestedText: `요구사항 [${cleanId}] ${req.name || ''} 본문 반영`,
+                    originalText: `(종합 산출물 본문에서 [${cleanId}] 미발견)`,
+                    reason: `마스터 요구사항 ID '${cleanId}' [${req.name || ''}]이(가) 종합 산출물 내에서 단 한 번도 언급되지 않았습니다.`
+                });
+            }
         } else if (!keywordsMatched && missingKeywords.length > 0) {
             issues.push({
                 id: `S1-RTM-KW-${issueSeq++}`,
@@ -458,7 +523,7 @@ export async function runStage1Validation(fileContent, tables, masterData) {
 
     // B-2) 유령 ID (Ghost ID): 산출물에 있는데 마스터에 정의되지 않은 ID
     matchedIdsInDoc.forEach(detectedId => {
-        if (!masterIdMap.has(detectedId)) {
+        if (!masterIdMap.has(detectedId) && !masterIdMap.has(detectedId.toUpperCase())) {
             const pages = idLocations[detectedId] || [1];
             issues.push({
                 id: `S1-RTM-GHO-${issueSeq++}`,
@@ -1185,7 +1250,7 @@ export function extractRfpWithRules(text, tables = []) {
                 id: `glo-rfp-${Date.now()}-${glossary.length + 1}`,
                 category: '약어',
                 approved: acronym,
-                forbidden: `${acronym.toLowerCase()}, ${acronym.slice(0, -1)}`,
+                forbidden: acronym.toLowerCase(),
                 note: `RFP 본문 다빈도 출현 표준 약어`
             });
         }
@@ -1193,11 +1258,22 @@ export function extractRfpWithRules(text, tables = []) {
 
     if (clientAgency && !seenTerms.has(clientAgency.toLowerCase())) {
         seenTerms.add(clientAgency.toLowerCase());
+        let autoForbidden = '';
+        if (clientAgency.includes('국립중앙의료원')) {
+            autoForbidden = '중앙의료원, 국립의료원, NMC, 국립중앙병원';
+        } else if (clientAgency.includes('보건복지부')) {
+            autoForbidden = '복지부, 보건부';
+        } else if (clientAgency.includes('정보원')) {
+            autoForbidden = clientAgency.replace(/정보원$/, '센터');
+        } else {
+            autoForbidden = `${clientAgency}재단, ${clientAgency}센터`;
+        }
+
         glossary.unshift({
             id: `glo-rfp-agency`,
             category: '기관명',
             approved: clientAgency,
-            forbidden: clientAgency.replace(/(의료원|병원|지원센터|공단|진흥원)$/, ''),
+            forbidden: autoForbidden,
             note: 'RFP 발주기관 공식 명칭'
         });
     }
@@ -1210,7 +1286,7 @@ export function extractRfpWithRules(text, tables = []) {
                 id: `glo-rfp-sys`,
                 category: '시스템명',
                 approved: sysMatch[1],
-                forbidden: sysMatch[1].replace(/\s+/g, ' '),
+                forbidden: sysMatch[1].split('').join(' '), // 띄어쓰기 오표기 방지 (예: 건강정보고속도로 -> 건 강 정 보...)
                 note: 'RFP 대상 핵심 시스템 명칭'
             });
         }
