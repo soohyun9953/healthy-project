@@ -824,7 +824,7 @@ function getEffectiveFontSize(el) {
  * 지정된 센티미터(CM) 값(기본 0.24CM)으로 일괄 통일합니다.
  * 1cm = 360,000 EMU, 0.24cm = 86,400 EMU
  */
-function normalizeBulletHangingIndent(xmlDoc, options = {}) {
+export function normalizeBulletHangingIndent(xmlDoc, options = {}) {
     const {
         indentCm = 0.24,             // 기본값 0.24CM
         removeEmptyParas = true,
@@ -846,16 +846,15 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
     const spacingNum = parseFloat(lineSpacingVal || '1.0') || 1.0;
     const targetSpcPct = String(Math.round(spacingNum * 100000)); // 1.0 -> 100000, 1.2 -> 120000, 1.5 -> 150000
 
-    const isBulletText = (txt) => {
-        return /^\s*([▪•·\-\s*‣►▶●○※–]|\d+[.)]|[가-힣a-zA-Z][.)])/.test(txt);
+    const isBulletSymbol = (txt) => {
+        return /^\s*[▪•·\-\s*‣►▶●○※–]/.test(txt);
     };
 
-    const isBulletPara = (pEl) => {
-        const text = Array.from(pEl.getElementsByTagNameNS('*', 't'))
-            .map(t => t.textContent || '')
-            .join('');
-        if (isBulletText(text)) return true;
+    const isNumberedList = (txt) => {
+        return /^\s*(\d+[.)]|[가-힣a-zA-Z][.)])\s+/.test(txt);
+    };
 
+    const hasNativeBullet = (pEl) => {
         const pPrs = pEl.getElementsByTagNameNS('*', 'pPr');
         if (pPrs.length > 0) {
             const pPr = pPrs[0];
@@ -869,6 +868,21 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
         return false;
     };
 
+    const isBulletPara = (pEl, isSingleParaInBox = false) => {
+        if (hasNativeBullet(pEl)) return true;
+
+        const text = Array.from(pEl.getElementsByTagNameNS('*', 't'))
+            .map(t => t.textContent || '')
+            .join('');
+
+        if (isBulletSymbol(text)) return true;
+
+        // 단락이 1개뿐인 텍스트 상자의 경우, 단순 번호(8.1.5 등)는 제목(Title)이므로 글머리표로 취급하지 않음
+        if (!isSingleParaInBox && isNumberedList(text)) return true;
+
+        return false;
+    };
+
     const isParaEmpty = (pEl) => {
         const text = Array.from(pEl.getElementsByTagNameNS('*', 't'))
             .map(t => t.textContent || '')
@@ -877,12 +891,48 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
     };
 
     for (const tb of txBodies) {
+        // 표(tc) 내부 셀인지 확인
+        let isInsideTable = false;
+        let pNode = tb.parentNode;
+        while (pNode) {
+            const pTag = pNode.localName || (pNode.tagName ? pNode.tagName.split(':').pop() : '');
+            if (pTag === 'tc' || pTag === 'tbl') {
+                isInsideTable = true;
+                break;
+            }
+            pNode = pNode.parentNode;
+        }
+
+        // 제목 플레이스홀더 상자인지 확인
+        let isTitleBox = false;
+        let spNode = tb.parentNode;
+        while (spNode && spNode.localName !== 'sp' && !spNode.tagName?.endsWith(':sp')) {
+            spNode = spNode.parentNode;
+        }
+        if (spNode) {
+            const phEls = spNode.getElementsByTagNameNS('*', 'ph');
+            for (let j = 0; j < phEls.length; j++) {
+                const type = phEls[j].getAttribute('type');
+                if (type === 'title' || type === 'ctrTitle' || type === 'subTitle') {
+                    isTitleBox = true;
+                    break;
+                }
+            }
+        }
+
         const paragraphs = Array.from(tb.childNodes).filter(
             n => n.nodeType === 1 && (n.localName === 'p' || (n.tagName && n.tagName.endsWith(':p')))
         );
         if (paragraphs.length < 1) continue;
 
-        const hasBullets = paragraphs.some(p => isBulletPara(p));
+        // 단일 단락 여부
+        const isSinglePara = paragraphs.length === 1;
+
+        // 제목 상자이거나, 표 내부에서 네이티브 글머리표가 없는 일반 셀인 경우 건너뜀
+        if (isTitleBox) continue;
+        if (isInsideTable && !paragraphs.some(p => hasNativeBullet(p))) continue;
+
+        const hasBullets = paragraphs.some(p => isBulletPara(p, isSinglePara));
         if (!hasBullets) continue;
 
         // 1. 글머리 항목 사이의 불필요한 빈 줄(엔터 공백) 자동 제거
@@ -891,8 +941,8 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
             for (let i = 0; i < paragraphs.length; i++) {
                 const p = paragraphs[i];
                 if (isParaEmpty(p)) {
-                    const prevIsBullet = i > 0 && isBulletPara(paragraphs[i - 1]);
-                    const nextIsBullet = i < paragraphs.length - 1 && isBulletPara(paragraphs[i + 1]);
+                    const prevIsBullet = i > 0 && isBulletPara(paragraphs[i - 1], false);
+                    const nextIsBullet = i < paragraphs.length - 1 && isBulletPara(paragraphs[i + 1], false);
                     if (prevIsBullet || nextIsBullet) {
                         toRemove.push(p);
                     }
@@ -912,10 +962,10 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
             n => n.nodeType === 1 && (n.localName === 'p' || (n.tagName && n.tagName.endsWith(':p')))
         );
 
-        // 모든 글머리 단락의 첫 줄 내어쓰기 간격(marL & indent) 일괄 조정
+        // 모든 글머리 단락의 첫 줄 내어쓰기 간격(marL & indent) 및 줄간격(lnSpc) 일괄 조정
         for (let i = 0; i < remainingParas.length; i++) {
             const p = remainingParas[i];
-            if (!isBulletPara(p)) continue;
+            if (!isBulletPara(p, remainingParas.length === 1)) continue;
 
             let pPr = p.getElementsByTagNameNS('*', 'pPr')[0] || p.getElementsByTagName('a:pPr')[0];
             if (!pPr) {
@@ -948,7 +998,9 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
                 changed = true;
             }
 
-            // 줄간격 (lnSpc) 선택된 배율(1.0, 1.2, 1.5 등)로 통일
+            // 💡 [핵심] 줄간격 (lnSpc) 선택된 배율(1.0, 1.2, 1.5 등)로 통일
+            // DrawingML ECMA-376 CT_TextParagraphProperties 스키마 규격상
+            // lnSpc는 반드시 pPr의 최상단 첫 번째 자식(firstChild)이어야 파워포인트에서 무시되지 않고 100% 정상 렌더링됨!
             if (unifyLineSpacing) {
                 const curLnSpc = pPr.getElementsByTagNameNS('*', 'lnSpc')[0] || pPr.getElementsByTagName('a:lnSpc')[0];
                 if (!curLnSpc) {
@@ -956,7 +1008,11 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
                     const pctEl = xmlDoc.createElementNS(nsA, 'a:spcPct');
                     pctEl.setAttribute('val', targetSpcPct);
                     lnSpcEl.appendChild(pctEl);
-                    pPr.appendChild(lnSpcEl);
+                    if (pPr.firstChild) {
+                        pPr.insertBefore(lnSpcEl, pPr.firstChild);
+                    } else {
+                        pPr.appendChild(lnSpcEl);
+                    }
                     changed = true;
                 } else {
                     const pctEl = curLnSpc.getElementsByTagNameNS('*', 'spcPct')[0] || curLnSpc.getElementsByTagName('a:spcPct')[0];
@@ -972,6 +1028,11 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
                         const pctElNew = xmlDoc.createElementNS(nsA, 'a:spcPct');
                         pctElNew.setAttribute('val', targetSpcPct);
                         curLnSpc.appendChild(pctElNew);
+                        changed = true;
+                    }
+                    // DrawingML 스키마 순서 정합성 보장: lnSpc를 항상 pPr의 맨 앞으로 이동
+                    if (pPr.firstChild !== curLnSpc) {
+                        pPr.insertBefore(curLnSpc, pPr.firstChild);
                         changed = true;
                     }
                 }
