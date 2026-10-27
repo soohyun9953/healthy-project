@@ -890,9 +890,9 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                         형식: <code>기존단어(새로운단어)</code> (복수는 쉼표로 구분)
                     </div>
-                    <div style={{ fontSize: '12.5px', color: '#a855f7', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
-                        <span>입력하신 단어 수정 규칙은 브라우저에 자동 영구 저장되어 언제든 재사용 가능합니다.</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                        <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success-color)' }}></span>
+                        <span style={{ fontSize: '12px', color: 'var(--success-color)', fontWeight: 600 }}>브라우저 자동 영구보전 기능 적용됨</span>
                     </div>
                 </div>
 
@@ -1536,10 +1536,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             💡 PPT 내 텍스트의 글자 색상을 찾아 일괄 변경합니다. 다중 규칙은 **줄바꿈(엔터)** 또는 **세미콜론(<code>;</code>)**으로 구분합니다.<br />
                             <span style={{ color: 'var(--accent-blue)', fontWeight: 700 }}>형식: rgb(255,0,0)(rgb(0,0,255)) 또는 255,0,0(0,0,255)</span>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                            <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success-color)' }}></span>
-                            <span style={{ fontSize: '12px', color: 'var(--success-color)', fontWeight: 600 }}>브라우저 자동 영구 보존(Auto-save) 적용됨</span>
-                        </div>
+                        
                     </div>
                 </div>
 
@@ -1558,10 +1555,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                         💡 글자 끝에서 단어가 뚝 끊겨서 줄바꿈되는 현상을 해결합니다. 한글 단어가 온전한 상태로 가독성 높게 다음 줄로 정렬됩니다.
                     </div>
-                    <div style={{ paddingLeft: '28px', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                        <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success-color)' }}></span>
-                        <span style={{ fontSize: '12px', color: 'var(--success-color)', fontWeight: 600 }}>브라우저 자동 영구 보존(Auto-save) 적용됨</span>
-                    </div>
+                    
                 </div>
 
                 {/* 옵션 J: 대체 텍스트 일괄 제거 */}
