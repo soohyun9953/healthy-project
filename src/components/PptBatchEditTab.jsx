@@ -378,7 +378,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset) {
+        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && !applyBulletSpacing) {
             setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 대체 텍스트 일괄 제거, 언어 태그/맞춤법 오류 표시 보정, 슬라이드 노트 일괄 삭제, 또는 슬라이드 서식 다시 설정 중 하나 이상을 입력/선택해주세요.');
             return;
         }
@@ -686,7 +686,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 set_add_space_before_parenthesis(true);
                 setFixLangErrFlags(false);
             } else {
-                setErrorMsg('처리된 파일이 없습니다. 변경 대상 텍스트나 디자인 요소가 존재하는지 확인해주세요.');
+                const errDetails = reports.filter(r => r.status === 'error').map(r => r.detail).join(' / ');
+                setErrorMsg(errDetails || '처리된 파일이 없습니다. 변경 대상 텍스트나 디자인 요소가 존재하는지 확인해주세요.');
             }
         } catch (err) {
             console.error(err);

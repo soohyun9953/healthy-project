@@ -1013,7 +1013,11 @@ export async function processPptBatch(pptFile, options) {
         clearSpeakerNotes = false,
         customFirstSlideNum = null,
         applyFormatReset = false,
-        topHeaderMiddleAlign = true
+        topHeaderMiddleAlign = true,
+        applyBulletSpacing = false,
+        bulletSpacingCustomPts = 0,
+        removeEmptyParasInBullets = true,
+        unifyBulletLineSpacing = true
     } = options;
 
     if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && !applyBulletSpacing && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
