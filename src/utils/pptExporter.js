@@ -818,6 +818,173 @@ function getEffectiveFontSize(el) {
  * @param {Object} options { replaceRules: Array, fontRules: Array, applyDesign: boolean, targetText: string }
  * @returns {Promise<Blob>} 변환된 PPT 파일 Blob
  */
+/**
+ * 💡 [옵션 P: 글머리표 항목 간격 일괄 통일 (Bullet Spacing Normalizer)]
+ * 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 간격이 아래로 갈수록 벌어지거나 불균일한 현상을 상단 첫 단락 간격 기준으로 일치시킵니다.
+ */
+function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
+    const {
+        bulletSpacingMode = 'top', // 'top' | 'compact' | 'custom'
+        customSpacingPts = 0,
+        removeEmptyParas = true,
+        unifyLineSpacing = true
+    } = options;
+
+    let totalNormalized = 0;
+    let totalEmptyRemoved = 0;
+
+    const nsA = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const txBodies = Array.from(xmlDoc.getElementsByTagNameNS('*', 'txBody'));
+
+    const isBulletText = (txt) => {
+        return /^\s*([▪•·\-\s*‣►▶●○※–]|\d+[.)]|[가-힣a-zA-Z][.)])/.test(txt);
+    };
+
+    const isBulletPara = (pEl) => {
+        const text = Array.from(pEl.getElementsByTagNameNS('*', 't'))
+            .map(t => t.textContent || '')
+            .join('');
+        if (isBulletText(text)) return true;
+
+        const pPrs = pEl.getElementsByTagNameNS('*', 'pPr');
+        if (pPrs.length > 0) {
+            const pPr = pPrs[0];
+            const buChar = pPr.getElementsByTagNameNS('*', 'buChar');
+            const buAutoNum = pPr.getElementsByTagNameNS('*', 'buAutoNum');
+            const buNone = pPr.getElementsByTagNameNS('*', 'buNone');
+            if ((buChar.length > 0 || buAutoNum.length > 0) && buNone.length === 0) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const isParaEmpty = (pEl) => {
+        const text = Array.from(pEl.getElementsByTagNameNS('*', 't'))
+            .map(t => t.textContent || '')
+            .join('');
+        return text.trim().length === 0;
+    };
+
+    for (const tb of txBodies) {
+        const paragraphs = Array.from(tb.childNodes).filter(
+            n => n.nodeType === 1 && (n.localName === 'p' || (n.tagName && n.tagName.endsWith(':p')))
+        );
+        if (paragraphs.length < 2) continue;
+
+        const hasBullets = paragraphs.some(p => isBulletPara(p));
+        if (!hasBullets) continue;
+
+        // 1. 글머리 항목 사이의 불필요한 빈 단락(엔터 공백) 자동 제거
+        if (removeEmptyParas) {
+            const toRemove = [];
+            for (let i = 0; i < paragraphs.length; i++) {
+                const p = paragraphs[i];
+                if (isParaEmpty(p)) {
+                    const prevIsBullet = i > 0 && isBulletPara(paragraphs[i - 1]);
+                    const nextIsBullet = i < paragraphs.length - 1 && isBulletPara(paragraphs[i + 1]);
+                    if (prevIsBullet || nextIsBullet) {
+                        toRemove.push(p);
+                    }
+                }
+            }
+
+            if (toRemove.length > 0 && toRemove.length < paragraphs.length) {
+                toRemove.forEach(p => {
+                    tb.removeChild(p);
+                    totalEmptyRemoved++;
+                });
+            }
+        }
+
+        // 갱신된 단락 목록
+        const remainingParas = Array.from(tb.childNodes).filter(
+            n => n.nodeType === 1 && (n.localName === 'p' || (n.tagName && n.tagName.endsWith(':p')))
+        );
+        if (remainingParas.length < 2) continue;
+
+        // 첫 번째 글머리 단락을 기준(상단 간격)으로 설정
+        const firstBulletIdx = remainingParas.findIndex(p => isBulletPara(p));
+        if (firstBulletIdx === -1) continue;
+        const topPara = remainingParas[firstBulletIdx];
+
+        let topPPr = null;
+        const topPPrs = topPara.getElementsByTagNameNS('*', 'pPr');
+        if (topPPrs.length > 0) topPPr = topPPrs[0];
+
+        const topLnSpc = topPPr ? (topPPr.getElementsByTagNameNS('*', 'lnSpc')[0] || topPPr.getElementsByTagName('a:lnSpc')[0]) : null;
+
+        let targetSpcBefVal = 0;
+        if (bulletSpacingMode === 'custom' && customSpacingPts > 0) {
+            targetSpcBefVal = Math.round(customSpacingPts * 100);
+        }
+
+        // 2번째 글머리 단락부터 상단 기준으로 간격 일괄 통일
+        for (let i = firstBulletIdx + 1; i < remainingParas.length; i++) {
+            const p = remainingParas[i];
+            if (!isBulletPara(p)) continue;
+
+            let pPr = p.getElementsByTagNameNS('*', 'pPr')[0] || p.getElementsByTagName('a:pPr')[0];
+            if (!pPr) {
+                pPr = xmlDoc.createElementNS(nsA, 'a:pPr');
+                if (p.firstChild) p.insertBefore(pPr, p.firstChild);
+                else p.appendChild(pPr);
+            }
+
+            let changed = false;
+
+            // 단락 앞 간격 (spcBef) 처리
+            const existingSpcBef = pPr.getElementsByTagNameNS('*', 'spcBef')[0] || pPr.getElementsByTagName('a:spcBef')[0];
+            if (targetSpcBefVal === 0) {
+                if (existingSpcBef) {
+                    pPr.removeChild(existingSpcBef);
+                    changed = true;
+                }
+            } else {
+                if (!existingSpcBef) {
+                    const spcBefEl = xmlDoc.createElementNS(nsA, 'a:spcBef');
+                    const ptsEl = xmlDoc.createElementNS(nsA, 'a:spcPts');
+                    ptsEl.setAttribute('val', String(targetSpcBefVal));
+                    spcBefEl.appendChild(ptsEl);
+                    pPr.appendChild(spcBefEl);
+                    changed = true;
+                } else {
+                    const ptsEl = existingSpcBef.getElementsByTagNameNS('*', 'spcPts')[0] || existingSpcBef.getElementsByTagName('a:spcPts')[0];
+                    if (ptsEl && ptsEl.getAttribute('val') !== String(targetSpcBefVal)) {
+                        ptsEl.setAttribute('val', String(targetSpcBefVal));
+                        changed = true;
+                    }
+                }
+            }
+
+            // 단락 뒤 간격 (spcAft) 제거 (아래로 밀려 떨어지는 간격 방지)
+            const existingSpcAft = pPr.getElementsByTagNameNS('*', 'spcAft')[0] || pPr.getElementsByTagName('a:spcAft')[0];
+            if (existingSpcAft) {
+                pPr.removeChild(existingSpcAft);
+                changed = true;
+            }
+
+            // 줄간격 (lnSpc) 통일
+            if (unifyLineSpacing && topLnSpc) {
+                const curLnSpc = pPr.getElementsByTagNameNS('*', 'lnSpc')[0] || pPr.getElementsByTagName('a:lnSpc')[0];
+                const topLnSpcClone = topLnSpc.cloneNode(true);
+                if (curLnSpc) {
+                    pPr.replaceChild(topLnSpcClone, curLnSpc);
+                } else {
+                    pPr.appendChild(topLnSpcClone);
+                }
+                changed = true;
+            }
+
+            if (changed) {
+                totalNormalized++;
+            }
+        }
+    }
+
+    return { totalNormalized, totalEmptyRemoved };
+}
+
 export async function processPptBatch(pptFile, options) {
     if (!pptFile) throw new Error('PPT 파일이 필요합니다.');
     
@@ -857,7 +1024,7 @@ export async function processPptBatch(pptFile, options) {
         topHeaderMiddleAlign = true
     } = options;
 
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && !applyBulletSpacing && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -995,6 +1162,8 @@ export async function processPptBatch(pptFile, options) {
     let totalLangFixed = 0;
     let totalErrFlagsCleared = 0;
     let totalFormatResetCount = 0;
+    let totalBulletSpacingNormalized = 0;
+    let totalEmptyParasRemoved = 0;
 
     // 💡 [1단계: 모든 슬라이드 제목 괄호 앞 공백 전수 보정]
     // add_title_page_numbers 실행 여부나 동일 제목 반복 여부와 무관하게,
@@ -2524,6 +2693,22 @@ export async function processPptBatch(pptFile, options) {
                 });
             }
 
+                        // 💡 [옵션 P: 글머리표 항목 간격 일괄 통일 및 빈 줄 제거]
+            if (applyBulletSpacing && isActualSlide) {
+                const bulletRes = normalizeBulletSpacingInDoc(xmlDoc, {
+                    bulletSpacingMode,
+                    customSpacingPts: bulletSpacingCustomPts,
+                    removeEmptyParas: removeEmptyParasInBullets,
+                    unifyLineSpacing: unifyBulletLineSpacing
+                });
+                if (bulletRes.totalNormalized > 0 || bulletRes.totalEmptyRemoved > 0) {
+                    totalBulletSpacingNormalized += bulletRes.totalNormalized;
+                    totalEmptyParasRemoved += bulletRes.totalEmptyRemoved;
+                    fileChanged = true;
+                    hasChanges = true;
+                }
+            }
+
             // 💡 [핵심 수리] DOM 수정사항(테이블 및 헤더 디자인, 서식 재설정)을 최종 slideXmlStr에 재직렬화하여 100% 반영!
             if (fileChanged) {
                 slideXmlStr = serializer.serializeToString(xmlDoc);
@@ -2564,6 +2749,8 @@ export async function processPptBatch(pptFile, options) {
     blob.appliedFirstSlideNum = appliedFirstSlideNum;
     blob.totalSlideCount = totalSlideCount;
     blob.totalFormatResetCount = totalFormatResetCount;
+    blob.totalBulletSpacingNormalized = totalBulletSpacingNormalized;
+    blob.totalEmptyParasRemoved = totalEmptyParasRemoved;
 
     return blob;
 }

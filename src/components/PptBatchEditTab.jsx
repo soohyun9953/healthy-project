@@ -43,6 +43,11 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [replaceNbs, setReplaceNbs] = useState(true); // 하위 옵션 1: NBS 일반 공백 변환
     const [unifyBullets, setUnifyBullets] = useState(true); // 하위 옵션 2: 중간점 통일
     const [clean_vertical_tab, set_clean_vertical_tab] = useState(true); // 하위 옵션 3: 세로 탭 품질검토 오류 수정
+    const [applyBulletSpacing, setApplyBulletSpacing] = useState(false); // 옵션 P: 글머리표 항목 간격 일괄 통일
+    const [bulletSpacingMode, setBulletSpacingMode] = useState('top'); // 'top' (상단 첫 줄 기준) | 'custom' (직접 입력)
+    const [bulletSpacingCustomPts, setBulletSpacingCustomPts] = useState('0'); // 직접 지정 pt
+    const [removeEmptyParasInBullets, setRemoveEmptyParasInBullets] = useState(true); // 빈 줄 제거
+    const [unifyBulletLineSpacing, setUnifyBulletLineSpacing] = useState(true); // 줄간격 통일
     const [add_title_page_numbers, set_add_title_page_numbers] = useState(false); // 옵션 G: 동일 제목 일련번호 자동 추가
     const [add_space_before_parenthesis, set_add_space_before_parenthesis] = useState(true); // 옵션 G 하위 옵션: 제목 뒤 괄호 앞 공백 추가
     const [textColorRules, setTextColorRules] = useState(() => {
@@ -249,7 +254,21 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             changes.push(`슬라이드 노트 삭제 ${count}개`);
         }
 
-        // 13. 슬라이드 시작 번호 순차 지정
+        // 13. 글머리표 간격 일괄 통일
+        if (applyBulletSpacing) {
+            const normCount = modifiedBlob.totalBulletSpacingNormalized || 0;
+            const emptyCount = modifiedBlob.totalEmptyParasRemoved || 0;
+            const msgParts = [];
+            if (normCount > 0) msgParts.push(`간격 통일 ${normCount}개 단락`);
+            if (emptyCount > 0) msgParts.push(`빈 줄 정리 ${emptyCount}개`);
+            if (msgParts.length > 0) {
+                changes.push(`글머리표 서식 정규화 (${msgParts.join(', ')})`);
+            } else {
+                changes.push(`글머리표 서식 정규화 완료`);
+            }
+        }
+
+        // 14. 슬라이드 시작 번호 순차 지정
         if (applySequentialSlideNum && modifiedBlob.appliedFirstSlideNum !== null && modifiedBlob.appliedFirstSlideNum !== undefined) {
             const sNum = modifiedBlob.appliedFirstSlideNum;
             const count = modifiedBlob.totalSlideCount || 0;
@@ -414,7 +433,12 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         clearSpeakerNotes: clearSpeakerNotes,
                         customFirstSlideNum: applySequentialSlideNum ? (parseInt(initialFirstSlideNum, 10) || 1) : null,
                         applyFormatReset: applyFormatReset,
-                        topHeaderMiddleAlign: topHeaderMiddleAlign
+                        topHeaderMiddleAlign: topHeaderMiddleAlign,
+                        applyBulletSpacing: applyBulletSpacing,
+                        bulletSpacingMode: bulletSpacingMode,
+                        bulletSpacingCustomPts: parseFloat(bulletSpacingCustomPts) || 0,
+                        removeEmptyParasInBullets: removeEmptyParasInBullets,
+                        unifyBulletLineSpacing: unifyBulletLineSpacing
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -458,6 +482,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             parsedRules,
                             parsedFontRules,
                             parsedFontSizeRules,
+                            applyBulletSpacing,
                             roundFontSizes,
                             roundFontSizeMode,
                             applyDesignChecked,
@@ -518,7 +543,12 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             clearSpeakerNotes: clearSpeakerNotes,
                             customFirstSlideNum: applySequentialSlideNum ? runningStartSlideNum : null,
                             applyFormatReset: applyFormatReset,
-                            topHeaderMiddleAlign: topHeaderMiddleAlign
+                            topHeaderMiddleAlign: topHeaderMiddleAlign,
+                            applyBulletSpacing: applyBulletSpacing,
+                            bulletSpacingMode: bulletSpacingMode,
+                            bulletSpacingCustomPts: parseFloat(bulletSpacingCustomPts) || 0,
+                            removeEmptyParasInBullets: removeEmptyParasInBullets,
+                            unifyBulletLineSpacing: unifyBulletLineSpacing
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         modifiedBlobs.push(modifiedBlob);
@@ -1421,6 +1451,125 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                 }}
                             />
                             세로 탭(Vertical Tab) 품질검토 오류 수정 (\v → \n 변환)
+                        </label>
+                    </div>
+                </div>
+
+                {/* 옵션 P: 글머리표 항목 간격 일괄 통일 (하단 벌어진 간격 ➔ 상단 기준 균일화) */}
+                <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                        <input
+                            id="checkbox-option-p"
+                            type="checkbox"
+                            checked={applyBulletSpacing}
+                            onChange={(e) => setApplyBulletSpacing(e.target.checked)}
+                            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10b981' }}
+                        />
+                        옵션 P: 글머리표 항목 간격 일괄 통일 (하단 벌어진 간격 ➔ 상단 기준 균일화)
+                    </label>
+                    <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                        💡 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 간격이 아래로 갈수록 벌어지거나 불균일한 현상을 상단 첫 단락 간격 기준으로 일치시킵니다.
+                    </div>
+
+                    <div style={{
+                        paddingLeft: '28px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        borderLeft: '2px solid ' + (applyBulletSpacing ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.1)'),
+                        marginTop: '4px',
+                        opacity: applyBulletSpacing ? 1 : 0.45,
+                        pointerEvents: applyBulletSpacing ? 'auto' : 'none',
+                        transition: 'all 0.3s ease'
+                    }}>
+                        {/* 간격 통일 방식 라디오 선택 */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                단락 간격(Space Before / After) 통일 기준:
+                            </span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '13px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                                    <input
+                                        type="radio"
+                                        name="bulletSpacingMode"
+                                        value="top"
+                                        checked={bulletSpacingMode === 'top'}
+                                        onChange={() => setBulletSpacingMode('top')}
+                                        disabled={!applyBulletSpacing}
+                                    />
+                                    <span>상단 첫 단락 간격으로 일치화 (기본: 상단처럼 조밀하게 밀착)</span>
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                                    <input
+                                        type="radio"
+                                        name="bulletSpacingMode"
+                                        value="custom"
+                                        checked={bulletSpacingMode === 'custom'}
+                                        onChange={() => setBulletSpacingMode('custom')}
+                                        disabled={!applyBulletSpacing}
+                                    />
+                                    <span>사용자 지정 간격:</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="20"
+                                        step="0.5"
+                                        value={bulletSpacingCustomPts}
+                                        onChange={(e) => setBulletSpacingCustomPts(e.target.value)}
+                                        disabled={!applyBulletSpacing || bulletSpacingMode !== 'custom'}
+                                        style={{
+                                            width: '60px',
+                                            padding: '4px 8px',
+                                            borderRadius: '4px',
+                                            border: '1px solid var(--panel-border)',
+                                            background: 'var(--bg-primary)',
+                                            color: 'var(--text-primary)',
+                                            fontSize: '12px'
+                                        }}
+                                    />
+                                    <span>pt</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* 하위 체크박스 1: 빈 단락 제거 */}
+                        <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
+                            fontSize: '13px',
+                            color: applyBulletSpacing ? 'var(--text-primary)' : 'var(--text-muted)',
+                            fontWeight: 600
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={removeEmptyParasInBullets}
+                                disabled={!applyBulletSpacing}
+                                onChange={(e) => setRemoveEmptyParasInBullets(e.target.checked)}
+                                style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
+                            />
+                            글머리표 사이의 불필요한 빈 줄(엔터 공백) 자동 제거 (아래로 떨어지는 벌어짐 방지)
+                        </label>
+
+                        {/* 하위 체크박스 2: 줄간격 통일 */}
+                        <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
+                            fontSize: '13px',
+                            color: applyBulletSpacing ? 'var(--text-primary)' : 'var(--text-muted)',
+                            fontWeight: 600
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={unifyBulletLineSpacing}
+                                disabled={!applyBulletSpacing}
+                                onChange={(e) => setUnifyBulletLineSpacing(e.target.checked)}
+                                style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
+                            />
+                            글머리 단락 줄간격(Line Spacing) 상단 첫 줄 기준으로 일괄 통일
                         </label>
                     </div>
                 </div>
