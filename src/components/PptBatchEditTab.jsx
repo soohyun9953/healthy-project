@@ -864,6 +864,82 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 </div>
             </div>
 
+            {/* ── 실행 버튼 + 결과 리포트 (옵션 설정 위) ── */}
+            <div style={{ paddingBottom: '4px' }}>
+                <button
+                    id="btn-batch-process"
+                    className="interactive"
+                    onClick={handleBatchProcess}
+                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)}
+                    style={{
+                        width: '100%',
+                        padding: '16px',
+                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'var(--text-muted)' : 'white',
+                        border: 'none',
+                        borderRadius: '12px',
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'not-allowed' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
+                    }}
+                >
+                    {isProcessingBatch ? (
+                        <><Loader2 size={20} className="animate-spin" /> {mergeToOneFile && batchPptFiles.length > 1 ? '일괄 편집 및 하나의 PPT로 병합 중...' : '폴더에 순차적으로 적용 및 저장 중...'}</>
+                    ) : (
+                        <><Sparkles size={20} /> {mergeToOneFile && batchPptFiles.length > 1 ? '일괄 편집 및 하나의 PPT 파일로 병합 실행' : '저장할 폴더/위치 선택 및 일괄 편집 실행'}</>
+                    )}
+                </button>
+
+                {batchReport.length > 0 && (
+                    <div className="animate-slide-up" style={{
+                        marginTop: '20px',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid var(--panel-border)',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>
+                            <Info size={16} color="#a855f7" />
+                            <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>일괄 편집 세부 처리 결과 리포트</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto', paddingRight: '4px' }}>
+                            {batchReport.map((rep, idx) => (
+                                <div key={idx} style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '6px',
+                                    padding: '10px',
+                                    borderRadius: '8px',
+                                    background: rep.status === 'success' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                                    borderLeft: `3px solid ${rep.status === 'success' ? '#10b981' : '#ef4444'}`
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-all' }}>{rep.fileName}</span>
+                                        <span style={{
+                                            fontSize: '11px',
+                                            fontWeight: 700,
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            background: rep.status === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                            color: rep.status === 'success' ? '#10b981' : '#ef4444'
+                                        }}>
+                                            {rep.status === 'success' ? '수정 완료' : '실패'}
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                                        {rep.detail}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
             <div style={{
                 border: '1px solid var(--panel-border)',
                 borderRadius: '12px', padding: '24px',
@@ -954,54 +1030,6 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         flexDirection: 'column',
                         gap: '12px'
                     }}>
-                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#c084fc', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span>⚙️ 옵션 C 추가 세부 옵션</span>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13.5px', color: 'var(--text-primary)' }}>
-                                <input
-                                    id="checkbox-round-fontsize"
-                                    type="checkbox"
-                                    checked={roundFontSizes}
-                                    onChange={(e) => setRoundFontSizes(e.target.checked)}
-                                    style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#a855f7' }}
-                                />
-                                추가 옵션: 소수점 폰트 크기 반올림/올림 자동 반영 (정수 크기로 정규화)
-                            </label>
-                            <div style={{ paddingLeft: '24px', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                                💡 PPT 텍스트 상자 자동 맞춤 등으로 소수점으로 축소된 글자 크기(예: 7.2pt, 8.4pt 등)를 정수 단위로 일괄 올림/반올림하여 작성합니다.
-                            </div>
-
-                            {roundFontSizes && (
-                                <div className="animate-slide-up" style={{ paddingLeft: '24px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px' }}>
-                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>반영 방식:</span>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-primary)' }}>
-                                        <input
-                                            type="radio"
-                                            name="roundFontSizeMode"
-                                            value="ceil"
-                                            checked={roundFontSizeMode === 'ceil'}
-                                            onChange={() => setRoundFontSizeMode('ceil')}
-                                            style={{ cursor: 'pointer', accentColor: '#a855f7' }}
-                                        />
-                                        <strong>올림(Ceil)</strong> <span style={{ color: 'var(--accent-blue)', fontSize: '12px' }}>(예: 7.2pt ➔ 8pt, 8.4pt ➔ 9pt) [권장]</span>
-                                    </label>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-primary)' }}>
-                                        <input
-                                            type="radio"
-                                            name="roundFontSizeMode"
-                                            value="round"
-                                            checked={roundFontSizeMode === 'round'}
-                                            onChange={() => setRoundFontSizeMode('round')}
-                                            style={{ cursor: 'pointer', accentColor: '#a855f7' }}
-                                        />
-                                        <strong>사사오입 반올림(Round)</strong> <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>(예: 7.2pt ➔ 7pt, 7.5pt ➔ 8pt)</span>
-                                    </label>
-                                </div>
-                            )}
-                        </div>
-
-                        <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)' }} />
 
                         {/* 작은 폰트 가독성 자동 보정 옵션 (슬라이드 전체: 표 및 텍스트 상자) */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1556,7 +1584,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             onChange={(e) => setTextColorRules(e.target.value)}
                             placeholder="기존색상(변경할색상) 형식으로 입력하세요.&#10;예: rgb(255,0,0)(rgb(0,0,255)) 또는 255,0,0(0,0,255)"
                             style={{
-                                width: '100%', height: '80px', padding: '10px 12px',
+                                width: '100%', height: '56px', padding: '10px 12px',
                                 background: 'rgba(0,0,0,0.2)', border: '1px solid var(--panel-border)',
                                 borderRadius: '6px', color: 'var(--text-primary)', fontSize: '13px',
                                 fontFamily: 'monospace', resize: 'vertical', outline: 'none',
@@ -1921,7 +1949,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 </div>
             </div>
 
-            <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
+            {/* ── 실행 버튼 + 결과 리포트 (옵션 설정 위) ── */}
+            <div style={{ paddingBottom: '4px' }}>
                 <button
                     id="btn-batch-process"
                     className="interactive"

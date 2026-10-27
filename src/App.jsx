@@ -328,7 +328,7 @@ const tab_guides = {
 
 function App() {
   const [activeTab, setActiveTab] = useState('ppt');
-  const [show_guide, set_show_guide] = useState(true);
+  const [show_guide, set_show_guide] = useState(false);
   const [show_manual_modal, set_show_manual_modal] = useState(false);
   // apiKeys: 문자열 배열로 관리, 기존 localStorage 콤마 구분 값과 호환
   const [apiKeys, setApiKeys] = useState(() => {
@@ -525,7 +525,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.24.12</span>
+                <span>AI 산출물 검수 v2.24.13</span>
               </div>
             )}
           </div>
