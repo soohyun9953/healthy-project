@@ -1453,101 +1453,6 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
                 </div>
 
-                {/* 옵션 P: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화) */}
-                <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
-                        <input
-                            id="checkbox-option-p"
-                            type="checkbox"
-                            checked={applyBulletSpacing}
-                            onChange={(e) => setApplyBulletSpacing(e.target.checked)}
-                            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10b981' }}
-                        />
-                        옵션 P: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화)
-                    </label>
-                    <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                        💡 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 불필요하게 벌어진 간격과 빈 줄을 제거하여 조밀하고 균일하게 통일합니다.
-                    </div>
-
-                    <div style={{
-                        paddingLeft: '28px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px',
-                        borderLeft: '2px solid ' + (applyBulletSpacing ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.1)'),
-                        marginTop: '4px',
-                        opacity: applyBulletSpacing ? 1 : 0.45,
-                        pointerEvents: applyBulletSpacing ? 'auto' : 'none',
-                        transition: 'all 0.3s ease'
-                    }}>
-                        {/* 단락 간격(Space Before) 직접 지정 */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
-                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                                항목 간 단락 간격:
-                            </span>
-                            <input
-                                type="number"
-                                min="0"
-                                max="20"
-                                step="0.5"
-                                value={bulletSpacingCustomPts}
-                                onChange={(e) => setBulletSpacingCustomPts(e.target.value)}
-                                disabled={!applyBulletSpacing}
-                                style={{
-                                    width: '60px',
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid var(--panel-border)',
-                                    background: 'var(--bg-primary)',
-                                    color: 'var(--text-primary)',
-                                    fontSize: '12px'
-                                }}
-                            />
-                            <span style={{ color: 'var(--text-secondary)' }}>pt (기본값: 0pt - 벌어짐 없이 조밀하게 밀착)</span>
-                        </div>
-
-                        {/* 하위 체크박스 1: 빈 단락 제거 */}
-                        <label style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
-                            fontSize: '13px',
-                            color: applyBulletSpacing ? 'var(--text-primary)' : 'var(--text-muted)',
-                            fontWeight: 600
-                        }}>
-                            <input
-                                type="checkbox"
-                                checked={removeEmptyParasInBullets}
-                                disabled={!applyBulletSpacing}
-                                onChange={(e) => setRemoveEmptyParasInBullets(e.target.checked)}
-                                style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
-                            />
-                            글머리표 사이의 불필요한 빈 줄(엔터 공백) 자동 제거 (아래로 떨어지는 벌어짐 방지)
-                        </label>
-
-                        {/* 하위 체크박스 2: 줄간격 통일 */}
-                        <label style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
-                            fontSize: '13px',
-                            color: applyBulletSpacing ? 'var(--text-primary)' : 'var(--text-muted)',
-                            fontWeight: 600
-                        }}>
-                            <input
-                                type="checkbox"
-                                checked={unifyBulletLineSpacing}
-                                disabled={!applyBulletSpacing}
-                                onChange={(e) => setUnifyBulletLineSpacing(e.target.checked)}
-                                style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
-                            />
-                            글머리 단락 줄간격(Line Spacing) 표준(100%)으로 일괄 균일화
-                        </label>
-                    </div>
-                </div>
-
                 {/* 옵션 G: 동일 제목 일련번호 추가 */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
@@ -1771,6 +1676,101 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         <span style={{ color: 'var(--accent-blue)', fontSize: '12px' }}>
                             수동으로 슬라이드마다 [홈] ➔ [다시 설정]을 누르지 않아도 슬라이드 마스터의 표준 서식과 상단 목차 세로 가운데 정렬이 한 번에 적용됩니다.
                         </span>
+                    </div>
+                </div>
+
+                {/* 옵션 P: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화) */}
+                <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                        <input
+                            id="checkbox-option-p"
+                            type="checkbox"
+                            checked={applyBulletSpacing}
+                            onChange={(e) => setApplyBulletSpacing(e.target.checked)}
+                            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10b981' }}
+                        />
+                        옵션 P: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화)
+                    </label>
+                    <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                        💡 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 불필요하게 벌어진 간격과 빈 줄을 제거하여 조밀하고 균일하게 통일합니다.
+                    </div>
+
+                    <div style={{
+                        paddingLeft: '28px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        borderLeft: '2px solid ' + (applyBulletSpacing ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.1)'),
+                        marginTop: '4px',
+                        opacity: applyBulletSpacing ? 1 : 0.45,
+                        pointerEvents: applyBulletSpacing ? 'auto' : 'none',
+                        transition: 'all 0.3s ease'
+                    }}>
+                        {/* 단락 간격(Space Before) 직접 지정 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                항목 간 단락 간격:
+                            </span>
+                            <input
+                                type="number"
+                                min="0"
+                                max="20"
+                                step="0.5"
+                                value={bulletSpacingCustomPts}
+                                onChange={(e) => setBulletSpacingCustomPts(e.target.value)}
+                                disabled={!applyBulletSpacing}
+                                style={{
+                                    width: '60px',
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    border: '1px solid var(--panel-border)',
+                                    background: 'var(--bg-primary)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '12px'
+                                }}
+                            />
+                            <span style={{ color: 'var(--text-secondary)' }}>pt (기본값: 0pt - 벌어짐 없이 조밀하게 밀착)</span>
+                        </div>
+
+                        {/* 하위 체크박스 1: 빈 단락 제거 */}
+                        <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
+                            fontSize: '13px',
+                            color: applyBulletSpacing ? 'var(--text-primary)' : 'var(--text-muted)',
+                            fontWeight: 600
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={removeEmptyParasInBullets}
+                                disabled={!applyBulletSpacing}
+                                onChange={(e) => setRemoveEmptyParasInBullets(e.target.checked)}
+                                style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
+                            />
+                            글머리표 사이의 불필요한 빈 줄(엔터 공백) 자동 제거 (아래로 떨어지는 벌어짐 방지)
+                        </label>
+
+                        {/* 하위 체크박스 2: 줄간격 통일 */}
+                        <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
+                            fontSize: '13px',
+                            color: applyBulletSpacing ? 'var(--text-primary)' : 'var(--text-muted)',
+                            fontWeight: 600
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={unifyBulletLineSpacing}
+                                disabled={!applyBulletSpacing}
+                                onChange={(e) => setUnifyBulletLineSpacing(e.target.checked)}
+                                style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
+                            />
+                            글머리 단락 줄간격(Line Spacing) 표준(100%)으로 일괄 균일화
+                        </label>
                     </div>
                 </div>
 
