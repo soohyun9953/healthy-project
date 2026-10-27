@@ -47,6 +47,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [bulletIndentCm, setBulletIndentCm] = useState('0.24'); // 첫 줄 내어쓰기 간격 (기본 0.24CM)
     const [removeEmptyParasInBullets, setRemoveEmptyParasInBullets] = useState(true); // 빈 줄 제거
     const [unifyBulletLineSpacing, setUnifyBulletLineSpacing] = useState(true); // 줄간격 통일
+    const [bulletLineSpacingVal, setBulletLineSpacingVal] = useState('1.0'); // 줄간격 배율 (기본 1.0, 1.2, 1.5)
     const [add_title_page_numbers, set_add_title_page_numbers] = useState(false); // 옵션 G: 동일 제목 일련번호 자동 추가
     const [add_space_before_parenthesis, set_add_space_before_parenthesis] = useState(true); // 옵션 G 하위 옵션: 제목 뒤 괄호 앞 공백 추가
     const [textColorRules, setTextColorRules] = useState(() => {
@@ -260,10 +261,11 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             const msgParts = [];
             if (normCount > 0) msgParts.push(`내어쓰기(${bulletIndentCm}CM) ${normCount}개 단락`);
             if (emptyCount > 0) msgParts.push(`빈 줄 정리 ${emptyCount}개`);
+            if (unifyBulletLineSpacing) msgParts.push(`줄간격 ${bulletLineSpacingVal}줄`);
             if (msgParts.length > 0) {
                 changes.push(`글머리표 첫 줄 내어쓰기 통일 (${msgParts.join(', ')})`);
             } else {
-                changes.push(`글머리표 첫 줄 내어쓰기(${bulletIndentCm}CM) 통일 완료`);
+                changes.push(`글머리표 첫 줄 내어쓰기(${bulletIndentCm}CM, 줄간격 ${bulletLineSpacingVal}줄) 통일 완료`);
             }
         }
 
@@ -436,7 +438,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         applyBulletSpacing: applyBulletSpacing,
                         bulletIndentCm: parseFloat(bulletIndentCm) || 0.24,
                         removeEmptyParasInBullets: removeEmptyParasInBullets,
-                        unifyBulletLineSpacing: unifyBulletLineSpacing
+                        unifyBulletLineSpacing: unifyBulletLineSpacing,
+                        bulletLineSpacingVal: bulletLineSpacingVal
                     };
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
@@ -543,9 +546,10 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             applyFormatReset: applyFormatReset,
                             topHeaderMiddleAlign: topHeaderMiddleAlign,
                             applyBulletSpacing: applyBulletSpacing,
-                            bulletSpacingCustomPts: parseFloat(bulletSpacingCustomPts) || 0,
+                            bulletIndentCm: parseFloat(bulletIndentCm) || 0.24,
                             removeEmptyParasInBullets: removeEmptyParasInBullets,
-                            unifyBulletLineSpacing: unifyBulletLineSpacing
+                            unifyBulletLineSpacing: unifyBulletLineSpacing,
+                            bulletLineSpacingVal: bulletLineSpacingVal
                         };
                         const modifiedBlob = await processPptBatch(file, options);
                         modifiedBlobs.push(modifiedBlob);
@@ -1809,25 +1813,93 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             글머리표 사이의 불필요한 빈 줄(엔터 공백) 자동 제거 (아래로 떨어지는 벌어짐 방지)
                         </label>
 
-                        {/* 하위 체크박스 2: 줄간격 통일 */}
-                        <label style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
-                            fontSize: '13px',
-                            color: applyBulletSpacing ? 'var(--text-primary)' : 'var(--text-muted)',
-                            fontWeight: 600
-                        }}>
-                            <input
-                                type="checkbox"
-                                checked={unifyBulletLineSpacing}
-                                disabled={!applyBulletSpacing}
-                                onChange={(e) => setUnifyBulletLineSpacing(e.target.checked)}
-                                style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
-                            />
-                            글머리 단락 줄간격(Line Spacing) 표준(100%)으로 일괄 균일화
-                        </label>
+                        {/* 하위 체크박스 2: 줄간격 통일 및 배율 선택 (1.0줄, 1.2줄, 1.5줄) */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <label style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
+                                fontSize: '13px',
+                                color: applyBulletSpacing ? 'var(--text-primary)' : 'var(--text-muted)',
+                                fontWeight: 600
+                            }}>
+                                <input
+                                    id="checkbox-unify-line-spacing"
+                                    type="checkbox"
+                                    checked={unifyBulletLineSpacing}
+                                    disabled={!applyBulletSpacing}
+                                    onChange={(e) => setUnifyBulletLineSpacing(e.target.checked)}
+                                    style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
+                                />
+                                글머리 단락 줄간격(Line Spacing) 일괄 균일화 (현재: {bulletLineSpacingVal}줄)
+                            </label>
+
+                            {unifyBulletLineSpacing && (
+                                <div className="animate-slide-up" style={{ paddingLeft: '24px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>줄간격 선택:</span>
+                                    {[
+                                        { val: '1.0', label: '1.0줄 (기본값)' },
+                                        { val: '1.2', label: '1.2줄' },
+                                        { val: '1.5', label: '1.5줄' }
+                                    ].map((item) => (
+                                        <button
+                                            key={item.val}
+                                            type="button"
+                                            disabled={!applyBulletSpacing || !unifyBulletLineSpacing}
+                                            onClick={() => setBulletLineSpacingVal(item.val)}
+                                            style={{
+                                                padding: '3px 10px',
+                                                borderRadius: '5px',
+                                                border: '1px solid ' + (bulletLineSpacingVal === item.val ? '#10b981' : 'var(--panel-border)'),
+                                                background: bulletLineSpacingVal === item.val ? 'rgba(16, 185, 129, 0.25)' : 'var(--bg-primary)',
+                                                color: bulletLineSpacingVal === item.val ? '#10b981' : 'var(--text-secondary)',
+                                                fontSize: '12px',
+                                                cursor: (applyBulletSpacing && unifyBulletLineSpacing) ? 'pointer' : 'not-allowed',
+                                                fontWeight: bulletLineSpacingVal === item.val ? 700 : 500,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '5px',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                        >
+                                            <span style={{
+                                                display: 'inline-block',
+                                                width: '6px',
+                                                height: '6px',
+                                                borderRadius: '50%',
+                                                background: bulletLineSpacingVal === item.val ? '#10b981' : 'transparent',
+                                                border: '1px solid ' + (bulletLineSpacingVal === item.val ? '#10b981' : 'var(--text-muted)')
+                                            }}></span>
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
+                                        <input
+                                            type="number"
+                                            min="0.5"
+                                            max="3.0"
+                                            step="0.1"
+                                            value={bulletLineSpacingVal}
+                                            onChange={(e) => setBulletLineSpacingVal(e.target.value)}
+                                            disabled={!applyBulletSpacing || !unifyBulletLineSpacing}
+                                            style={{
+                                                width: '55px',
+                                                padding: '2px 6px',
+                                                borderRadius: '4px',
+                                                border: '1px solid var(--panel-border)',
+                                                background: 'var(--bg-primary)',
+                                                color: 'var(--text-primary)',
+                                                fontSize: '12px',
+                                                textAlign: 'center',
+                                                fontWeight: 600
+                                            }}
+                                        />
+                                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>줄</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 

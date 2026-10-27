@@ -828,7 +828,8 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
     const {
         indentCm = 0.24,             // 기본값 0.24CM
         removeEmptyParas = true,
-        unifyLineSpacing = true
+        unifyLineSpacing = true,
+        lineSpacingVal = '1.0'        // 선택된 줄간격 배율 (1.0, 1.2, 1.5 등)
     } = options;
 
     let totalNormalized = 0;
@@ -841,6 +842,9 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
     const parsedCm = parseFloat(indentCm);
     const validCm = isNaN(parsedCm) || parsedCm < 0 ? 0.24 : parsedCm;
     const targetIndentEmu = Math.round(validCm * 360000);
+
+    const spacingNum = parseFloat(lineSpacingVal || '1.0') || 1.0;
+    const targetSpcPct = String(Math.round(spacingNum * 100000)); // 1.0 -> 100000, 1.2 -> 120000, 1.5 -> 150000
 
     const isBulletText = (txt) => {
         return /^\s*([▪•·\-\s*‣►▶●○※–]|\d+[.)]|[가-힣a-zA-Z][.)])/.test(txt);
@@ -944,20 +948,30 @@ function normalizeBulletHangingIndent(xmlDoc, options = {}) {
                 changed = true;
             }
 
-            // 줄간격 (lnSpc) 100% 표준 통일
+            // 줄간격 (lnSpc) 선택된 배율(1.0, 1.2, 1.5 등)로 통일
             if (unifyLineSpacing) {
                 const curLnSpc = pPr.getElementsByTagNameNS('*', 'lnSpc')[0] || pPr.getElementsByTagName('a:lnSpc')[0];
                 if (!curLnSpc) {
                     const lnSpcEl = xmlDoc.createElementNS(nsA, 'a:lnSpc');
                     const pctEl = xmlDoc.createElementNS(nsA, 'a:spcPct');
-                    pctEl.setAttribute('val', '100000');
+                    pctEl.setAttribute('val', targetSpcPct);
                     lnSpcEl.appendChild(pctEl);
                     pPr.appendChild(lnSpcEl);
                     changed = true;
                 } else {
                     const pctEl = curLnSpc.getElementsByTagNameNS('*', 'spcPct')[0] || curLnSpc.getElementsByTagName('a:spcPct')[0];
-                    if (pctEl && pctEl.getAttribute('val') !== '100000') {
-                        pctEl.setAttribute('val', '100000');
+                    if (pctEl) {
+                        if (pctEl.getAttribute('val') !== targetSpcPct) {
+                            pctEl.setAttribute('val', targetSpcPct);
+                            changed = true;
+                        }
+                    } else {
+                        while (curLnSpc.firstChild) {
+                            curLnSpc.removeChild(curLnSpc.firstChild);
+                        }
+                        const pctElNew = xmlDoc.createElementNS(nsA, 'a:spcPct');
+                        pctElNew.setAttribute('val', targetSpcPct);
+                        curLnSpc.appendChild(pctElNew);
                         changed = true;
                     }
                 }
@@ -1013,7 +1027,8 @@ export async function processPptBatch(pptFile, options) {
         bulletIndentCm = '0.24',             // 옵션 O: 글머리표 첫 줄 내어쓰기 간격 (기본 0.24CM)
         bulletSpacingCustomVal = undefined,  // 하위 호환
         removeEmptyParasInBullets = true,
-        unifyBulletLineSpacing = true
+        unifyBulletLineSpacing = true,
+        bulletLineSpacingVal = '1.0'
     } = options;
 
     if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && !applyBulletSpacing && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
@@ -2690,7 +2705,8 @@ export async function processPptBatch(pptFile, options) {
                 const bulletRes = normalizeBulletHangingIndent(xmlDoc, {
                     indentCm: bulletIndentCm !== undefined ? bulletIndentCm : bulletSpacingCustomVal,
                     removeEmptyParas: removeEmptyParasInBullets,
-                    unifyLineSpacing: unifyBulletLineSpacing
+                    unifyLineSpacing: unifyBulletLineSpacing,
+                    lineSpacingVal: bulletLineSpacingVal
                 });
                 if (bulletRes.totalNormalized > 0 || bulletRes.totalEmptyRemoved > 0) {
                     totalBulletSpacingNormalized += bulletRes.totalNormalized;
