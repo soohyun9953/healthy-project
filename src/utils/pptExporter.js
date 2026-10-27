@@ -820,11 +820,10 @@ function getEffectiveFontSize(el) {
  */
 /**
  * 💡 [옵션 P: 글머리표 항목 간격 일괄 통일 (Bullet Spacing Normalizer)]
- * 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 간격이 아래로 갈수록 벌어지거나 불균일한 현상을 상단 첫 단락 간격 기준으로 일치시킵니다.
+ * 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 불필요하게 벌어진 간격과 빈 줄을 제거하여 조밀하고 균일하게 통일합니다.
  */
 function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
     const {
-        bulletSpacingMode = 'top', // 'top' | 'compact' | 'custom'
         customSpacingPts = 0,
         removeEmptyParas = true,
         unifyLineSpacing = true
@@ -875,7 +874,7 @@ function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
         const hasBullets = paragraphs.some(p => isBulletPara(p));
         if (!hasBullets) continue;
 
-        // 1. 글머리 항목 사이의 불필요한 빈 단락(엔터 공백) 자동 제거
+        // 1. 글머리 항목 사이의 불필요한 빈 줄(엔터 공백) 자동 제거
         if (removeEmptyParas) {
             const toRemove = [];
             for (let i = 0; i < paragraphs.length; i++) {
@@ -901,26 +900,12 @@ function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
         const remainingParas = Array.from(tb.childNodes).filter(
             n => n.nodeType === 1 && (n.localName === 'p' || (n.tagName && n.tagName.endsWith(':p')))
         );
-        if (remainingParas.length < 2) continue;
+        if (remainingParas.length < 1) continue;
 
-        // 첫 번째 글머리 단락을 기준(상단 간격)으로 설정
-        const firstBulletIdx = remainingParas.findIndex(p => isBulletPara(p));
-        if (firstBulletIdx === -1) continue;
-        const topPara = remainingParas[firstBulletIdx];
+        const targetSpcBefVal = Math.round((parseFloat(customSpacingPts) || 0) * 100);
 
-        let topPPr = null;
-        const topPPrs = topPara.getElementsByTagNameNS('*', 'pPr');
-        if (topPPrs.length > 0) topPPr = topPPrs[0];
-
-        const topLnSpc = topPPr ? (topPPr.getElementsByTagNameNS('*', 'lnSpc')[0] || topPPr.getElementsByTagName('a:lnSpc')[0]) : null;
-
-        let targetSpcBefVal = 0;
-        if (bulletSpacingMode === 'custom' && customSpacingPts > 0) {
-            targetSpcBefVal = Math.round(customSpacingPts * 100);
-        }
-
-        // 2번째 글머리 단락부터 상단 기준으로 간격 일괄 통일
-        for (let i = firstBulletIdx + 1; i < remainingParas.length; i++) {
+        // 모든 글머리 단락 간격 균일화
+        for (let i = 0; i < remainingParas.length; i++) {
             const p = remainingParas[i];
             if (!isBulletPara(p)) continue;
 
@@ -933,7 +918,7 @@ function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
 
             let changed = false;
 
-            // 단락 앞 간격 (spcBef) 처리
+            // 단락 앞 간격 (spcBef) 처리: 지정값(기본 0pt)으로 일괄 통일
             const existingSpcBef = pPr.getElementsByTagNameNS('*', 'spcBef')[0] || pPr.getElementsByTagName('a:spcBef')[0];
             if (targetSpcBefVal === 0) {
                 if (existingSpcBef) {
@@ -964,16 +949,23 @@ function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
                 changed = true;
             }
 
-            // 줄간격 (lnSpc) 통일
-            if (unifyLineSpacing && topLnSpc) {
+            // 줄간격 (lnSpc) 100% 표준 통일
+            if (unifyLineSpacing) {
                 const curLnSpc = pPr.getElementsByTagNameNS('*', 'lnSpc')[0] || pPr.getElementsByTagName('a:lnSpc')[0];
-                const topLnSpcClone = topLnSpc.cloneNode(true);
-                if (curLnSpc) {
-                    pPr.replaceChild(topLnSpcClone, curLnSpc);
+                if (!curLnSpc) {
+                    const lnSpcEl = xmlDoc.createElementNS(nsA, 'a:lnSpc');
+                    const pctEl = xmlDoc.createElementNS(nsA, 'a:spcPct');
+                    pctEl.setAttribute('val', '100000');
+                    lnSpcEl.appendChild(pctEl);
+                    pPr.appendChild(lnSpcEl);
+                    changed = true;
                 } else {
-                    pPr.appendChild(topLnSpcClone);
+                    const pctEl = curLnSpc.getElementsByTagNameNS('*', 'spcPct')[0] || curLnSpc.getElementsByTagName('a:spcPct')[0];
+                    if (pctEl && pctEl.getAttribute('val') !== '100000') {
+                        pctEl.setAttribute('val', '100000');
+                        changed = true;
+                    }
                 }
-                changed = true;
             }
 
             if (changed) {
@@ -2696,7 +2688,6 @@ export async function processPptBatch(pptFile, options) {
                         // 💡 [옵션 P: 글머리표 항목 간격 일괄 통일 및 빈 줄 제거]
             if (applyBulletSpacing && isActualSlide) {
                 const bulletRes = normalizeBulletSpacingInDoc(xmlDoc, {
-                    bulletSpacingMode,
                     customSpacingPts: bulletSpacingCustomPts,
                     removeEmptyParas: removeEmptyParasInBullets,
                     unifyLineSpacing: unifyBulletLineSpacing

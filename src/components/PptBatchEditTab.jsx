@@ -44,7 +44,6 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [unifyBullets, setUnifyBullets] = useState(true); // 하위 옵션 2: 중간점 통일
     const [clean_vertical_tab, set_clean_vertical_tab] = useState(true); // 하위 옵션 3: 세로 탭 품질검토 오류 수정
     const [applyBulletSpacing, setApplyBulletSpacing] = useState(false); // 옵션 P: 글머리표 항목 간격 일괄 통일
-    const [bulletSpacingMode, setBulletSpacingMode] = useState('top'); // 'top' (상단 첫 줄 기준) | 'custom' (직접 입력)
     const [bulletSpacingCustomPts, setBulletSpacingCustomPts] = useState('0'); // 직접 지정 pt
     const [removeEmptyParasInBullets, setRemoveEmptyParasInBullets] = useState(true); // 빈 줄 제거
     const [unifyBulletLineSpacing, setUnifyBulletLineSpacing] = useState(true); // 줄간격 통일
@@ -435,7 +434,6 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         applyFormatReset: applyFormatReset,
                         topHeaderMiddleAlign: topHeaderMiddleAlign,
                         applyBulletSpacing: applyBulletSpacing,
-                        bulletSpacingMode: bulletSpacingMode,
                         bulletSpacingCustomPts: parseFloat(bulletSpacingCustomPts) || 0,
                         removeEmptyParasInBullets: removeEmptyParasInBullets,
                         unifyBulletLineSpacing: unifyBulletLineSpacing
@@ -545,7 +543,6 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             applyFormatReset: applyFormatReset,
                             topHeaderMiddleAlign: topHeaderMiddleAlign,
                             applyBulletSpacing: applyBulletSpacing,
-                            bulletSpacingMode: bulletSpacingMode,
                             bulletSpacingCustomPts: parseFloat(bulletSpacingCustomPts) || 0,
                             removeEmptyParasInBullets: removeEmptyParasInBullets,
                             unifyBulletLineSpacing: unifyBulletLineSpacing
@@ -1455,7 +1452,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
                 </div>
 
-                {/* 옵션 P: 글머리표 항목 간격 일괄 통일 (하단 벌어진 간격 ➔ 상단 기준 균일화) */}
+                {/* 옵션 P: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화) */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
                         <input
@@ -1465,10 +1462,10 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             onChange={(e) => setApplyBulletSpacing(e.target.checked)}
                             style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10b981' }}
                         />
-                        옵션 P: 글머리표 항목 간격 일괄 통일 (하단 벌어진 간격 ➔ 상단 기준 균일화)
+                        옵션 P: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화)
                     </label>
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                        💡 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 간격이 아래로 갈수록 벌어지거나 불균일한 현상을 상단 첫 단락 간격 기준으로 일치시킵니다.
+                        💡 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 불필요하게 벌어진 간격과 빈 줄을 제거하여 조밀하고 균일하게 통일합니다.
                     </div>
 
                     <div style={{
@@ -1482,54 +1479,30 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         pointerEvents: applyBulletSpacing ? 'auto' : 'none',
                         transition: 'all 0.3s ease'
                     }}>
-                        {/* 간격 통일 방식 라디오 선택 */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                단락 간격(Space Before / After) 통일 기준:
+                        {/* 단락 간격(Space Before) 직접 지정 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                항목 간 단락 간격:
                             </span>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '13px' }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                                    <input
-                                        type="radio"
-                                        name="bulletSpacingMode"
-                                        value="top"
-                                        checked={bulletSpacingMode === 'top'}
-                                        onChange={() => setBulletSpacingMode('top')}
-                                        disabled={!applyBulletSpacing}
-                                    />
-                                    <span>상단 첫 단락 간격으로 일치화 (기본: 상단처럼 조밀하게 밀착)</span>
-                                </label>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                                    <input
-                                        type="radio"
-                                        name="bulletSpacingMode"
-                                        value="custom"
-                                        checked={bulletSpacingMode === 'custom'}
-                                        onChange={() => setBulletSpacingMode('custom')}
-                                        disabled={!applyBulletSpacing}
-                                    />
-                                    <span>사용자 지정 간격:</span>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="20"
-                                        step="0.5"
-                                        value={bulletSpacingCustomPts}
-                                        onChange={(e) => setBulletSpacingCustomPts(e.target.value)}
-                                        disabled={!applyBulletSpacing || bulletSpacingMode !== 'custom'}
-                                        style={{
-                                            width: '60px',
-                                            padding: '4px 8px',
-                                            borderRadius: '4px',
-                                            border: '1px solid var(--panel-border)',
-                                            background: 'var(--bg-primary)',
-                                            color: 'var(--text-primary)',
-                                            fontSize: '12px'
-                                        }}
-                                    />
-                                    <span>pt</span>
-                                </label>
-                            </div>
+                            <input
+                                type="number"
+                                min="0"
+                                max="20"
+                                step="0.5"
+                                value={bulletSpacingCustomPts}
+                                onChange={(e) => setBulletSpacingCustomPts(e.target.value)}
+                                disabled={!applyBulletSpacing}
+                                style={{
+                                    width: '60px',
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    border: '1px solid var(--panel-border)',
+                                    background: 'var(--bg-primary)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '12px'
+                                }}
+                            />
+                            <span style={{ color: 'var(--text-secondary)' }}>pt (기본값: 0pt - 벌어짐 없이 조밀하게 밀착)</span>
                         </div>
 
                         {/* 하위 체크박스 1: 빈 단락 제거 */}
@@ -1569,7 +1542,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                 onChange={(e) => setUnifyBulletLineSpacing(e.target.checked)}
                                 style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
                             />
-                            글머리 단락 줄간격(Line Spacing) 상단 첫 줄 기준으로 일괄 통일
+                            글머리 단락 줄간격(Line Spacing) 표준(100%)으로 일괄 균일화
                         </label>
                     </div>
                 </div>
