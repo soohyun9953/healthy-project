@@ -819,7 +819,7 @@ function getEffectiveFontSize(el) {
  * @returns {Promise<Blob>} 변환된 PPT 파일 Blob
  */
 /**
- * 💡 [옵션 P: 글머리표 항목 간격 일괄 통일 (Bullet Spacing Normalizer)]
+ * 💡 [옵션 O: 글머리표 항목 간격 일괄 통일 (Bullet Spacing Normalizer)]
  * 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 불필요하게 벌어진 간격과 빈 줄을 제거하여 조밀하고 균일하게 통일합니다.
  */
 function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
@@ -1432,7 +1432,7 @@ export async function processPptBatch(pptFile, options) {
         }
     }
 
-    // 💡 [옵션 O: 슬라이드 마스터/레이아웃 플레이스홀더 사양 사전 캐싱 (홈 > 다시 설정 자동화)]
+    // 💡 [옵션 N: 슬라이드 마스터/레이아웃 플레이스홀더 사양 사전 캐싱 (홈 > 다시 설정 자동화)]
     const layoutSpecMap = {}; // layoutPath -> { [phKey]: { xfrm, bodyPr, spPr, pPr, defRPr, fontName } }
     if (applyFormatReset) {
         // 1. 테마 글꼴 맵 구축 (themePath -> { majorEa, minorEa, majorLatin, minorLatin })
@@ -2488,7 +2488,7 @@ export async function processPptBatch(pptFile, options) {
                 }
             }
 
-            // 💡 [옵션 O: 슬라이드 마스터 서식 기반 자동 다시 설정 (홈 > 다시 설정 기능 100% 구현)]
+            // 💡 [옵션 N: 슬라이드 마스터 서식 기반 자동 다시 설정 (홈 > 다시 설정 기능 100% 구현)]
             if (applyFormatReset && isActualSlide) {
                 // 슬라이드가 참조하는 레이아웃 파일 경로 확인
                 const slideFileName = slidePath.split('/').pop();
@@ -2689,7 +2689,7 @@ export async function processPptBatch(pptFile, options) {
                 });
             }
 
-                        // 💡 [옵션 P: 글머리표 항목 간격 일괄 통일 및 빈 줄 제거]
+                        // 💡 [옵션 O: 글머리표 항목 간격 일괄 통일 및 빈 줄 제거]
             if (applyBulletSpacing && isActualSlide) {
                 const bulletRes = normalizeBulletSpacingInDoc(xmlDoc, {
                     customSpacingPts: bulletSpacingCustomPts,

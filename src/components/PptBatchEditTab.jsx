@@ -43,7 +43,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [replaceNbs, setReplaceNbs] = useState(true); // 하위 옵션 1: NBS 일반 공백 변환
     const [unifyBullets, setUnifyBullets] = useState(true); // 하위 옵션 2: 중간점 통일
     const [clean_vertical_tab, set_clean_vertical_tab] = useState(true); // 하위 옵션 3: 세로 탭 품질검토 오류 수정
-    const [applyBulletSpacing, setApplyBulletSpacing] = useState(false); // 옵션 P: 글머리표 항목 간격 일괄 통일
+    const [applyBulletSpacing, setApplyBulletSpacing] = useState(false); // 옵션 O: 글머리표 항목 간격 일괄 통일
     const [bulletSpacingCustomPts, setBulletSpacingCustomPts] = useState('0'); // 직접 지정 pt
     const [removeEmptyParasInBullets, setRemoveEmptyParasInBullets] = useState(true); // 빈 줄 제거
     const [unifyBulletLineSpacing, setUnifyBulletLineSpacing] = useState(true); // 줄간격 통일
@@ -68,9 +68,9 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [clearSpeakerNotes, setClearSpeakerNotes] = useState(false); // 옵션 L: 슬라이드 노트 일괄 삭제
     const [applySequentialSlideNum, setApplySequentialSlideNum] = useState(false); // 옵션 M: 슬라이드 시작 번호 순차 지정
     const [initialFirstSlideNum, setInitialFirstSlideNum] = useState(1); // 첫 파일 시작 번호 (기본 1)
-    const [applyFormatReset, setApplyFormatReset] = useState(false); // 옵션 O: 슬라이드 서식 자동 다시 설정 (상단 목차 텍스트 맞춤: 중간)
-    const [topHeaderMiddleAlign, setTopHeaderMiddleAlign] = useState(true); // 옵션 O 하위 옵션: 상단 목차 세로 중간 맞춤
-    const [mergeToOneFile, setMergeToOneFile] = useState(false); // 옵션 N: 다중 PPT를 하나의 PPT 파일로 병합 (최하단)
+    const [applyFormatReset, setApplyFormatReset] = useState(false); // 옵션 N: 슬라이드 서식 자동 다시 설정 (상단 목차 텍스트 맞춤: 중간)
+    const [topHeaderMiddleAlign, setTopHeaderMiddleAlign] = useState(true); // 옵션 N 하위 옵션: 상단 목차 세로 중간 맞춤
+    const [mergeToOneFile, setMergeToOneFile] = useState(false); // 옵션 P: 다중 PPT를 하나의 PPT 파일로 병합 (최하단)
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
@@ -871,7 +871,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)' }}>2. 일괄 편집 옵션 설정</h3>
                 </div>
 
-                {/* 옵션 1: 단어 수정 */}
+                {/* 옵션 A: 단어 수정 */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
                     <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px', color: 'var(--text-primary)' }}>
                         옵션 A: 수정할 단어 규칙 입력 (선택)
@@ -1659,17 +1659,17 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
                 </div>
 
-                {/* 옵션 O: 슬라이드 마스터 서식 다시 설정 자동화 (홈 > 다시 설정 & 상단 목차 텍스트 맞춤: 중간) */}
+                {/* 옵션 N: 슬라이드 마스터 서식 다시 설정 자동화 (홈 > 다시 설정 & 상단 목차 텍스트 맞춤: 중간) */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
                         <input
-                            id="checkbox-option-o"
+                            id="checkbox-option-p"
                             type="checkbox"
                             checked={applyFormatReset}
                             onChange={(e) => setApplyFormatReset(e.target.checked)}
                             style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
                         />
-                        옵션 O: 슬라이드 마스터 서식 다시 설정 자동화 (홈 ➔ 다시 설정 & 상단 목차 텍스트 맞춤: 중간)
+                        옵션 N: 슬라이드 마스터 서식 다시 설정 자동화 (홈 ➔ 다시 설정 & 상단 목차 텍스트 맞춤: 중간)
                     </label>
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                         💡 PowerPoint의 <strong>[홈] ➔ [슬라이드] ➔ [다시 설정]</strong> 기능을 일괄 자동화합니다. 각 슬라이드가 참조하는 슬라이드 레이아웃/마스터의 표준 서식(위치, 크기, 여백, 단락 정렬, 폰트 스타일)을 플레이스홀더에 1:1로 완전 동기화하며, 특히 <strong>슬라이드 상단의 목차·헤더·소분류 텍스트 상자의 텍스트 맞춤을 '중간(Middle, 세로 가운데 맞춤)'으로 일괄 설정</strong>합니다.<br/>
@@ -1679,17 +1679,17 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
                 </div>
 
-                {/* 옵션 P: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화) */}
+                {/* 옵션 O: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화) */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
                         <input
-                            id="checkbox-option-p"
+                            id="checkbox-option-o"
                             type="checkbox"
                             checked={applyBulletSpacing}
                             onChange={(e) => setApplyBulletSpacing(e.target.checked)}
                             style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10b981' }}
                         />
-                        옵션 P: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화)
+                        옵션 O: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화)
                     </label>
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                         💡 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 불필요하게 벌어진 간격과 빈 줄을 제거하여 조밀하고 균일하게 통일합니다.
@@ -1774,7 +1774,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
                 </div>
 
-                {/* 옵션 N: 다중 PPT 파일을 하나의 통합 PPT 파일로 합치기 (병합) [최하단] */}
+                {/* 옵션 P: 다중 PPT 파일을 하나의 통합 PPT 파일로 합치기 (병합) [최하단] */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
                         <input
@@ -1784,7 +1784,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             onChange={(e) => setMergeToOneFile(e.target.checked)}
                             style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
                         />
-                        옵션 N: 다중 PPT 파일을 하나의 통합 PPT 파일로 합치기 (병합)
+                        옵션 P: 다중 PPT 파일을 하나의 통합 PPT 파일로 합치기 (병합)
                     </label>
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                         💡 여러 개의 PPT 파일을 일괄 수정한 뒤, <strong>순서대로 결합하여 1개의 PPTX 파일로 통합 저장</strong>합니다. (미선택 시 기본 개별 ZIP 압축 파일로 다운로드됩니다.)
