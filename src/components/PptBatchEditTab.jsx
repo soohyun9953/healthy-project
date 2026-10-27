@@ -937,52 +937,70 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         형식: <code>기존크기(변경크기)</code> (단일 숫자 입력 시 전체 적용)
                     </div>
 
-                    {/* 추가 옵션: 소수점 폰트 크기 반올림/올림 반영 */}
-                    <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px dashed var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13.5px', color: 'var(--text-primary)' }}>
-                            <input
-                                id="checkbox-round-fontsize"
-                                type="checkbox"
-                                checked={roundFontSizes}
-                                onChange={(e) => setRoundFontSizes(e.target.checked)}
-                                style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#a855f7' }}
-                            />
-                            추가 옵션: 소수점 폰트 크기 반올림/올림 자동 반영 (정수 크기로 정규화)
-                        </label>
-                        <div style={{ paddingLeft: '24px', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                            💡 PPT 텍스트 상자 자동 맞춤 등으로 소수점으로 축소된 글자 크기(예: 7.2pt, 8.4pt 등)를 정수 단위로 일괄 올림/반올림하여 작성합니다.
+                    {/* 추가 옵션: 소수점 폰트 크기 반올림/올림 반영 및 작은 폰트 보정 (안쪽으로 인덴트하여 명확히 구분) */}
+                    <div style={{
+                        marginLeft: '28px',
+                        marginTop: '12px',
+                        padding: '14px 16px',
+                        background: 'rgba(0, 0, 0, 0.22)',
+                        borderRadius: '8px',
+                        border: '1px solid var(--panel-border)',
+                        borderLeft: '3px solid #a855f7',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                    }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#c084fc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>⚙️ 옵션 C 추가 세부 옵션</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13.5px', color: 'var(--text-primary)' }}>
+                                <input
+                                    id="checkbox-round-fontsize"
+                                    type="checkbox"
+                                    checked={roundFontSizes}
+                                    onChange={(e) => setRoundFontSizes(e.target.checked)}
+                                    style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#a855f7' }}
+                                />
+                                추가 옵션: 소수점 폰트 크기 반올림/올림 자동 반영 (정수 크기로 정규화)
+                            </label>
+                            <div style={{ paddingLeft: '24px', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                                💡 PPT 텍스트 상자 자동 맞춤 등으로 소수점으로 축소된 글자 크기(예: 7.2pt, 8.4pt 등)를 정수 단위로 일괄 올림/반올림하여 작성합니다.
+                            </div>
+
+                            {roundFontSizes && (
+                                <div className="animate-slide-up" style={{ paddingLeft: '24px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px' }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>반영 방식:</span>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                        <input
+                                            type="radio"
+                                            name="roundFontSizeMode"
+                                            value="ceil"
+                                            checked={roundFontSizeMode === 'ceil'}
+                                            onChange={() => setRoundFontSizeMode('ceil')}
+                                            style={{ cursor: 'pointer', accentColor: '#a855f7' }}
+                                        />
+                                        <strong>올림(Ceil)</strong> <span style={{ color: 'var(--accent-blue)', fontSize: '12px' }}>(예: 7.2pt ➔ 8pt, 8.4pt ➔ 9pt) [권장]</span>
+                                    </label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                        <input
+                                            type="radio"
+                                            name="roundFontSizeMode"
+                                            value="round"
+                                            checked={roundFontSizeMode === 'round'}
+                                            onChange={() => setRoundFontSizeMode('round')}
+                                            style={{ cursor: 'pointer', accentColor: '#a855f7' }}
+                                        />
+                                        <strong>사사오입 반올림(Round)</strong> <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>(예: 7.2pt ➔ 7pt, 7.5pt ➔ 8pt)</span>
+                                    </label>
+                                </div>
+                            )}
                         </div>
 
-                        {roundFontSizes && (
-                            <div className="animate-slide-up" style={{ paddingLeft: '24px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px' }}>
-                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>반영 방식:</span>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-primary)' }}>
-                                    <input
-                                        type="radio"
-                                        name="roundFontSizeMode"
-                                        value="ceil"
-                                        checked={roundFontSizeMode === 'ceil'}
-                                        onChange={() => setRoundFontSizeMode('ceil')}
-                                        style={{ cursor: 'pointer', accentColor: '#a855f7' }}
-                                    />
-                                    <strong>올림(Ceil)</strong> <span style={{ color: 'var(--accent-blue)', fontSize: '12px' }}>(예: 7.2pt ➔ 8pt, 8.4pt ➔ 9pt) [권장]</span>
-                                </label>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-primary)' }}>
-                                    <input
-                                        type="radio"
-                                        name="roundFontSizeMode"
-                                        value="round"
-                                        checked={roundFontSizeMode === 'round'}
-                                        onChange={() => setRoundFontSizeMode('round')}
-                                        style={{ cursor: 'pointer', accentColor: '#a855f7' }}
-                                    />
-                                    <strong>사사오입 반올림(Round)</strong> <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>(예: 7.2pt ➔ 7pt, 7.5pt ➔ 8pt)</span>
-                                </label>
-                            </div>
-                        )}
+                        <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)' }} />
 
                         {/* 작은 폰트 가독성 자동 보정 옵션 (슬라이드 전체: 표 및 텍스트 상자) */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13.5px', color: 'var(--text-primary)' }}>
                                 <input
                                     type="checkbox"
@@ -1137,12 +1155,16 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
 
                     <div style={{
-                        paddingLeft: '28px',
+                        marginLeft: '28px',
+                        padding: '14px 16px',
+                        background: 'rgba(0, 0, 0, 0.22)',
+                        borderRadius: '8px',
+                        border: '1px solid var(--panel-border)',
+                        borderLeft: '3px solid ' + (applyTableDesignChecked ? '#a855f7' : 'rgba(255, 255, 255, 0.15)'),
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '12px',
-                        borderLeft: '2px solid ' + (applyTableDesignChecked ? 'rgba(168, 85, 247, 0.5)' : 'rgba(255, 255, 255, 0.1)'),
-                        marginTop: '4px',
+                        marginTop: '8px',
                         opacity: applyTableDesignChecked ? 1 : 0.45,
                         pointerEvents: applyTableDesignChecked ? 'auto' : 'none',
                         transition: 'all 0.3s ease'
@@ -1368,12 +1390,16 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
 
                     <div style={{
-                        paddingLeft: '28px',
+                        marginLeft: '28px',
+                        padding: '14px 16px',
+                        background: 'rgba(0, 0, 0, 0.22)',
+                        borderRadius: '8px',
+                        border: '1px solid var(--panel-border)',
+                        borderLeft: '3px solid ' + (applySpecialCharClean ? '#a855f7' : 'rgba(255, 255, 255, 0.15)'),
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '12px',
-                        borderLeft: '2px solid ' + (applySpecialCharClean ? 'rgba(168, 85, 247, 0.5)' : 'rgba(255, 255, 255, 0.1)'),
-                        marginTop: '4px',
+                        marginTop: '8px',
                         opacity: applySpecialCharClean ? 1 : 0.45,
                         pointerEvents: applySpecialCharClean ? 'auto' : 'none',
                         transition: 'all 0.3s ease'
@@ -1472,12 +1498,18 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
 
                     {/* 하위 옵션: 괄호 앞 공백 추가 */}
                     <div style={{
-                        paddingLeft: '28px',
+                        marginLeft: '28px',
+                        padding: '12px 16px',
+                        background: 'rgba(0, 0, 0, 0.22)',
+                        borderRadius: '8px',
+                        border: '1px solid var(--panel-border)',
+                        borderLeft: '3px solid ' + (add_title_page_numbers ? '#a855f7' : 'rgba(255, 255, 255, 0.15)'),
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '8px',
-                        borderLeft: '2px solid rgba(168, 85, 247, 0.5)',
-                        marginTop: '4px',
+                        marginTop: '8px',
+                        opacity: add_title_page_numbers ? 1 : 0.45,
+                        pointerEvents: add_title_page_numbers ? 'auto' : 'none',
                         transition: 'all 0.3s ease'
                     }}>
                         <label style={{
@@ -1690,12 +1722,16 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
 
                     <div style={{
-                        paddingLeft: '28px',
+                        marginLeft: '28px',
+                        padding: '14px 16px',
+                        background: 'rgba(0, 0, 0, 0.22)',
+                        borderRadius: '8px',
+                        border: '1px solid var(--panel-border)',
+                        borderLeft: '3px solid ' + (applyBulletSpacing ? '#10b981' : 'rgba(255, 255, 255, 0.15)'),
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '12px',
-                        borderLeft: '2px solid ' + (applyBulletSpacing ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.1)'),
-                        marginTop: '4px',
+                        marginTop: '8px',
                         opacity: applyBulletSpacing ? 1 : 0.45,
                         pointerEvents: applyBulletSpacing ? 'auto' : 'none',
                         transition: 'all 0.3s ease'
