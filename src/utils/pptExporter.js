@@ -819,15 +819,14 @@ function getEffectiveFontSize(el) {
  * @returns {Promise<Blob>} 변환된 PPT 파일 Blob
  */
 /**
- * 💡 [옵션 O: 글머리표 항목 간격 일괄 통일 (Bullet Spacing Normalizer)]
- * 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 불필요하게 벌어진 간격과 빈 줄을 제거하여 조밀하고 균일하게 통일합니다.
- * 단위 지원: 'line' (0.5줄 = 50,000 = 파워포인트 표준 0.5줄) 또는 'pt' (포인트)
+ * 💡 [옵션 O: 글머리표 첫 줄 내어쓰기 간격 일괄 조정 (Bullet Hanging Indent)]
+ * 슬라이드 내 글머리표(▪, •, -, 번호 등) 단락의 첫 줄 내어쓰기(Hanging Indent: marL & indent) 간격을
+ * 지정된 센티미터(CM) 값(기본 0.24CM)으로 일괄 통일합니다.
+ * 1cm = 360,000 EMU, 0.24cm = 86,400 EMU
  */
-function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
+function normalizeBulletHangingIndent(xmlDoc, options = {}) {
     const {
-        customSpacing = undefined,
-        customSpacingPts = undefined, // 하위 호환성
-        spacingUnit = 'line',        // 'line' (기본 권장) 또는 'pt'
+        indentCm = 0.24,             // 기본값 0.24CM
         removeEmptyParas = true,
         unifyLineSpacing = true
     } = options;
@@ -837,6 +836,11 @@ function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
 
     const nsA = 'http://schemas.openxmlformats.org/drawingml/2006/main';
     const txBodies = Array.from(xmlDoc.getElementsByTagNameNS('*', 'txBody'));
+
+    // 1cm = 360,000 EMU
+    const parsedCm = parseFloat(indentCm);
+    const validCm = isNaN(parsedCm) || parsedCm < 0 ? 0.24 : parsedCm;
+    const targetIndentEmu = Math.round(validCm * 360000);
 
     const isBulletText = (txt) => {
         return /^\s*([▪•·\-\s*‣►▶●○※–]|\d+[.)]|[가-힣a-zA-Z][.)])/.test(txt);
@@ -868,32 +872,17 @@ function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
         return text.trim().length === 0;
     };
 
-    // 값 파싱 및 단위 결정
-    let rawVal = 0;
-    if (customSpacing !== undefined && customSpacing !== null) {
-        rawVal = parseFloat(customSpacing);
-    } else if (customSpacingPts !== undefined && customSpacingPts !== null) {
-        rawVal = parseFloat(customSpacingPts);
-    }
-    if (isNaN(rawVal) || rawVal < 0) rawVal = 0;
-
-    let isLine = spacingUnit === 'line';
-    // 만약 사용자가 '0.5', '0.3', '1' 등 2.0 이하의 값을 넣었다면 파워포인트의 '줄(line)' 단위로 스마트 자동 인식
-    if (spacingUnit !== 'pt' && rawVal > 0 && rawVal <= 2.0) {
-        isLine = true;
-    }
-
     for (const tb of txBodies) {
         const paragraphs = Array.from(tb.childNodes).filter(
             n => n.nodeType === 1 && (n.localName === 'p' || (n.tagName && n.tagName.endsWith(':p')))
         );
-        if (paragraphs.length < 2) continue;
+        if (paragraphs.length < 1) continue;
 
         const hasBullets = paragraphs.some(p => isBulletPara(p));
         if (!hasBullets) continue;
 
         // 1. 글머리 항목 사이의 불필요한 빈 줄(엔터 공백) 자동 제거
-        if (removeEmptyParas) {
+        if (removeEmptyParas && paragraphs.length >= 2) {
             const toRemove = [];
             for (let i = 0; i < paragraphs.length; i++) {
                 const p = paragraphs[i];
@@ -918,9 +907,8 @@ function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
         const remainingParas = Array.from(tb.childNodes).filter(
             n => n.nodeType === 1 && (n.localName === 'p' || (n.tagName && n.tagName.endsWith(':p')))
         );
-        if (remainingParas.length < 1) continue;
 
-        // 모든 글머리 단락 간격 균일화
+        // 모든 글머리 단락의 첫 줄 내어쓰기 간격(marL & indent) 일괄 조정
         for (let i = 0; i < remainingParas.length; i++) {
             const p = remainingParas[i];
             if (!isBulletPara(p)) continue;
@@ -934,61 +922,22 @@ function normalizeBulletSpacingInDoc(xmlDoc, options = {}) {
 
             let changed = false;
 
-            // 단락 앞 간격 (spcBef) 처리:
-            // 첫 번째 글머리 항목(i === 0)은 텍스트 상자 상단이 밀려나지 않도록 밀착(0)
-            // 두 번째 항목부터(i > 0) 설정한 간격(예: 0.5줄 = 50000)을 적용하여 항목 간 간격을 균일하게 벌림!
-            const isFirstBulletInBox = (i === 0);
-            const existingSpcBef = pPr.getElementsByTagNameNS('*', 'spcBef')[0] || pPr.getElementsByTagName('a:spcBef')[0];
+            // 💡 [핵심] 첫 줄 내어쓰기(Hanging Indent) 계산 및 적용
+            // startPos: 글머리 기호의 시작 위치 (기존 여백 보존)
+            const curMarL = parseInt(pPr.getAttribute('marL') || '0', 10);
+            const curIndent = parseInt(pPr.getAttribute('indent') || '0', 10);
+            const startPos = Math.max(0, curMarL + curIndent);
 
-            if (rawVal === 0 || isFirstBulletInBox) {
-                if (existingSpcBef) {
-                    pPr.removeChild(existingSpcBef);
-                    changed = true;
-                }
-            } else {
-                if (isLine) {
-                    // 줄(line) 단위: 0.5줄 = 50,000 (1줄 = 100,000) -> PowerPoint [단락 앞: 0.5줄]
-                    const pctVal = Math.round(rawVal * 100000);
-                    if (!existingSpcBef) {
-                        const spcBefEl = xmlDoc.createElementNS(nsA, 'a:spcBef');
-                        const pctEl = xmlDoc.createElementNS(nsA, 'a:spcPct');
-                        pctEl.setAttribute('val', String(pctVal));
-                        spcBefEl.appendChild(pctEl);
-                        pPr.appendChild(spcBefEl);
-                        changed = true;
-                    } else {
-                        // 기존 자식 노드 깨끗이 비우고 spcPct로 교체
-                        while (existingSpcBef.firstChild) {
-                            existingSpcBef.removeChild(existingSpcBef.firstChild);
-                        }
-                        const pctEl = xmlDoc.createElementNS(nsA, 'a:spcPct');
-                        pctEl.setAttribute('val', String(pctVal));
-                        existingSpcBef.appendChild(pctEl);
-                        changed = true;
-                    }
-                } else {
-                    // pt 단위: 6pt = 600 (1pt = 100) -> PowerPoint [단락 앞: 6pt]
-                    const ptsVal = Math.round(rawVal * 100);
-                    if (!existingSpcBef) {
-                        const spcBefEl = xmlDoc.createElementNS(nsA, 'a:spcBef');
-                        const ptsEl = xmlDoc.createElementNS(nsA, 'a:spcPts');
-                        ptsEl.setAttribute('val', String(ptsVal));
-                        spcBefEl.appendChild(ptsEl);
-                        pPr.appendChild(spcBefEl);
-                        changed = true;
-                    } else {
-                        while (existingSpcBef.firstChild) {
-                            existingSpcBef.removeChild(existingSpcBef.firstChild);
-                        }
-                        const ptsEl = xmlDoc.createElementNS(nsA, 'a:spcPts');
-                        ptsEl.setAttribute('val', String(ptsVal));
-                        existingSpcBef.appendChild(ptsEl);
-                        changed = true;
-                    }
-                }
+            const newIndent = -targetIndentEmu; // 음수: 첫 줄 내어쓰기
+            const newMarL = startPos + targetIndentEmu; // 둘째 줄 및 본문 시작 위치
+
+            if (pPr.getAttribute('marL') !== String(newMarL) || pPr.getAttribute('indent') !== String(newIndent)) {
+                pPr.setAttribute('marL', String(newMarL));
+                pPr.setAttribute('indent', String(newIndent));
+                changed = true;
             }
 
-            // 단락 뒤 간격 (spcAft) 제거 (아래로 밀려 떨어지는 간격 방지)
+            // 단락 뒤 간격 (spcAft) 제거 (아래로 밀려 떨어지는 벌어짐 방지)
             const existingSpcAft = pPr.getElementsByTagNameNS('*', 'spcAft')[0] || pPr.getElementsByTagName('a:spcAft')[0];
             if (existingSpcAft) {
                 pPr.removeChild(existingSpcAft);
@@ -1061,9 +1010,8 @@ export async function processPptBatch(pptFile, options) {
         applyFormatReset = false,
         topHeaderMiddleAlign = true,
         applyBulletSpacing = false,
-        bulletSpacingCustomVal = '0.5',
-        bulletSpacingUnit = 'line',
-        bulletSpacingCustomPts = undefined, // 하위 호환
+        bulletIndentCm = '0.24',             // 옵션 O: 글머리표 첫 줄 내어쓰기 간격 (기본 0.24CM)
+        bulletSpacingCustomVal = undefined,  // 하위 호환
         removeEmptyParasInBullets = true,
         unifyBulletLineSpacing = true
     } = options;
@@ -2737,12 +2685,10 @@ export async function processPptBatch(pptFile, options) {
                 });
             }
 
-                        // 💡 [옵션 O: 글머리표 항목 간격 일괄 통일 및 빈 줄 제거]
+                        // 💡 [옵션 O: 글머리표 첫 줄 내어쓰기 간격 일괄 통일 (기본 0.24CM)]
             if (applyBulletSpacing && isActualSlide) {
-                const bulletRes = normalizeBulletSpacingInDoc(xmlDoc, {
-                    customSpacing: bulletSpacingCustomVal !== undefined ? bulletSpacingCustomVal : bulletSpacingCustomPts,
-                    customSpacingPts: bulletSpacingCustomPts,
-                    spacingUnit: bulletSpacingUnit || 'line',
+                const bulletRes = normalizeBulletHangingIndent(xmlDoc, {
+                    indentCm: bulletIndentCm !== undefined ? bulletIndentCm : bulletSpacingCustomVal,
                     removeEmptyParas: removeEmptyParasInBullets,
                     unifyLineSpacing: unifyBulletLineSpacing
                 });

@@ -43,9 +43,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [replaceNbs, setReplaceNbs] = useState(true); // 하위 옵션 1: NBS 일반 공백 변환
     const [unifyBullets, setUnifyBullets] = useState(true); // 하위 옵션 2: 중간점 통일
     const [clean_vertical_tab, set_clean_vertical_tab] = useState(true); // 하위 옵션 3: 세로 탭 품질검토 오류 수정
-    const [applyBulletSpacing, setApplyBulletSpacing] = useState(false); // 옵션 O: 글머리표 항목 간격 일괄 통일
-    const [bulletSpacingCustomVal, setBulletSpacingCustomVal] = useState('0.5'); // 항목 간격 수치 (기본 0.5줄)
-    const [bulletSpacingUnit, setBulletSpacingUnit] = useState('line'); // 단위: 'line'(줄, 기본) 또는 'pt'
+    const [applyBulletSpacing, setApplyBulletSpacing] = useState(false); // 옵션 O: 글머리표 첫 줄 내어쓰기 간격 일괄 통일
+    const [bulletIndentCm, setBulletIndentCm] = useState('0.24'); // 첫 줄 내어쓰기 간격 (기본 0.24CM)
     const [removeEmptyParasInBullets, setRemoveEmptyParasInBullets] = useState(true); // 빈 줄 제거
     const [unifyBulletLineSpacing, setUnifyBulletLineSpacing] = useState(true); // 줄간격 통일
     const [add_title_page_numbers, set_add_title_page_numbers] = useState(false); // 옵션 G: 동일 제목 일련번호 자동 추가
@@ -254,17 +253,17 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             changes.push(`슬라이드 노트 삭제 ${count}개`);
         }
 
-        // 13. 글머리표 간격 일괄 통일
+        // 13. 글머리표 첫 줄 내어쓰기 간격 일괄 통일
         if (applyBulletSpacing) {
             const normCount = modifiedBlob.totalBulletSpacingNormalized || 0;
             const emptyCount = modifiedBlob.totalEmptyParasRemoved || 0;
             const msgParts = [];
-            if (normCount > 0) msgParts.push(`간격 통일 ${normCount}개 단락`);
+            if (normCount > 0) msgParts.push(`내어쓰기(${bulletIndentCm}CM) ${normCount}개 단락`);
             if (emptyCount > 0) msgParts.push(`빈 줄 정리 ${emptyCount}개`);
             if (msgParts.length > 0) {
-                changes.push(`글머리표 서식 정규화 (${msgParts.join(', ')})`);
+                changes.push(`글머리표 첫 줄 내어쓰기 통일 (${msgParts.join(', ')})`);
             } else {
-                changes.push(`글머리표 서식 정규화 완료`);
+                changes.push(`글머리표 첫 줄 내어쓰기(${bulletIndentCm}CM) 통일 완료`);
             }
         }
 
@@ -435,9 +434,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         applyFormatReset: applyFormatReset,
                         topHeaderMiddleAlign: topHeaderMiddleAlign,
                         applyBulletSpacing: applyBulletSpacing,
-                        bulletSpacingCustomVal: bulletSpacingCustomVal,
-                        bulletSpacingUnit: bulletSpacingUnit,
-                        bulletSpacingCustomPts: bulletSpacingUnit === 'pt' ? (parseFloat(bulletSpacingCustomVal) || 0) : undefined,
+                        bulletIndentCm: parseFloat(bulletIndentCm) || 0.24,
                         removeEmptyParasInBullets: removeEmptyParasInBullets,
                         unifyBulletLineSpacing: unifyBulletLineSpacing
                     };
@@ -1682,7 +1679,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     </div>
                 </div>
 
-                {/* 옵션 O: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화) */}
+                {/* 옵션 O: 글머리표 첫 줄 내어쓰기 간격 일괄 통일 (기본 0.24CM) */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
                         <input
@@ -1692,10 +1689,10 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                             onChange={(e) => setApplyBulletSpacing(e.target.checked)}
                             style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10b981' }}
                         />
-                        옵션 O: 글머리표 항목 간격 일괄 통일 (벌어진 간격 밀착 및 균일화)
+                        옵션 O: 글머리표 첫 줄 내어쓰기 간격 일괄 통일 (기본 0.24CM)
                     </label>
                     <div style={{ paddingLeft: '28px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                        💡 슬라이드 내 글머리표(▪, •, -, 번호 등) 항목 사이의 불필요하게 벌어진 간격과 빈 줄을 제거하여 조밀하고 균일하게 통일합니다.
+                        💡 슬라이드 내 모든 글머리표(▪, •, -, 번호 등) 기호와 본문 첫 글자 사이의 간격 및 줄바꿈 내어쓰기를 지정한 크기(CM)로 일괄 통일합니다.
                     </div>
 
                     <div style={{
@@ -1709,126 +1706,61 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         pointerEvents: applyBulletSpacing ? 'auto' : 'none',
                         transition: 'all 0.3s ease'
                     }}>
-                        {/* 단락 간격(Space Before) 직접 지정 및 단위 선택 */}
+                        {/* 첫 줄 내어쓰기 간격(Hanging Indent) 직접 지정 및 프리셋 */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', flexWrap: 'wrap' }}>
                                 <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                                    항목 간 단락 간격:
+                                    첫 줄 내어쓰기 간격:
                                 </span>
                                 <input
                                     type="number"
                                     min="0"
-                                    max="20"
-                                    step={bulletSpacingUnit === 'line' ? '0.1' : '1'}
-                                    value={bulletSpacingCustomVal}
-                                    onChange={(e) => setBulletSpacingCustomVal(e.target.value)}
+                                    max="5"
+                                    step="0.01"
+                                    value={bulletIndentCm}
+                                    onChange={(e) => setBulletIndentCm(e.target.value)}
                                     disabled={!applyBulletSpacing}
                                     style={{
-                                        width: '65px',
+                                        width: '70px',
                                         padding: '4px 8px',
                                         borderRadius: '4px',
                                         border: '1px solid var(--panel-border)',
                                         background: 'var(--bg-primary)',
                                         color: 'var(--text-primary)',
-                                        fontSize: '12px',
+                                        fontSize: '13px',
                                         textAlign: 'center',
                                         fontWeight: 600
                                     }}
                                 />
-                                <select
-                                    value={bulletSpacingUnit}
-                                    onChange={(e) => setBulletSpacingUnit(e.target.value)}
-                                    disabled={!applyBulletSpacing}
-                                    style={{
-                                        padding: '4px 8px',
-                                        borderRadius: '4px',
-                                        border: '1px solid var(--panel-border)',
-                                        background: 'var(--bg-primary)',
-                                        color: 'var(--text-primary)',
-                                        fontSize: '12px',
-                                        fontWeight: 600,
-                                        cursor: applyBulletSpacing ? 'pointer' : 'not-allowed'
-                                    }}
-                                >
-                                    <option value="line">줄 (line, 기본 권장)</option>
-                                    <option value="pt">pt (포인트)</option>
-                                </select>
+                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>CM</span>
                                 <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                                    (파워포인트 표준 0.5줄 = 50% 줄간격 여백 부여)
+                                    (글머리표 기호와 본문 첫 글자 사이의 간격, 기본값: 0.24CM)
                                 </span>
                             </div>
 
                             {/* 빠른 추천 프리셋 버튼 */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingTop: '2px' }}>
-                                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>빠른 설정:</span>
-                                <button
-                                    type="button"
-                                    disabled={!applyBulletSpacing}
-                                    onClick={() => { setBulletSpacingCustomVal('0'); setBulletSpacingUnit('line'); }}
-                                    style={{
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        border: '1px solid ' + (bulletSpacingCustomVal === '0' ? '#10b981' : 'var(--panel-border)'),
-                                        background: bulletSpacingCustomVal === '0' ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-primary)',
-                                        color: bulletSpacingCustomVal === '0' ? '#10b981' : 'var(--text-secondary)',
-                                        fontSize: '11px',
-                                        cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
-                                        fontWeight: bulletSpacingCustomVal === '0' ? 700 : 500
-                                    }}
-                                >
-                                    완전 밀착 (0줄)
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={!applyBulletSpacing}
-                                    onClick={() => { setBulletSpacingCustomVal('0.3'); setBulletSpacingUnit('line'); }}
-                                    style={{
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        border: '1px solid ' + (bulletSpacingCustomVal === '0.3' ? '#10b981' : 'var(--panel-border)'),
-                                        background: bulletSpacingCustomVal === '0.3' ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-primary)',
-                                        color: bulletSpacingCustomVal === '0.3' ? '#10b981' : 'var(--text-secondary)',
-                                        fontSize: '11px',
-                                        cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
-                                        fontWeight: bulletSpacingCustomVal === '0.3' ? 700 : 500
-                                    }}
-                                >
-                                    조밀 간격 (0.3줄)
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={!applyBulletSpacing}
-                                    onClick={() => { setBulletSpacingCustomVal('0.5'); setBulletSpacingUnit('line'); }}
-                                    style={{
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        border: '1px solid ' + (bulletSpacingCustomVal === '0.5' ? '#10b981' : 'var(--panel-border)'),
-                                        background: bulletSpacingCustomVal === '0.5' ? 'rgba(16, 185, 129, 0.25)' : 'var(--bg-primary)',
-                                        color: bulletSpacingCustomVal === '0.5' ? '#10b981' : 'var(--text-secondary)',
-                                        fontSize: '11px',
-                                        cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
-                                        fontWeight: 700
-                                    }}
-                                >
-                                    표준 간격 (0.5줄 ★추천)
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={!applyBulletSpacing}
-                                    onClick={() => { setBulletSpacingCustomVal('1.0'); setBulletSpacingUnit('line'); }}
-                                    style={{
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        border: '1px solid ' + (bulletSpacingCustomVal === '1.0' || bulletSpacingCustomVal === '1' ? '#10b981' : 'var(--panel-border)'),
-                                        background: (bulletSpacingCustomVal === '1.0' || bulletSpacingCustomVal === '1') ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-primary)',
-                                        color: (bulletSpacingCustomVal === '1.0' || bulletSpacingCustomVal === '1') ? '#10b981' : 'var(--text-secondary)',
-                                        fontSize: '11px',
-                                        cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
-                                        fontWeight: (bulletSpacingCustomVal === '1.0' || bulletSpacingCustomVal === '1') ? 700 : 500
-                                    }}
-                                >
-                                    여유 간격 (1.0줄)
-                                </button>
+                                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>추천 간격:</span>
+                                {['0.15', '0.20', '0.24', '0.30', '0.40', '0.50'].map((val) => (
+                                    <button
+                                        key={val}
+                                        type="button"
+                                        disabled={!applyBulletSpacing}
+                                        onClick={() => setBulletIndentCm(val)}
+                                        style={{
+                                            padding: '2px 8px',
+                                            borderRadius: '4px',
+                                            border: '1px solid ' + (bulletIndentCm === val ? '#10b981' : 'var(--panel-border)'),
+                                            background: bulletIndentCm === val ? 'rgba(16, 185, 129, 0.25)' : 'var(--bg-primary)',
+                                            color: bulletIndentCm === val ? '#10b981' : 'var(--text-secondary)',
+                                            fontSize: '11px',
+                                            cursor: applyBulletSpacing ? 'pointer' : 'not-allowed',
+                                            fontWeight: bulletIndentCm === val ? 700 : 500
+                                        }}
+                                    >
+                                        {val} CM {val === '0.24' ? '(기본값)' : ''}
+                                    </button>
+                                ))}
                             </div>
                         </div>
 
