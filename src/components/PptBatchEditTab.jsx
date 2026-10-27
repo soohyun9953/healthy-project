@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Presentation, Upload, X, Settings, CheckCircle2, Layers, Loader2, Sparkles, Info, FilePlus2, ArrowUpDown, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { Presentation, Upload, X, Settings, CheckCircle2, Loader2, Sparkles, Info, FilePlus2, ArrowUpDown, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { processPptBatch, mergeMultiplePptx } from '../utils/pptExporter';
 import JSZip from 'jszip';
 
@@ -1542,13 +1542,8 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
 
                 {/* 옵션 H: 글자 색상 일괄 매핑 변경 */}
                 <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--panel-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ padding: '6px', background: 'rgba(236, 72, 153, 0.1)', borderRadius: '6px' }}>
-                            <Layers size={16} color="#ec4899" />
-                        </div>
-                        <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--text-primary)', fontWeight: 600 }}>
-                            옵션 H: 글자 색상 일괄 매핑 변경 (선택)
-                        </h3>
+                    <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                        옵션 H: 글자 색상 일괄 매핑 변경 (선택)
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <textarea
