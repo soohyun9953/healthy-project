@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Presentation, Upload, X, Settings, CheckCircle2, Loader2, Sparkles, Info, FilePlus2, ArrowUpDown, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { Presentation, Upload, X, Settings, CheckCircle2, Loader2, Sparkles, Info, FilePlus2, ArrowUpDown, ChevronLeft, ChevronRight, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 import { processPptBatch, mergeMultiplePptx } from '../utils/pptExporter';
 import JSZip from 'jszip';
 
@@ -75,6 +75,25 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
+    const [allOptionsEnabled, setAllOptionsEnabled] = useState(false); // 전체 옵션 선택 여부
+
+    // 전체 옵션 일괄 선택/해제 핸들러
+    const handleToggleAllOptions = () => {
+        const next = !allOptionsEnabled;
+        setAllOptionsEnabled(next);
+        // 체크박스 기반 옵션들만 일괄 토글 (텍스트 입력 옵션 A, B, C, H는 제외)
+        setApplyDesignChecked(next);
+        setApplyTableDesignChecked(next);
+        setApplySpecialCharClean(next);
+        set_add_title_page_numbers(next);
+        setApplyBulletSpacing(next);
+        setPreventWordWrap(next);
+        setClearAltText(next);
+        setFixLangErrFlags(next);
+        setClearSpeakerNotes(next);
+        setApplySequentialSlideNum(next);
+        setApplyFormatReset(next);
+    };
 
     useEffect(() => {
         try {
@@ -946,9 +965,30 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 background: 'rgba(255, 255, 255, 0.02)',
                 display: 'flex', flexDirection: 'column', gap: '20px'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Settings size={20} color="#a855f7" />
-                    <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)' }}>2. 일괄 편집 옵션 설정</h3>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Settings size={20} color="#a855f7" />
+                        <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)' }}>2. 일괄 편집 옵션 설정</h3>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleToggleAllOptions}
+                        title={allOptionsEnabled ? '전체 옵션 해제' : '전체 옵션 선택'}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '7px',
+                            padding: '7px 14px', borderRadius: '8px', cursor: 'pointer',
+                            background: allOptionsEnabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(168, 85, 247, 0.12)',
+                            border: `1px solid ${allOptionsEnabled ? '#10b981' : '#a855f7'}`,
+                            color: allOptionsEnabled ? '#10b981' : '#c084fc',
+                            fontWeight: 700, fontSize: '13px',
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        {allOptionsEnabled
+                            ? <><ToggleRight size={17} /> 전체 옵션 해제</>
+                            : <><ToggleLeft size={17} /> 전체 옵션 선택</>
+                        }
+                    </button>
                 </div>
 
                 {/* 옵션 A: 단어 수정 */}
