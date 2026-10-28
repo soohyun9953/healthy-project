@@ -47,7 +47,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [bulletIndentCm, setBulletIndentCm] = useState('0.24'); // 첫 줄 내어쓰기 간격 (기본 0.24CM)
     const [removeEmptyParasInBullets, setRemoveEmptyParasInBullets] = useState(true); // 빈 줄 제거
     const [unifyBulletLineSpacing, setUnifyBulletLineSpacing] = useState(true); // 줄간격 통일
-    const [bulletLineSpacingVal, setBulletLineSpacingVal] = useState('1.0'); // 줄간격 배율 (기본 1.0, 1.2, 1.5)
+    const [bulletLineSpacingVal, setBulletLineSpacingVal] = useState('1.2'); // 줄간격 배율 (기본 1.0, 1.2, 1.5)
     const [add_title_page_numbers, set_add_title_page_numbers] = useState(false); // 옵션 G: 동일 제목 일련번호 자동 추가
     const [add_space_before_parenthesis, set_add_space_before_parenthesis] = useState(true); // 옵션 G 하위 옵션: 제목 뒤 괄호 앞 공백 추가
     const [textColorRules, setTextColorRules] = useState(() => {
