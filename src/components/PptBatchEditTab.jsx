@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Presentation, Upload, X, Settings, CheckCircle2, Loader2, Sparkles, Info, FilePlus2, ArrowUpDown, ChevronLeft, ChevronRight, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Presentation, Upload, X, Settings, CheckCircle2, Loader2, Sparkles, Info, FilePlus2, ArrowUpDown, ChevronLeft, ChevronRight, Trash2, ToggleLeft, ToggleRight, AlertTriangle, Download } from 'lucide-react';
 import { processPptBatch, mergeMultiplePptx } from '../utils/pptExporter';
 import JSZip from 'jszip';
 
@@ -73,9 +73,57 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [topHeaderMiddleAlign, setTopHeaderMiddleAlign] = useState(true); // 옵션 N 하위 옵션: 상단 목차 세로 중간 맞춤
     const [mergeToOneFile, setMergeToOneFile] = useState(false); // 옵션 P: 다중 PPT를 하나의 PPT 파일로 병합 (최하단)
     const [isProcessingBatch, setIsProcessingBatch] = useState(false);
+    const [processingStep, setProcessingStep] = useState(''); // 실시간 진행 단계 안내
     const [isDraggingBatch, setIsDraggingBatch] = useState(false);
     const [batchReport, setBatchReport] = useState([]); // 📊 일괄 편집 결과 상세 피드백 리포트 리스트
     const [allOptionsEnabled, setAllOptionsEnabled] = useState(false); // 전체 옵션 선택 여부
+    const [localErrorMsg, setLocalErrorMsg] = useState(null); // 실행 버튼 위치 인라인 오류 배너
+    const [localSuccessMsg, setLocalSuccessMsg] = useState(null); // 실행 버튼 위치 인라인 성공 배너
+    const [pendingDownload, setPendingDownload] = useState(null); // 저장 취소/차단 시 수동 다운로드용 { blob, fileName }
+
+    const reportError = (msg) => {
+        setLocalErrorMsg(msg);
+        setLocalSuccessMsg(null);
+        if (setErrorMsg) setErrorMsg(msg);
+        if (setSuccessMsg) setSuccessMsg(null);
+    };
+
+    const reportSuccess = (msg) => {
+        setLocalSuccessMsg(msg);
+        setLocalErrorMsg(null);
+        if (setSuccessMsg) setSuccessMsg(msg);
+        if (setErrorMsg) setErrorMsg(null);
+    };
+
+    const clearMessages = () => {
+        setLocalErrorMsg(null);
+        setLocalSuccessMsg(null);
+        if (setErrorMsg) setErrorMsg(null);
+        if (setSuccessMsg) setSuccessMsg(null);
+    };
+
+    // 실행 버튼 활성화/검증 공통 조건 (UI disabled와 handleBatchProcess 검증 일치)
+    const hasAnyOptionSelected = Boolean(
+        replaceRules.trim() ||
+        fontRules.trim() ||
+        fontSize.trim() ||
+        roundFontSizes ||
+        optimizeTableFont ||
+        applyDesignChecked ||
+        applyTableDesignChecked ||
+        applySpecialCharClean ||
+        add_title_page_numbers ||
+        add_space_before_parenthesis ||
+        textColorRules.trim() ||
+        preventWordWrap ||
+        clearAltText ||
+        fixLangErrFlags ||
+        clearSpeakerNotes ||
+        applySequentialSlideNum ||
+        applyFormatReset ||
+        applyBulletSpacing ||
+        mergeToOneFile
+    );
 
     // 전체 옵션 일괄 선택/해제 핸들러
     const handleToggleAllOptions = () => {
@@ -128,21 +176,81 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             const files = Array.from(e.dataTransfer.files);
             const validFiles = files.filter(f => f.name.toLowerCase().endsWith('.pptx'));
             if (validFiles.length > 0) {
+                clearMessages();
                 // 💡 탐색기에서 드래그 시 마우스로 집은 파일이 1번으로 오는 OS 동작을 방지하고 번호순 자동 정렬
                 setBatchPptFiles(prev => sortFilesNaturally([...prev, ...validFiles], true));
             } else {
-                setErrorMsg('PPT 파일(.pptx)만 지원합니다.');
+                reportError('PPT 파일(.pptx) 형식만 지원합니다. 구형 .ppt 파일이나 다른 파일 형식은 사용할 수 없습니다.');
             }
         }
     };
 
     const handleBatchFileChange = (e) => {
         const files = Array.from(e.target.files);
+        if (files.length === 0) return;
         const validFiles = files.filter(f => f.name.toLowerCase().endsWith('.pptx'));
         if (validFiles.length > 0) {
+            clearMessages();
             setBatchPptFiles(prev => sortFilesNaturally([...prev, ...validFiles], true));
+            if (validFiles.length < files.length) {
+                reportError(`일부 파일이 .pptx 형식이 아니어서 제외되었습니다 (${files.length - validFiles.length}개 제외).`);
+            }
+        } else {
+            reportError('PPT 파일(.pptx) 형식만 지원합니다. 구형 .ppt 파일은 파워포인트에서 .pptx로 변환 후 등록해주세요.');
         }
         e.target.value = '';
+    };
+
+    // 브라우저 저장 다이얼로그(showSaveFilePicker) 및 안전 폴백(file-saver) 헬퍼
+    const saveBlobWithPickerOrFallback = async (blob, suggestedName, isZip = false) => {
+        if ('showSaveFilePicker' in window) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName,
+                    startIn: 'downloads',
+                    types: [isZip ? {
+                        description: 'ZIP 압축 파일',
+                        accept: { 'application/zip': ['.zip'] },
+                    } : {
+                        description: 'PowerPoint Presentation',
+                        accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
+                    }],
+                });
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                return { saved: true, aborted: false, usedFallback: false, error: null };
+            } catch (pickerErr) {
+                if (pickerErr.name === 'AbortError') {
+                    return { saved: false, aborted: true, usedFallback: false, error: null };
+                }
+                // SecurityError(대용량 파일 처리 지연으로 User Activation 만료 등)나 권한 오류 시 file-saver 폴백 시도
+                console.warn('showSaveFilePicker 실패, 기본 다운로드로 폴백합니다:', pickerErr);
+            }
+        }
+
+        try {
+            const { saveAs } = await import('file-saver');
+            saveAs(blob, suggestedName);
+            return { saved: true, aborted: false, usedFallback: true, error: null };
+        } catch (fallbackErr) {
+            console.error('file-saver 다운로드 실패:', fallbackErr);
+            return { saved: false, aborted: false, usedFallback: true, error: fallbackErr };
+        }
+    };
+
+    const handleManualDownload = async () => {
+        if (!pendingDownload) return;
+        const isZip = pendingDownload.fileName.toLowerCase().endsWith('.zip');
+        const res = await saveBlobWithPickerOrFallback(pendingDownload.blob, pendingDownload.fileName, isZip);
+        if (res.saved) {
+            reportSuccess(`결과 파일(${pendingDownload.fileName}) 저장을 완료했습니다.`);
+            setPendingDownload(null);
+        } else if (res.aborted) {
+            reportError('저장 위치 선택이 취소되었습니다. 다시 시도하려면 아래 [결과 파일 직접 다운로드] 버튼을 눌러주세요.');
+        } else {
+            reportError(`파일 저장에 실패했습니다: ${res.error?.message || '브라우저 저장 권한 오류'}`);
+        }
     };
 
     const removeBatchFile = (indexToRemove) => {
@@ -335,8 +443,12 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
 
     // 일괄 편집 핸들러 (단어 수정 + 디자인 적용 + 다중 파일 + 폴더 지정)
     const handleBatchProcess = async () => {
+        clearMessages();
+        setBatchReport([]);
+        setPendingDownload(null);
+
         if (batchPptFiles.length === 0) {
-            setErrorMsg('PPT 파일을 1개 이상 등록해주세요.');
+            reportError('PPT 파일을 1개 이상 등록해주세요.');
             return;
         }
 
@@ -350,7 +462,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 if (match) {
                     parsedRules.push({ oldWord: match[1].trim(), newWord: match[2].trim() });
                 } else {
-                    setErrorMsg(`규칙 형식이 올바르지 않습니다: "${trimmed}" (예: 기존단어(새단어))`);
+                    reportError(`옵션 A 단어 규칙 형식이 올바르지 않습니다: "${trimmed}" (예: 기존단어(새단어))`);
                     return;
                 }
             }
@@ -366,7 +478,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 if (match) {
                     parsedFontRules.push({ oldWord: match[1].trim(), newWord: match[2].trim() });
                 } else {
-                    setErrorMsg(`폰트 규칙 형식이 올바르지 않습니다: "${trimmed}" (예: Arial(나눔고딕))`);
+                    reportError(`옵션 B 폰트 규칙 형식이 올바르지 않습니다: "${trimmed}" (예: Arial(나눔고딕))`);
                     return;
                 }
             }
@@ -383,15 +495,14 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                     const oldSize = parseFloat(match[1].trim());
                     const newSize = parseFloat(match[2].trim());
                     if (isNaN(oldSize) || isNaN(newSize)) {
-                        setErrorMsg(`폰트 크기 규칙의 숫자가 올바르지 않습니다: "${trimmed}"`);
+                        reportError(`옵션 C 폰트 크기 규칙의 숫자가 올바르지 않습니다: "${trimmed}"`);
                         return;
                     }
                     parsedFontSizeRules.push({ oldSize, newSize });
                 } else {
-                    // 단일 숫자 입력 시 전체 적용 (기존 기능 유지)
                     const size = parseFloat(trimmed);
                     if (isNaN(size)) {
-                        setErrorMsg(`폰트 크기 형식이 올바르지 않습니다: "${trimmed}" (예: 7.9(10.0))`);
+                        reportError(`옵션 C 폰트 크기 형식이 올바르지 않습니다: "${trimmed}" (예: 7.9(10.0))`);
                         return;
                     }
                     parsedFontSizeRules.push({ oldSize: null, newSize: size });
@@ -399,177 +510,136 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             }
         }
 
-        if (parsedRules.length === 0 && parsedFontRules.length === 0 && !applyDesignChecked && parsedFontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && !applyBulletSpacing) {
-            setErrorMsg('적용할 단어 수정, 폰트 변경, 폰트 크기, 테이블 디자인 표준화, 텍스트 디자인 변경, 특수문자 일괄 정제, 동일 제목 일련번호 추가, 글자 색상 일괄 매핑, 단락 단어 잘림 방지, 대체 텍스트 일괄 제거, 언어 태그/맞춤법 오류 표시 보정, 슬라이드 노트 일괄 삭제, 또는 슬라이드 서식 다시 설정 중 하나 이상을 입력/선택해주세요.');
+        if (!hasAnyOptionSelected) {
+            reportError('적용할 편집 옵션을 1개 이상 입력하거나 선택해주세요.');
             return;
         }
 
-        setErrorMsg(null);
-        setSuccessMsg(null);
         setIsProcessingBatch(true);
+        setProcessingStep('파일 읽고 편집 준비 중...');
+
+        const createBatchOptions = (firstSlideNumVal) => ({
+            replaceRules: parsedRules,
+            fontRules: parsedFontRules,
+            fontSizeRules: parsedFontSizeRules,
+            roundFontSizes: roundFontSizes,
+            roundFontSizeMode: roundFontSizeMode,
+            applyDesign: applyDesignChecked,
+            applyTableDesign: applyTableDesignChecked,
+            applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
+            tableHeaderFontSize: parseFloat(tableHeaderFontSize) || 11,
+            excludeSingleRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle && excludeSingleRowHeaderStyle,
+            applyFirstColHeaderStyle: applyTableDesignChecked && applyFirstColHeaderStyle,
+            tableFirstColFontSize: parseFloat(tableFirstColFontSize) || 10,
+            applyTableBodyStyle: applyTableDesignChecked && applyTableBodyStyle,
+            tableBodyFontSize: parseFloat(tableBodyFontSize) || 10,
+            optimizeTableFont: optimizeTableFont,
+            optimizeTableFontThreshold: parseFloat(optimizeTableFontThreshold) || 8.5,
+            optimizeTableFontTargetSize: parseFloat(optimizeTableFontTargetSize) || 10,
+            optimizeSmallFontScope: optimizeSmallFontScope,
+            targetText: designTargetText,
+            applySpecialCharClean: applySpecialCharClean,
+            replaceNbs: replaceNbs,
+            unifyBullets: unifyBullets,
+            clean_vertical_tab: clean_vertical_tab,
+            add_title_page_numbers: add_title_page_numbers,
+            add_space_before_parenthesis: add_space_before_parenthesis,
+            textColorRulesStr: textColorRules,
+            preventWordWrap: preventWordWrap,
+            clearAltText: clearAltText,
+            fixLangErrFlags: fixLangErrFlags,
+            clearSpeakerNotes: clearSpeakerNotes,
+            customFirstSlideNum: firstSlideNumVal,
+            applyFormatReset: applyFormatReset,
+            topHeaderMiddleAlign: topHeaderMiddleAlign,
+            applyBulletSpacing: applyBulletSpacing,
+            bulletIndentCm: parseFloat(bulletIndentCm) || 0.24,
+            removeEmptyParasInBullets: removeEmptyParasInBullets,
+            unifyBulletLineSpacing: unifyBulletLineSpacing,
+            bulletLineSpacingVal: bulletLineSpacingVal
+        });
+
+        const buildDetailOptions = () => ({
+            applyTableDesignChecked,
+            tableHeaderFontSize,
+            tableFirstColFontSize,
+            applyFirstRowHeaderStyle,
+            parsedRules,
+            parsedFontRules,
+            parsedFontSizeRules,
+            applyBulletSpacing,
+            roundFontSizes,
+            roundFontSizeMode,
+            applyDesignChecked,
+            applySpecialCharClean,
+            add_space_before_parenthesis,
+            textColorRules,
+            preventWordWrap,
+            clearAltText,
+            fixLangErrFlags,
+            clearSpeakerNotes,
+            applySequentialSlideNum
+        });
 
         try {
             let successCount = 0;
-            const reports = []; // 📊 실시간 파일별 처리 리포트 축적 배열
-
-            // 💡 파일별 showSaveFilePicker 방식으로 전환:
-            // showDirectoryPicker는 다운로드 폴더를 시스템 보호 폴더로 분류하여 브라우저가 차단합니다.
-            // 대신 각 파일을 showSaveFilePicker로 개별 저장하거나, 다중 파일은 ZIP으로 묶어 다운로드합니다.
+            const reports = [];
+            let finalOutputBlob = null;
+            let finalOutputName = '';
+            let finalSaveResult = null;
 
             if (batchPptFiles.length === 1) {
-                // 단일 파일: showSaveFilePicker 혹은 file-saver 폴백으로 순수 PPTX 다운로드
                 const file = batchPptFiles[0];
                 try {
-                    const options = {
-                        replaceRules: parsedRules,
-                        fontRules: parsedFontRules,
-                        fontSizeRules: parsedFontSizeRules,
-                        roundFontSizes: roundFontSizes,
-                        roundFontSizeMode: roundFontSizeMode,
-                        applyDesign: applyDesignChecked,
-                        applyTableDesign: applyTableDesignChecked,
-                        applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
-                                                tableHeaderFontSize: parseFloat(tableHeaderFontSize) || 11,
-                                                excludeSingleRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle && excludeSingleRowHeaderStyle,
-                        applyFirstColHeaderStyle: applyTableDesignChecked && applyFirstColHeaderStyle,
-                        tableFirstColFontSize: parseFloat(tableFirstColFontSize) || 10,
-                                                applyTableBodyStyle: applyTableDesignChecked && applyTableBodyStyle,
-                        tableBodyFontSize: parseFloat(tableBodyFontSize) || 10,
-                        optimizeTableFont: optimizeTableFont,
-                        optimizeTableFontThreshold: parseFloat(optimizeTableFontThreshold) || 8.5,
-                        optimizeTableFontTargetSize: parseFloat(optimizeTableFontTargetSize) || 10,
-                                                optimizeSmallFontScope: optimizeSmallFontScope,
-                        targetText: designTargetText,
-                        applySpecialCharClean: applySpecialCharClean,
-                        replaceNbs: replaceNbs,
-                        unifyBullets: unifyBullets,
-                        clean_vertical_tab: clean_vertical_tab,
-                        add_title_page_numbers: add_title_page_numbers,
-                        add_space_before_parenthesis: add_space_before_parenthesis,
-                        textColorRulesStr: textColorRules,
-                        preventWordWrap: preventWordWrap,
-                        clearAltText: clearAltText,
-                        fixLangErrFlags: fixLangErrFlags,
-                        clearSpeakerNotes: clearSpeakerNotes,
-                        customFirstSlideNum: applySequentialSlideNum ? (parseInt(initialFirstSlideNum, 10) || 1) : null,
-                        applyFormatReset: applyFormatReset,
-                        topHeaderMiddleAlign: topHeaderMiddleAlign,
-                        applyBulletSpacing: applyBulletSpacing,
-                        bulletIndentCm: parseFloat(bulletIndentCm) || 0.24,
-                        removeEmptyParasInBullets: removeEmptyParasInBullets,
-                        unifyBulletLineSpacing: unifyBulletLineSpacing,
-                        bulletLineSpacingVal: bulletLineSpacingVal
-                    };
+                    setProcessingStep(`"${file.name}" 읽고 편집 처리 중...`);
+                    const options = createBatchOptions(applySequentialSlideNum ? (parseInt(initialFirstSlideNum, 10) || 1) : null);
                     const modifiedBlob = await processPptBatch(file, options);
                     const fileName = `수정_${file.name}`;
 
-                    let saved = false;
-                    if ('showSaveFilePicker' in window) {
-                        try {
-                            const handle = await window.showSaveFilePicker({
-                                suggestedName: fileName,
-                                startIn: 'downloads',
-                                types: [{
-                                    description: 'PowerPoint Presentation',
-                                    accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
-                                }],
-                            });
-                            const writable = await handle.createWritable();
-                            await writable.write(modifiedBlob);
-                            await writable.close();
-                            saved = true;
-                        } catch (pickerErr) {
-                            if (pickerErr.name === 'AbortError') {
-                                setIsProcessingBatch(false);
-                                return;
-                            }
+                    setProcessingStep(`"${fileName}" 저장 위치 선택 및 쓰기 중...`);
+                    const saveRes = await saveBlobWithPickerOrFallback(modifiedBlob, fileName, false);
+                    finalOutputBlob = modifiedBlob;
+                    finalOutputName = fileName;
+                    finalSaveResult = saveRes;
+
+                    let detailMsg = buildBatchReportDetail(modifiedBlob, buildDetailOptions());
+                    if (modifiedBlob.parseErrorFiles && modifiedBlob.parseErrorFiles.length > 0) {
+                        detailMsg += ` (⚠️ 일부 슬라이드 XML 파싱 경고: ${modifiedBlob.parseErrorFiles.join(', ')})`;
+                    }
+
+                    if (saveRes.saved) {
+                        if (saveRes.usedFallback) {
+                            detailMsg += ' [기본 다운로드 폴더로 자동 저장됨]';
                         }
-                    }
-
-                    if (!saved) {
-                        // 폴백: file-saver
-                        const { saveAs } = await import('file-saver');
-                        saveAs(modifiedBlob, fileName);
-                        saved = true;
-                    }
-
-                    if (saved) {
-                        const detailMsg = buildBatchReportDetail(modifiedBlob, {
-                            applyTableDesignChecked,
-                            tableHeaderFontSize,
-                            tableFirstColFontSize,
-                            applyFirstRowHeaderStyle,
-                            parsedRules,
-                            parsedFontRules,
-                            parsedFontSizeRules,
-                            applyBulletSpacing,
-                            roundFontSizes,
-                            roundFontSizeMode,
-                            applyDesignChecked,
-                            applySpecialCharClean,
-                            add_space_before_parenthesis,
-                            textColorRules,
-                            preventWordWrap,
-                            clearAltText,
-                            fixLangErrFlags,
-                            clearSpeakerNotes,
-                            applySequentialSlideNum
-                        });
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
+                    } else if (saveRes.aborted) {
+                        reports.push({
+                            fileName: file.name,
+                            status: 'error',
+                            detail: `⚠️ 저장 위치 선택이 취소되었습니다. (${detailMsg}) 아래 [결과 파일 다운로드] 버튼을 눌러 저장할 수 있습니다.`
+                        });
+                    } else {
+                        reports.push({
+                            fileName: file.name,
+                            status: 'error',
+                            detail: `❌ 파일 저장 실패: ${saveRes.error?.message || '브라우저 저장 오류'}`
+                        });
                     }
                 } catch (fileErr) {
                     console.error(`Error processing ${file.name}:`, fileErr);
                     reports.push({ fileName: file.name, status: 'error', detail: `❌ 처리 실패: ${fileErr.message || 'PPT 내부 구조 파싱 에러'}` });
                 }
             } else {
-                // 다중 파일: 모두 처리 후 개별 ZIP 압축 또는 단일 PPT 파일로 병합 다운로드
                 const zip = new JSZip();
                 const modifiedBlobs = [];
                 let runningStartSlideNum = Math.max(0, parseInt(initialFirstSlideNum, 10) || 1);
 
-                for (const file of batchPptFiles) {
+                for (let idx = 0; idx < batchPptFiles.length; idx++) {
+                    const file = batchPptFiles[idx];
                     try {
-                        const options = {
-                            replaceRules: parsedRules,
-                            fontRules: parsedFontRules,
-                            fontSizeRules: parsedFontSizeRules,
-                            roundFontSizes: roundFontSizes,
-                            roundFontSizeMode: roundFontSizeMode,
-                            applyDesign: applyDesignChecked,
-                            applyTableDesign: applyTableDesignChecked,
-                            applyFirstRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle,
-                            tableHeaderFontSize: parseFloat(tableHeaderFontSize) || 11,
-                            excludeSingleRowHeaderStyle: applyTableDesignChecked && applyFirstRowHeaderStyle && excludeSingleRowHeaderStyle,
-                            applyFirstColHeaderStyle: applyTableDesignChecked && applyFirstColHeaderStyle,
-                            tableFirstColFontSize: parseFloat(tableFirstColFontSize) || 10,
-                            applyTableBodyStyle: applyTableDesignChecked && applyTableBodyStyle,
-                            tableBodyFontSize: parseFloat(tableBodyFontSize) || 10,
-                            optimizeTableFont: optimizeTableFont,
-                            optimizeTableFontThreshold: parseFloat(optimizeTableFontThreshold) || 8.5,
-                            optimizeTableFontTargetSize: parseFloat(optimizeTableFontTargetSize) || 10,
-                            optimizeSmallFontScope: optimizeSmallFontScope,
-                            targetText: designTargetText,
-                            applySpecialCharClean: applySpecialCharClean,
-                            replaceNbs: replaceNbs,
-                            unifyBullets: unifyBullets,
-                            clean_vertical_tab: clean_vertical_tab,
-                            add_title_page_numbers: add_title_page_numbers,
-                            add_space_before_parenthesis: add_space_before_parenthesis,
-                            textColorRulesStr: textColorRules,
-                            preventWordWrap: preventWordWrap,
-                            clearAltText: clearAltText,
-                            fixLangErrFlags: fixLangErrFlags,
-                            clearSpeakerNotes: clearSpeakerNotes,
-                            customFirstSlideNum: applySequentialSlideNum ? runningStartSlideNum : null,
-                            applyFormatReset: applyFormatReset,
-                            topHeaderMiddleAlign: topHeaderMiddleAlign,
-                            applyBulletSpacing: applyBulletSpacing,
-                            bulletIndentCm: parseFloat(bulletIndentCm) || 0.24,
-                            removeEmptyParasInBullets: removeEmptyParasInBullets,
-                            unifyBulletLineSpacing: unifyBulletLineSpacing,
-                            bulletLineSpacingVal: bulletLineSpacingVal
-                        };
+                        setProcessingStep(`[${idx + 1}/${batchPptFiles.length}] "${file.name}" 편집 중...`);
+                        const options = createBatchOptions(applySequentialSlideNum ? runningStartSlideNum : null);
                         const modifiedBlob = await processPptBatch(file, options);
                         modifiedBlobs.push(modifiedBlob);
 
@@ -579,30 +649,13 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         }
 
                         if (!mergeToOneFile) {
-                            const fileName = `수정_${file.name}`;
-                            zip.file(fileName, modifiedBlob);
+                            zip.file(`수정_${file.name}`, modifiedBlob);
                         }
 
-                        const detailMsg = buildBatchReportDetail(modifiedBlob, {
-                            applyTableDesignChecked,
-                            tableHeaderFontSize,
-                            tableFirstColFontSize,
-                            applyFirstRowHeaderStyle,
-                            parsedRules,
-                            parsedFontRules,
-                            parsedFontSizeRules,
-                            roundFontSizes,
-                            roundFontSizeMode,
-                            applyDesignChecked,
-                            applySpecialCharClean,
-                            add_space_before_parenthesis,
-                            textColorRules,
-                            preventWordWrap,
-                            clearAltText,
-                            fixLangErrFlags,
-                            clearSpeakerNotes,
-                            applySequentialSlideNum
-                        });
+                        let detailMsg = buildBatchReportDetail(modifiedBlob, buildDetailOptions());
+                        if (modifiedBlob.parseErrorFiles && modifiedBlob.parseErrorFiles.length > 0) {
+                            detailMsg += ` (⚠️ XML 파싱 경고: ${modifiedBlob.parseErrorFiles.join(', ')})`;
+                        }
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
                     } catch (fileErr) {
@@ -613,82 +666,45 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
 
                 if (successCount > 0) {
                     if (mergeToOneFile) {
-                        // 💡 [옵션 M] 여러 PPT 파일들을 하나의 단일 PPT 파일로 병합하여 저장
+                        setProcessingStep(`${successCount}개 PPT 파일 병합 중...`);
                         const mergedBlob = await mergeMultiplePptx(modifiedBlobs);
                         const mergedFileName = '통합_수정_PPT_산출물.pptx';
-
-                        let mergedSaved = false;
-                        if ('showSaveFilePicker' in window) {
-                            try {
-                                const handle = await window.showSaveFilePicker({
-                                    suggestedName: mergedFileName,
-                                    startIn: 'downloads',
-                                    types: [{
-                                        description: 'PowerPoint Presentation',
-                                        accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
-                                    }],
-                                });
-                                const writable = await handle.createWritable();
-                                await writable.write(mergedBlob);
-                                await writable.close();
-                                mergedSaved = true;
-                            } catch (pickerErr) {
-                                if (pickerErr.name !== 'AbortError') {
-                                    const { saveAs } = await import('file-saver');
-                                    saveAs(mergedBlob, mergedFileName);
-                                    mergedSaved = true;
-                                }
-                            }
-                        }
-                        if (!mergedSaved) {
-                            const { saveAs } = await import('file-saver');
-                            saveAs(mergedBlob, mergedFileName);
-                        }
+                        setProcessingStep('통합 PPT 저장 중...');
+                        const saveRes = await saveBlobWithPickerOrFallback(mergedBlob, mergedFileName, false);
+                        finalOutputBlob = mergedBlob;
+                        finalOutputName = mergedFileName;
+                        finalSaveResult = saveRes;
                     } else {
-                        // 기본: ZIP 압축 파일로 다운로드
+                        setProcessingStep('ZIP 압축 파일 생성 중...');
                         const zipBlob = await zip.generateAsync({ type: 'blob' });
-                        let zipSaved = false;
-                        if ('showSaveFilePicker' in window) {
-                            try {
-                                const handle = await window.showSaveFilePicker({
-                                    suggestedName: '수정_PPT_산출물_일괄다운로드.zip',
-                                    startIn: 'downloads',
-                                    types: [{
-                                        description: 'ZIP 압축 파일',
-                                        accept: { 'application/zip': ['.zip'] },
-                                    }],
-                                });
-                                const writable = await handle.createWritable();
-                                await writable.write(zipBlob);
-                                await writable.close();
-                                zipSaved = true;
-                            } catch (pickerErr) {
-                                if (pickerErr.name !== 'AbortError') {
-                                    const { saveAs } = await import('file-saver');
-                                    saveAs(zipBlob, '수정_PPT_산출물_일괄다운로드.zip');
-                                    zipSaved = true;
-                                }
-                            }
-                        }
-                        if (!zipSaved) {
-                            const { saveAs } = await import('file-saver');
-                            saveAs(zipBlob, '수정_PPT_산출물_일괄다운로드.zip');
-                        }
+                        const zipFileName = '수정_PPT_산출물_일괄다운로드.zip';
+                        setProcessingStep('ZIP 파일 저장 중...');
+                        const saveRes = await saveBlobWithPickerOrFallback(zipBlob, zipFileName, true);
+                        finalOutputBlob = zipBlob;
+                        finalOutputName = zipFileName;
+                        finalSaveResult = saveRes;
                     }
                 }
             }
 
             setBatchReport(reports);
 
-            if (successCount > 0) {
+            if (finalOutputBlob && finalOutputName) {
+                setPendingDownload({ blob: finalOutputBlob, fileName: finalOutputName });
+            }
+
+            if (successCount > 0 && (!finalSaveResult || finalSaveResult.saved)) {
+                const fallbackNote = finalSaveResult?.usedFallback
+                    ? ' (저장 창 호출 시간 초과 또는 미지원 환경으로 브라우저 기본 다운로드 폴더로 자동 저장되었습니다.)'
+                    : '';
                 if (batchPptFiles.length > 1) {
                     if (mergeToOneFile) {
-                        setSuccessMsg(`성공적으로 ${successCount}개의 파일을 일괄 편집하고 1개의 통합 PPT 파일(통합_수정_PPT_산출물.pptx)로 병합하여 저장했습니다. 하단의 세부 리포트를 확인해 주세요.`);
+                        reportSuccess(`성공적으로 ${successCount}개의 파일을 일괄 편집하고 1개의 통합 PPT 파일(통합_수정_PPT_산출물.pptx)로 병합하여 저장했습니다.${fallbackNote}`);
                     } else {
-                        setSuccessMsg(`성공적으로 ${successCount}개의 파일을 처리하여 ZIP 압축 파일로 다운로드했습니다. 하단의 파일별 일괄 편집 상세 결과 리포트를 확인해 주세요.`);
+                        reportSuccess(`성공적으로 ${successCount}개의 파일을 처리하여 ZIP 압축 파일로 다운로드했습니다.${fallbackNote}`);
                     }
                 } else {
-                    setSuccessMsg(`성공적으로 파일이 편집·저장되었습니다. 하단의 파일별 일괄 편집 상세 결과 리포트를 확인해 주세요.`);
+                    reportSuccess(`성공적으로 파일이 편집·저장되었습니다.${fallbackNote} 아래 처리 결과 리포트를 확인해 주세요.`);
                 }
                 setBatchPptFiles([]);
                 setFontRules('');
@@ -708,15 +724,22 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 set_add_title_page_numbers(false);
                 set_add_space_before_parenthesis(true);
                 setFixLangErrFlags(false);
+            } else if (finalSaveResult?.aborted) {
+                reportError(`저장 위치 선택이 취소되어 파일이 저장되지 않았습니다. 아래 [결과 파일 직접 다운로드] 버튼을 눌러 "${finalOutputName}" 파일을 바로 저장할 수 있습니다.`);
+            } else if (finalSaveResult?.error) {
+                reportError(`편집은 완료되었으나 파일 저장 중 오류가 발생했습니다: ${finalSaveResult.error.message || '브라우저 저장 권한 오류'}. 아래 [결과 파일 직접 다운로드] 버튼으로 다시 시도해주세요.`);
             } else {
                 const errDetails = reports.filter(r => r.status === 'error').map(r => r.detail).join(' / ');
-                setErrorMsg(errDetails || '처리된 파일이 없습니다. 변경 대상 텍스트나 디자인 요소가 존재하는지 확인해주세요.');
+                reportError(errDetails || '처리된 파일이 없습니다. 파일 상태와 선택된 옵션을 확인해주세요.');
             }
         } catch (err) {
-            console.error(err);
-            setErrorMsg(`작업 중 오류 발생: ${err.message || '알 수 없는 오류'}`);
+            console.error('일괄 편집 치명적 오류:', err);
+            const errMsg = `작업 중 오류가 발생했습니다: ${err.message || '알 수 없는 오류'}`;
+            setBatchReport([{ fileName: batchPptFiles.map(f => f.name).join(', ') || '파일', status: 'error', detail: `❌ ${errMsg}` }]);
+            reportError(errMsg);
         } finally {
             setIsProcessingBatch(false);
+            setProcessingStep('');
         }
     };
 
@@ -884,35 +907,126 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             </div>
 
             {/* ── 실행 버튼 + 결과 리포트 (옵션 설정 위) ── */}
-            <div style={{ paddingBottom: '4px' }}>
+            <div style={{ paddingBottom: '4px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {localErrorMsg && (
+                    <div className="animate-fade-in" style={{
+                        padding: '12px 14px',
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        color: '#fca5a5',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(239, 68, 68, 0.35)',
+                        fontSize: '13.5px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '10px',
+                        lineHeight: '1.5'
+                    }}>
+                        <AlertTriangle size={18} color="#f87171" style={{ flexShrink: 0, marginTop: '2px' }} />
+                        <div style={{ flex: 1 }}>{localErrorMsg}</div>
+                        <button
+                            type="button"
+                            onClick={() => setLocalErrorMsg(null)}
+                            style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', padding: '2px' }}
+                            title="닫기"
+                        >
+                            <X size={15} />
+                        </button>
+                    </div>
+                )}
+
+                {localSuccessMsg && (
+                    <div className="animate-fade-in" style={{
+                        padding: '12px 14px',
+                        background: 'rgba(16, 185, 129, 0.12)',
+                        color: '#6ee7b7',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                        fontSize: '13.5px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '10px',
+                        lineHeight: '1.5'
+                    }}>
+                        <CheckCircle2 size={18} color="#10b981" style={{ flexShrink: 0, marginTop: '2px' }} />
+                        <div style={{ flex: 1 }}>{localSuccessMsg}</div>
+                        <button
+                            type="button"
+                            onClick={() => setLocalSuccessMsg(null)}
+                            style={{ background: 'none', border: 'none', color: '#6ee7b7', cursor: 'pointer', padding: '2px' }}
+                            title="닫기"
+                        >
+                            <X size={15} />
+                        </button>
+                    </div>
+                )}
+
                 <button
                     id="btn-batch-process"
                     className="interactive"
                     onClick={handleBatchProcess}
-                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)}
+                    disabled={batchPptFiles.length === 0 || isProcessingBatch || !hasAnyOptionSelected}
                     style={{
                         width: '100%',
                         padding: '16px',
-                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'var(--text-muted)' : 'white',
+                        background: (batchPptFiles.length === 0 || isProcessingBatch || !hasAnyOptionSelected) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                        color: (batchPptFiles.length === 0 || isProcessingBatch || !hasAnyOptionSelected) ? 'var(--text-muted)' : 'white',
                         border: 'none',
                         borderRadius: '12px',
                         fontSize: '16px',
                         fontWeight: 700,
-                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'not-allowed' : 'pointer',
+                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || !hasAnyOptionSelected) ? 'not-allowed' : 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                     }}
                 >
                     {isProcessingBatch ? (
-                        <><Loader2 size={20} className="animate-spin" /> {mergeToOneFile && batchPptFiles.length > 1 ? '일괄 편집 및 하나의 PPT로 병합 중...' : '폴더에 순차적으로 적용 및 저장 중...'}</>
+                        <><Loader2 size={20} className="animate-spin" /> {processingStep || (mergeToOneFile && batchPptFiles.length > 1 ? '일괄 편집 및 하나의 PPT로 병합 중...' : '폴더에 순차적으로 적용 및 저장 중...')}</>
                     ) : (
                         <><Sparkles size={20} /> {mergeToOneFile && batchPptFiles.length > 1 ? '일괄 편집 및 하나의 PPT 파일로 병합 실행' : '저장할 폴더/위치 선택 및 일괄 편집 실행'}</>
                     )}
                 </button>
 
+                {pendingDownload && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        background: 'rgba(59, 130, 246, 0.1)',
+                        border: '1px solid rgba(59, 130, 246, 0.35)',
+                        flexWrap: 'wrap'
+                    }}>
+                        <span style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: 500 }}>
+                            생성된 결과 파일: <strong>{pendingDownload.fileName}</strong>
+                        </span>
+                        <button
+                            type="button"
+                            onClick={handleManualDownload}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '7px 14px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                background: '#3b82f6',
+                                color: 'white',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <Download size={15} /> 결과 파일 직접 다운로드
+                        </button>
+                    </div>
+                )}
+
                 {batchReport.length > 0 && (
                     <div className="animate-slide-up" style={{
-                        marginTop: '20px',
+                        marginTop: '4px',
                         background: 'rgba(255,255,255,0.02)',
                         border: '1px solid var(--panel-border)',
                         borderRadius: '12px',
@@ -933,7 +1047,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                     gap: '6px',
                                     padding: '10px',
                                     borderRadius: '8px',
-                                    background: rep.status === 'success' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                                    background: rep.status === 'success' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.08)',
                                     borderLeft: `3px solid ${rep.status === 'success' ? '#10b981' : '#ef4444'}`
                                 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -946,10 +1060,10 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                             background: rep.status === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                                             color: rep.status === 'success' ? '#10b981' : '#ef4444'
                                         }}>
-                                            {rep.status === 'success' ? '수정 완료' : '실패'}
+                                            {rep.status === 'success' ? '수정 완료' : '오류 / 미저장'}
                                         </span>
                                     </div>
-                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                                    <div style={{ fontSize: '12px', color: rep.status === 'success' ? 'var(--text-secondary)' : '#fca5a5', lineHeight: '1.4' }}>
                                         {rep.detail}
                                     </div>
                                 </div>
@@ -1987,82 +2101,6 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         💡 여러 개의 PPT 파일을 일괄 수정한 뒤, <strong>순서대로 결합하여 1개의 PPTX 파일로 통합 저장</strong>합니다. (미선택 시 기본 개별 ZIP 압축 파일로 다운로드됩니다.)
                     </div>
                 </div>
-            </div>
-
-            {/* ── 실행 버튼 + 결과 리포트 (옵션 설정 위) ── */}
-            <div style={{ paddingBottom: '4px' }}>
-                <button
-                    id="btn-batch-process"
-                    className="interactive"
-                    onClick={handleBatchProcess}
-                    disabled={batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)}
-                    style={{
-                        width: '100%',
-                        padding: '16px',
-                        background: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
-                        color: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'var(--text-muted)' : 'white',
-                        border: 'none',
-                        borderRadius: '12px',
-                        fontSize: '16px',
-                        fontWeight: 700,
-                        cursor: (batchPptFiles.length === 0 || isProcessingBatch || (!replaceRules.trim() && !fontRules.trim() && !fontSize.trim() && !roundFontSizes && !applyDesignChecked && !applyTableDesignChecked && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !textColorRules.trim() && !preventWordWrap && !clearAltText && !fixLangErrFlags && !mergeToOneFile && !clearSpeakerNotes && !applySequentialSlideNum)) ? 'not-allowed' : 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
-                    }}
-                >
-                    {isProcessingBatch ? (
-                        <><Loader2 size={20} className="animate-spin" /> {mergeToOneFile && batchPptFiles.length > 1 ? '일괄 편집 및 하나의 PPT로 병합 중...' : '폴더에 순차적으로 적용 및 저장 중...'}</>
-                    ) : (
-                        <><Sparkles size={20} /> {mergeToOneFile && batchPptFiles.length > 1 ? '일괄 편집 및 하나의 PPT 파일로 병합 실행' : '저장할 폴더/위치 선택 및 일괄 편집 실행'}</>
-                    )}
-                </button>
-
-                {batchReport.length > 0 && (
-                    <div className="animate-slide-up" style={{
-                        marginTop: '20px',
-                        background: 'rgba(255,255,255,0.02)',
-                        border: '1px solid var(--panel-border)',
-                        borderRadius: '12px',
-                        padding: '16px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>
-                            <Info size={16} color="#a855f7" />
-                            <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>일괄 편집 세부 처리 결과 리포트</span>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto', paddingRight: '4px' }}>
-                            {batchReport.map((rep, idx) => (
-                                <div key={idx} style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '6px',
-                                    padding: '10px',
-                                    borderRadius: '8px',
-                                    background: rep.status === 'success' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
-                                    borderLeft: `3px solid ${rep.status === 'success' ? '#10b981' : '#ef4444'}`
-                                }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-all' }}>{rep.fileName}</span>
-                                        <span style={{
-                                            fontSize: '11px',
-                                            fontWeight: 700,
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            background: rep.status === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                                            color: rep.status === 'success' ? '#10b981' : '#ef4444'
-                                        }}>
-                                            {rep.status === 'success' ? '수정 완료' : '실패'}
-                                        </span>
-                                    </div>
-                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                                        {rep.detail}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
             </div>
         </div>
     );

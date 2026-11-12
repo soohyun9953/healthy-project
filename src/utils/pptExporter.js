@@ -305,8 +305,30 @@ export async function applyTextDesignToPpt(pptFile, targetText) {
     }
     const trimmedTargetText = targetText ? targetText.trim() : '';
 
-    const arrayBuffer = await pptFile.arrayBuffer();
-    const zip = new PizZip(arrayBuffer);
+    let arrayBuffer;
+    try {
+        arrayBuffer = await pptFile.arrayBuffer();
+    } catch (readErr) {
+        console.error('PPT 파일 읽기 오류:', readErr);
+        const errName = readErr?.name || '';
+        const errMsg = readErr?.message || '';
+        if (errName === 'NotReadableError' || /could not be read|permission|lock/i.test(errMsg)) {
+            throw new Error(`파일을 읽을 수 없습니다 (${pptFile.name}). 파워포인트에서 파일이 열려 있거나 Google Drive/OneDrive 클라우드 동기화가 진행 중인지 확인한 후 다시 시도해주세요.`);
+        }
+        throw new Error(`파일 읽기 실패 (${pptFile.name}): ${errMsg || errName || '알 수 없는 읽기 오류'}`);
+    }
+
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+        throw new Error(`파일 크기가 0바이트입니다 (${pptFile.name}). Google Drive/OneDrive 파일이 PC에 완전히 동기화되었는지 확인해주세요.`);
+    }
+
+    let zip;
+    try {
+        zip = new PizZip(arrayBuffer);
+    } catch (zipErr) {
+        console.error('PPTX ZIP 압축 해제 오류:', zipErr);
+        throw new Error(`PPTX 파일 구조를 열 수 없습니다 (${pptFile.name}). 암호가 설정되어 있거나 손상된 파일, 또는 구버전(.ppt) 파일인지 확인해주세요. (원인: ${zipErr.message || 'ZIP 파싱 실패'})`);
+    }
 
     const allFiles = Object.keys(zip.files);
     const targetFilesSet = new Set();
@@ -500,8 +522,30 @@ export async function replaceWordsInPpt(pptFile, replaceRulesStr) {
 
     if (rules.length === 0) throw new Error('유효한 치환 규칙이 없습니다.');
 
-    const arrayBuffer = await pptFile.arrayBuffer();
-    const zip = new PizZip(arrayBuffer);
+    let arrayBuffer;
+    try {
+        arrayBuffer = await pptFile.arrayBuffer();
+    } catch (readErr) {
+        console.error('PPT 파일 읽기 오류:', readErr);
+        const errName = readErr?.name || '';
+        const errMsg = readErr?.message || '';
+        if (errName === 'NotReadableError' || /could not be read|permission|lock/i.test(errMsg)) {
+            throw new Error(`파일을 읽을 수 없습니다 (${pptFile.name}). 파워포인트에서 파일이 열려 있거나 Google Drive/OneDrive 클라우드 동기화가 진행 중인지 확인한 후 다시 시도해주세요.`);
+        }
+        throw new Error(`파일 읽기 실패 (${pptFile.name}): ${errMsg || errName || '알 수 없는 읽기 오류'}`);
+    }
+
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+        throw new Error(`파일 크기가 0바이트입니다 (${pptFile.name}). Google Drive/OneDrive 파일이 PC에 완전히 동기화되었는지 확인해주세요.`);
+    }
+
+    let zip;
+    try {
+        zip = new PizZip(arrayBuffer);
+    } catch (zipErr) {
+        console.error('PPTX ZIP 압축 해제 오류:', zipErr);
+        throw new Error(`PPTX 파일 구조를 열 수 없습니다 (${pptFile.name}). 암호가 설정되어 있거나 손상된 파일, 또는 구버전(.ppt) 파일인지 확인해주세요. (원인: ${zipErr.message || 'ZIP 파싱 실패'})`);
+    }
     const allFiles = Object.keys(zip.files);
 
     const targetFiles = allFiles.filter(p => p.endsWith('.xml') && p.startsWith('ppt/'));
@@ -1125,8 +1169,30 @@ export async function processPptBatch(pptFile, options) {
         }
     }
 
-    const arrayBuffer = await pptFile.arrayBuffer();
-    const zip = new PizZip(arrayBuffer);
+    let arrayBuffer;
+    try {
+        arrayBuffer = await pptFile.arrayBuffer();
+    } catch (readErr) {
+        console.error('PPT 파일 읽기 오류:', readErr);
+        const errName = readErr?.name || '';
+        const errMsg = readErr?.message || '';
+        if (errName === 'NotReadableError' || /could not be read|permission|lock/i.test(errMsg)) {
+            throw new Error(`파일을 읽을 수 없습니다 (${pptFile.name}). 파워포인트에서 파일이 열려 있거나 Google Drive/OneDrive 클라우드 동기화가 진행 중인지 확인한 후 다시 시도해주세요.`);
+        }
+        throw new Error(`파일 읽기 실패 (${pptFile.name}): ${errMsg || errName || '알 수 없는 읽기 오류'}`);
+    }
+
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+        throw new Error(`파일 크기가 0바이트입니다 (${pptFile.name}). Google Drive/OneDrive 파일이 PC에 완전히 동기화되었는지 확인해주세요.`);
+    }
+
+    let zip;
+    try {
+        zip = new PizZip(arrayBuffer);
+    } catch (zipErr) {
+        console.error('PPTX ZIP 압축 해제 오류:', zipErr);
+        throw new Error(`PPTX 파일 구조를 열 수 없습니다 (${pptFile.name}). 암호가 설정되어 있거나 손상된 파일, 또는 구버전(.ppt) 파일인지 확인해주세요. (원인: ${zipErr.message || 'ZIP 파싱 실패'})`);
+    }
     
     let allFiles = Object.keys(zip.files);
     let hasChanges = false;
@@ -1184,14 +1250,19 @@ export async function processPptBatch(pptFile, options) {
     const nsA = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 
     // 슬라이드 파일 장수 추출
+    const extractSlideNum = (pathStr) => {
+        const m = pathStr.match(/\d+/);
+        return m ? parseInt(m[0], 10) : 0;
+    };
+
     const slideFileList = allFiles
         .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml') && !k.includes('_rels'))
-        .sort((a, b) => {
-            const num_a = parseInt(a.match(/\d+/)[0]);
-            const num_b = parseInt(b.match(/\d+/)[0]);
-            return num_a - num_b;
-        });
+        .sort((a, b) => extractSlideNum(a) - extractSlideNum(b));
     totalSlideCount = slideFileList.length;
+
+    if (totalSlideCount === 0) {
+        throw new Error(`PPTX 파일 내에 슬라이드(ppt/slides/slide*.xml)가 존재하지 않습니다 (${pptFile.name}).`);
+    }
 
     // 💡 [옵션 M: 슬라이드 시작 번호(firstSlideNum) 순차/개별 지정]
     if (customFirstSlideNum !== null && customFirstSlideNum !== undefined && !isNaN(customFirstSlideNum)) {
@@ -1238,12 +1309,8 @@ export async function processPptBatch(pptFile, options) {
     // add_space_before_parenthesis가 켜져 있으면 모든 슬라이드의 제목 Shape을 순회하며 '글자(내용)' -> '글자 (내용)'으로 100% 보정
     if (add_space_before_parenthesis) {
         const slide_files = allFiles
-            .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml'))
-            .sort((a, b) => {
-                const num_a = parseInt(a.match(/\d+/)[0]);
-                const num_b = parseInt(b.match(/\d+/)[0]);
-                return num_a - num_b;
-            });
+            .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml') && !k.includes('_rels'))
+            .sort((a, b) => extractSlideNum(a) - extractSlideNum(b));
 
         slide_files.forEach(slide_path => {
             const slide_xml_str = zip.file(slide_path).asText();
@@ -1311,12 +1378,8 @@ export async function processPptBatch(pptFile, options) {
     // 💡 [2단계: 동일 제목 슬라이드 일련번호 자동 추가] (선택 시에만 실행)
     if (add_title_page_numbers) {
         const slide_files = allFiles
-            .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml'))
-            .sort((a, b) => {
-                const num_a = parseInt(a.match(/\d+/)[0]);
-                const num_b = parseInt(b.match(/\d+/)[0]);
-                return num_a - num_b;
-            });
+            .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml') && !k.includes('_rels'))
+            .sort((a, b) => extractSlideNum(a) - extractSlideNum(b));
             
         const slide_titles = []; // [{ slidePath, xmlDoc, titleText, titleNodes }]
         
@@ -1627,8 +1690,12 @@ export async function processPptBatch(pptFile, options) {
         });
     }
 
+    const parseErrorFiles = [];
+
     textAndFontTargetFiles.forEach(slidePath => {
-        let slideXmlStr = zip.file(slidePath).asText();
+        const zipEntry = zip.file(slidePath);
+        if (!zipEntry) return;
+        let slideXmlStr = zipEntry.asText();
         let fileChanged = false;
         let designChanged = false;
         const isActualSlide = slidePath.startsWith('ppt/slides/slide');
@@ -1647,7 +1714,11 @@ export async function processPptBatch(pptFile, options) {
         }
         
         const xmlDoc = parser.parseFromString(slideXmlStr, 'application/xml');
-        if (xmlDoc.getElementsByTagName('parsererror').length > 0) return;
+        if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
+            console.error(`XML 파싱 오류 (${slidePath}):`, xmlDoc.getElementsByTagName('parsererror')[0]?.textContent);
+            parseErrorFiles.push(slidePath);
+            return;
+        }
         
         const allElements = Array.from(xmlDoc.getElementsByTagName('*'));
         
@@ -2794,10 +2865,20 @@ export async function processPptBatch(pptFile, options) {
         totalSpecialCharsCleaned = total_cleaned_vt;
     }
 
-    const blob = zip.generate({
-        type: 'blob',
-        mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    });
+    if (parseErrorFiles.length > 0 && parseErrorFiles.length >= totalSlideCount) {
+        throw new Error(`슬라이드 XML 파싱 오류로 파일을 편집할 수 없습니다 (${parseErrorFiles.slice(0, 3).join(', ')}).`);
+    }
+
+    let blob;
+    try {
+        blob = zip.generate({
+            type: 'blob',
+            mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        });
+    } catch (genErr) {
+        console.error('PPTX ZIP 생성 오류:', genErr);
+        throw new Error(`수정된 PPTX 파일 생성 중 오류가 발생했습니다: ${genErr.message || '압축 생성 실패'}`);
+    }
 
     // 💡 동적 커스텀 프로퍼티 바인딩으로 파일별 수정 메타데이터 보존
     blob.totalTablesCount = totalTablesCount;
@@ -2819,6 +2900,7 @@ export async function processPptBatch(pptFile, options) {
     blob.totalFormatResetCount = totalFormatResetCount;
     blob.totalBulletSpacingNormalized = totalBulletSpacingNormalized;
     blob.totalEmptyParasRemoved = totalEmptyParasRemoved;
+    blob.parseErrorFiles = parseErrorFiles;
 
     return blob;
 }
@@ -2841,10 +2923,10 @@ export async function addSmartAnimationsToPpt(pptFile, options = {}) {
     await zip.loadAsync(arrayBuffer);
     
     const slideFiles = Object.keys(zip.files)
-        .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml'))
+        .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml') && !k.includes('_rels'))
         .sort((a, b) => {
-            const numA = parseInt(a.match(/\d+/)[0]);
-            const numB = parseInt(b.match(/\d+/)[0]);
+            const numA = parseInt((a.match(/\d+/) || ['0'])[0], 10);
+            const numB = parseInt((b.match(/\d+/) || ['0'])[0], 10);
             return numA - numB;
         });
 
