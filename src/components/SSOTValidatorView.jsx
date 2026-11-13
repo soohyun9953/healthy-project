@@ -264,6 +264,32 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
     };
 
     // ── 공공의료 AI ISP 44종 표준 요구사항 즉시 적용 ──
+    // ── 더미 요구사항명(요구사항 CNR-xxx) 자동 감지 및 공식 명칭으로 원클릭 치환 ──
+    const handleAutoHealRequirements = () => {
+        let healedCount = 0;
+        setSsotData(prev => {
+            const nextReqs = (prev.requirements || []).map(r => {
+                const cleanId = (r.id || '').trim().toUpperCase();
+                const cleanName = (r.name || '').trim();
+                const isDummy = !cleanName || cleanName === `요구사항 ${cleanId}` || cleanName === cleanId || /^요구사항\s*[A-Z]{2,6}[-_]\d{2,4}$/i.test(cleanName);
+                if (isDummy) {
+                    const catalogItem = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS.find(c => c.id === cleanId);
+                    if (catalogItem) {
+                        healedCount++;
+                        return {
+                            ...r,
+                            name: catalogItem.name,
+                            keywords: r.keywords || catalogItem.keywords
+                        };
+                    }
+                }
+                return r;
+            });
+            return { ...prev, requirements: nextReqs };
+        });
+        alert(`✅ 총 ${healedCount}건의 요구사항이 공공의료 AI ISP 공식 정식 명칭으로 자동 복원되었습니다!`);
+    };
+
     const handleApplyPublicHealthcarePreset = () => {
         if (window.confirm('공공의료 AI ISP 공식 44개 마스터 요구사항 전체 목록으로 교체하시겠습니까? (기존 목록은 대체됩니다)')) {
             setSsotData(prev => ({
@@ -1119,6 +1145,49 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                                     💡 과업지시서/RFP 요구사항 ID(예: CNR-001)를 등록하면 산출물 내 누락(Missing ID) 및 유령(Ghost ID)을 검출합니다.
                                 </span>
+                            </div>
+
+                            {/* 더미 텍스트(요구사항 CNR-xxx) 감지 시 자동 복구 알림 배너 */}
+                            {ssotData.requirements.some(r => !r.name || r.name.startsWith('요구사항 ') || /^요구사항\s*[A-Z]{2,6}[-_]\d{2,4}$/i.test(r.name)) && (
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '10px 14px',
+                                    background: 'rgba(234, 179, 8, 0.12)',
+                                    border: '1px solid rgba(234, 179, 8, 0.4)',
+                                    borderRadius: '8px',
+                                    color: '#fef08a',
+                                    fontSize: '12.5px',
+                                    gap: '10px'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <AlertTriangle size={18} style={{ color: '#facc15', flexShrink: 0 }} />
+                                        <span>
+                                            <strong>[임시 명칭 감지]</strong> 과거 제안요청서 자동분석 시 일부 과업명이 임시 텍스트(<code>요구사항 CNR-xxx</code>)로 등록되었습니다.
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={handleAutoHealRequirements}
+                                        className="interactive"
+                                        style={{
+                                            padding: '5px 12px',
+                                            fontSize: '12px',
+                                            fontWeight: 700,
+                                            background: '#eab308',
+                                            color: '#0f172a',
+                                            border: 'none',
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            whiteSpace: 'nowrap'
+                                        }}
+                                    >
+                                        ✨ 정식 과업명으로 자동 치환
+                                    </button>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                     <button
                                         onClick={handleApplyPublicHealthcarePreset}
@@ -2821,7 +2890,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                         onChange={(e) => setIncludeDocChecklist(e.target.checked)}
                                         style={{ accentColor: 'var(--accent-blue)', width: '16px', height: '16px' }}
                                     />
-                                    <span>[선택 옵션] 산출물현황표 시트 함께 포함 (34종 산출물 점검표 시트가 필요한 경우에만 체크)</span>
+                                    <span>[선택 옵션] RFP상 산출물 현황표 시트 함께 포함 (34종 산출물 점검표 시트가 필요한 경우에만 체크)</span>
                                 </label>
                             </div>
                         </div>
@@ -2832,7 +2901,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                             <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <div>• <strong>시트 1 [요구사항추적표]:</strong> 요구사항번호, 요구사항명칭, 충족여부, 관련 파일, 해당 페이지(예: 7~58, 전 페이지)</div>
                                 {includeDocChecklist && (
-                                    <div style={{ color: '#93c5fd' }}>• <strong>시트 2 [산출물현황표]:</strong> 구분, 서류(환경분석서, 현황분석서 등 34종), 현황, 파일명, 비고(작성근거)</div>
+                                    <div style={{ color: '#93c5fd' }}>• <strong>시트 2 [RFP상 산출물]:</strong> 구분, 서류(환경분석서, 현황분석서 등 34종), 현황, 파일명, 비고(작성근거)</div>
                                 )}
                             </div>
                         </div>

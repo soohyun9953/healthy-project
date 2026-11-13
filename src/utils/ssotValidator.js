@@ -335,10 +335,38 @@ export function loadSSOTData() {
         const raw = localStorage.getItem(SSOT_STORAGE_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
+            let reqs = Array.isArray(parsed.requirements) && parsed.requirements.length > 0
+                ? parsed.requirements
+                : DEFAULT_REQUIREMENTS;
+
+            // 1) 구버전 8개 샘플만 남아있는 경우 (SFR-001 등이 포함된 초기 데모 데이터) -> 공식 44개 마스터로 자동 갱신
+            const isLegacy8Preset = reqs.length === 8 && reqs.some(r => r.id === 'SFR-001');
+            if (isLegacy8Preset) {
+                reqs = [...PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS];
+            } else {
+                // 2) 만약 요구사항명이 '요구사항 CNR-xxx' 등 플레이스홀더이거나 비어있는 경우, 공식 카탈로그에서 명칭 자동 복원
+                reqs = reqs.map(r => {
+                    const cleanId = (r.id || '').trim().toUpperCase();
+                    const cleanName = (r.name || '').trim();
+                    const isDummy = !cleanName || cleanName === `요구사항 ${cleanId}` || cleanName === cleanId || /^요구사항\s*[A-Z]{2,6}[-_]\d{2,4}$/i.test(cleanName);
+                    if (isDummy) {
+                        const catalogItem = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS.find(c => c.id === cleanId);
+                        if (catalogItem) {
+                            return {
+                                ...r,
+                                name: catalogItem.name,
+                                keywords: r.keywords || catalogItem.keywords
+                            };
+                        }
+                    }
+                    return r;
+                });
+            }
+
             return {
                 metadata: { ...DEFAULT_PROJECT_METADATA, ...(parsed.metadata || {}) },
                 glossary: Array.isArray(parsed.glossary) && parsed.glossary.length > 0 ? parsed.glossary : DEFAULT_GLOSSARY,
-                requirements: Array.isArray(parsed.requirements) && parsed.requirements.length > 0 ? parsed.requirements : DEFAULT_REQUIREMENTS
+                requirements: reqs
             };
         }
     } catch (e) {
@@ -1931,40 +1959,40 @@ export const OFFICIAL_RTM_TEMPLATE_ITEMS = [
 ];
 
 export const OFFICIAL_DOCUMENT_CHECKLIST_ITEMS = [
-    { seq: 1, docName: '환경 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅱ.환경분석.pptx', note: '' },
-    { seq: 2, docName: '현황 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
-    { seq: 3, docName: '법·제도 분석', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅱ.환경분석.pptx', note: '' },
-    { seq: 4, docName: '정보기술 동향 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅱ.환경분석.pptx', note: '' },
-    { seq: 5, docName: '업무 현황 분석서(인터뷰 결과 포함)', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
-    { seq: 6, docName: '정보기술(IT) 현황 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
-    { seq: 7, docName: '선진사례 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
-    { seq: 8, docName: '차이(Gap) 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
-    { seq: 9, docName: '요구사항 및 개선과제 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
-    { seq: 10, docName: '정보화 전략 정의서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 11, docName: 'To-Be 과제 상세 정의서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 12, docName: 'To-Be 업무 프로세스 설계서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 13, docName: 'To-Be 정보관리 ', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 14, docName: 'To-Be 정보시스템 구조 설계서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 15, docName: 'To-Be 데이터 구조 설계서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 16, docName: 'To-Be 기술 및 보안 구조 설계서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 17, docName: 'To-Be 정보관리 구조 설계서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 18, docName: '통합이행계획 수립서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅴ.이행계획수립.pptx', note: '' },
-    { seq: 19, docName: '소요예산 산정내역서(산출근거 포함)', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅴ.이행계획수립.pptx', note: '' },
-    { seq: 20, docName: '기대효과 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅴ.이행계획수립.pptx', note: '' },
-    { seq: 21, docName: '제안요청서(RFP) ', status: '작성완료', fileName: "제안요청서_차세대 K-BDS 시스템 구축 용역 '27.hwp\n제안요청서_차세대 K-BDS 시스템 구축 용역 '28.hwp", note: '' },
-    { seq: 22, docName: 'ISP 최종산출물 검토신청서', status: '작성완료', fileName: 'K-BDS_ISP_검토신청서(2025년).hwpx', note: '' },
-    { seq: 23, docName: '최종산출물 점검표', status: '작성완료', fileName: 'K-BDS_ISP_검토신청서(2025년).hwpx', note: '' },
-    { seq: 24, docName: '목표시스템 데이터 표준화 방안', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 25, docName: '데이터 표준관리 현황 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 26, docName: '데이터 구조현황 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 27, docName: '데이터 구조 설계 방안', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 28, docName: '데이터 구조 관리현황 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 29, docName: '데이터 구조 관리방안', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 30, docName: '목표시스템 데이터(표준, 구조, 값, 연계)관리방안', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 31, docName: '메타데이터 등록·관리현황', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 32, docName: '데이터 개방 및 메타데이터 관리방안', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
-    { seq: 33, docName: '기술적용계획표 및 결과표', status: '작성완료', fileName: '[별지 1] 기술적용계획표 및 기술적용결과표(행정기관 및 공공기관 정보시스템 구축·운영 지침 ).hwpx', note: '' },
-    { seq: 34, docName: '보안계획서 및 관련 문서', status: '작성완료', fileName: '착수계(사업수행계획서, 외부자 보안서약서, 개인정보 취급자보안서약서 등)', note: '' }
+    { seq: 1, docName: '환경 분석서', status: '미작성', fileName: '', note: 'Ⅱ.1 ~ Ⅱ.6', keywords: ['환경분석', '개요', 'Ⅱ.1'] },
+    { seq: 2, docName: '현황 분석서', status: '미작성', fileName: '', note: 'Ⅲ.1 ~ Ⅲ.8', keywords: ['현황분석', '개요', 'Ⅲ.1'] },
+    { seq: 3, docName: '법·제도 분석', status: '미작성', fileName: '', note: 'Ⅱ.3', keywords: ['법제도', '법·제도', 'Ⅱ.3'] },
+    { seq: 4, docName: '정보기술 동향 분석서', status: '미작성', fileName: '', note: 'Ⅱ.4, Ⅱ.5', keywords: ['정보기술', '동향', '활용동향', 'Ⅱ.4', 'Ⅱ.5'] },
+    { seq: 5, docName: '업무 현황 분석서(인터뷰 결과 포함)', status: '미작성', fileName: '', note: 'Ⅲ.2', keywords: ['업무현황', '업무 현황', '인터뷰', 'Ⅲ.2'] },
+    { seq: 6, docName: '정보기술(IT) 현황 분석서', status: '미작성', fileName: '', note: 'Ⅲ.3, Ⅲ.4', keywords: ['정보기술', '응용시스템', '인프라', 'Ⅲ.3', 'Ⅲ.4'] },
+    { seq: 7, docName: '선진사례 분석서', status: '미작성', fileName: '', note: 'Ⅲ.7', keywords: ['선진사례', '벤치마킹', 'Ⅲ.7'] },
+    { seq: 8, docName: '차이(Gap) 분석서', status: '미작성', fileName: '', note: 'Ⅲ.7, Ⅲ.8', keywords: ['차이', 'Gap', '개선과제', 'Ⅲ.8'] },
+    { seq: 9, docName: '요구사항 및 개선과제 분석서', status: '미작성', fileName: '', note: 'Ⅲ.6, Ⅲ.8', keywords: ['요구사항분석', '개선과제', 'Ⅲ.6', 'Ⅲ.8'] },
+    { seq: 10, docName: '정보화 전략 정의서', status: '미작성', fileName: '', note: 'Ⅳ.2', keywords: ['비전', '전략수립', '정보화전략', 'Ⅳ.2'] },
+    { seq: 11, docName: 'To-Be 과제 상세 정의서', status: '미작성', fileName: '', note: 'Ⅳ.3', keywords: ['개선과제상세화', '과제상세', 'Ⅳ.3'] },
+    { seq: 12, docName: 'To-Be 업무 프로세스 설계서', status: '미작성', fileName: '', note: 'Ⅳ.4', keywords: ['목표업무', '업무아키텍처', 'Ⅳ.4'] },
+    { seq: 13, docName: 'To-Be 정보관리 구조 설계서', status: '미작성', fileName: '', note: 'Ⅳ.12', keywords: ['정보화통합거버넌스', '거버넌스', 'Ⅳ.12'] },
+    { seq: 14, docName: 'To-Be 정보시스템 구조 설계서', status: '미작성', fileName: '', note: 'Ⅳ.5', keywords: ['목표응용시스템', '응용시스템아키텍처', 'Ⅳ.5'] },
+    { seq: 15, docName: 'To-Be 데이터 구조 설계서', status: '미작성', fileName: '', note: 'Ⅳ.6, Ⅳ.10', keywords: ['목표데이터', '데이터아키텍처', 'DW', 'CDW', 'Ⅳ.6', 'Ⅳ.10'] },
+    { seq: 16, docName: 'To-Be 기술 및 보안 구조 설계서', status: '미작성', fileName: '', note: 'Ⅳ.7, Ⅳ.8', keywords: ['목표인프라', '정보보호아키텍처', 'AI아키텍처', 'Ⅳ.7', 'Ⅳ.8'] },
+    { seq: 17, docName: 'To-Be AI 서비스 확산 전략서', status: '미작성', fileName: '', note: 'Ⅳ.9', keywords: ['AI서비스확산', '스마트병원', '활성화', 'Ⅳ.9'] },
+    { seq: 18, docName: '통합이행계획 수립서', status: '미작성', fileName: '', note: 'Ⅴ.1 ~ Ⅴ.5', keywords: ['이행계획', '로드맵', '이행과제', 'Ⅴ.1', 'Ⅴ.2', 'Ⅴ.3', 'Ⅴ.5'] },
+    { seq: 19, docName: '소요예산 산정내역서(산출근거 포함)', status: '미작성', fileName: '', note: 'Ⅴ.6', keywords: ['소요예산', '예산', '산정', 'Ⅴ.6'] },
+    { seq: 20, docName: '기대효과 및 투자효과 분석서', status: '미작성', fileName: '', note: 'Ⅴ.7, Ⅴ.8', keywords: ['기대효과', '투자효과', 'Ⅴ.7', 'Ⅴ.8'] },
+    { seq: 21, docName: '공통기반 시스템 연계·활용 방안', status: '미작성', fileName: '', note: 'Ⅳ.11', keywords: ['공통기반', '연계활용', '연계', 'Ⅳ.11'] },
+    { seq: 22, docName: '제안요청서(RFP) 산출물', status: '미작성', fileName: '', note: 'RFP/과업지시서', keywords: ['제안요청서', 'RFP', '과업지시서'] },
+    { seq: 23, docName: 'ISP 최종산출물 검토신청서', status: '미작성', fileName: '', note: '검토신청서', keywords: ['검토신청서', '신청서'] },
+    { seq: 24, docName: '최종산출물 점검표', status: '미작성', fileName: '', note: '점검표', keywords: ['점검표', '산출물점검'] },
+    { seq: 25, docName: '목표시스템 데이터 표준화 방안', status: '미작성', fileName: '', note: '데이터 표준화', keywords: ['데이터표준화', '표준화'] },
+    { seq: 26, docName: '데이터 표준관리 현황 분석서', status: '미작성', fileName: '', note: '데이터 표준관리', keywords: ['표준관리', '데이터현황', 'Ⅲ.5'] },
+    { seq: 27, docName: '데이터 구조현황 분석서', status: '미작성', fileName: '', note: '데이터 구조분석', keywords: ['데이터구조', '구조현황'] },
+    { seq: 28, docName: '데이터 구조 설계 방안', status: '미작성', fileName: '', note: '데이터 구조설계', keywords: ['구조설계', '데이터아키텍처'] },
+    { seq: 29, docName: '데이터 구조 관리현황 분석서', status: '미작성', fileName: '', note: '데이터 관리현황', keywords: ['구조관리', '데이터관리'] },
+    { seq: 30, docName: '데이터 구조 관리방안', status: '미작성', fileName: '', note: '데이터 관리방안', keywords: ['구조관리방안'] },
+    { seq: 31, docName: '목표시스템 데이터(표준, 구조, 값, 연계)관리방안', status: '미작성', fileName: '', note: '데이터 종합관리', keywords: ['데이터종합', '데이터관리방안'] },
+    { seq: 32, docName: '메타데이터 등록·관리현황', status: '미작성', fileName: '', note: '메타데이터', keywords: ['메타데이터'] },
+    { seq: 33, docName: '기술적용계획표 및 결과표', status: '미작성', fileName: '', note: '기술적용', keywords: ['기술적용', '기술적용계획표'] },
+    { seq: 34, docName: '보안계획서 및 관련 문서', status: '미작성', fileName: '', note: '보안계획', keywords: ['보안계획', '정보보호', '보안서약서'] }
 ];
 
 /**
@@ -2153,9 +2181,9 @@ export async function exportOfficialRtmToExcel({
         gCell.border = borderThin;
     });
 
-    // ── 시트 2: 산출물현황표 (선택 시에만 포함, 기본값 false) ─────────────
+    // ── 시트 2: RFP상 산출물 (선택 시에만 포함, 기본값 false) ─────────────
     if (includeDocChecklist) {
-        const docSheet = workbook.addWorksheet('산출물현황표', {
+        const docSheet = workbook.addWorksheet('RFP상 산출물', {
             views: [{ showGridLines: true }]
         });
 
@@ -2197,22 +2225,32 @@ export async function exportOfficialRtmToExcel({
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
         });
 
-        // 34대 산출물 현황 데이터 렌더링
+        // 실제 업로드된 검수 산출물과 RFP 요구서류 스마트 매칭
         const docItemsToRender = OFFICIAL_DOCUMENT_CHECKLIST_ITEMS.map(item => {
-            let matchedFileName = item.fileName;
-            if (mode === 'auto' && batchResults.length > 0) {
-                const foundFile = batchResults.find(b => {
-                    const bName = (b.fileName || '').toLowerCase();
-                    const docKey = item.docName.replace(/\s+/g, '').toLowerCase();
-                    return bName.includes(docKey) || docKey.includes(bName.slice(0, 4));
+            let matchedFileName = '';
+            let isMatched = false;
+
+            if (batchResults && batchResults.length > 0) {
+                // 키워드 정밀 매칭
+                const targetKeywords = (item.keywords || []).map(k => k.toLowerCase().replace(/[\s·\-_]/g, ''));
+                const docNameKey = item.docName.toLowerCase().replace(/[\s·\-_]/g, '');
+
+                const matchedFile = batchResults.find(b => {
+                    const fName = (b.fileName || '').toLowerCase().replace(/[\s·\-_]/g, '');
+                    if (fName.includes(docNameKey)) return true;
+                    return targetKeywords.some(k => k.length >= 2 && fName.includes(k));
                 });
-                if (foundFile) {
-                    matchedFileName = foundFile.fileName;
+
+                if (matchedFile) {
+                    matchedFileName = matchedFile.fileName;
+                    isMatched = true;
                 }
             }
+
             return {
                 ...item,
-                fileName: matchedFileName
+                status: isMatched ? '작성완료' : '미작성',
+                fileName: isMatched ? matchedFileName : '-'
             };
         });
 
