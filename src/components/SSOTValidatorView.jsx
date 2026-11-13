@@ -415,14 +415,22 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         setTargetFiles(prev => prev.filter((_, i) => i !== idx));
         setBatchResults([]);
         setSelectedFileIdx(0);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
 
-    const handleClearAllTargetFiles = (e) => {
+    // 업로드 리셋 (전체 초기화)
+    const handleResetUpload = (e) => {
         if (e) e.stopPropagation();
         setTargetFiles([]);
         setBatchResults([]);
         setSelectedFileIdx(0);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
+    const handleClearAllTargetFiles = handleResetUpload;
 
     // ── 다중 파일 일괄 검증 실행 ─────────────────────────────────
     const handleStartValidation = async () => {
@@ -1126,7 +1134,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
 
                 {/* 드래그 앤 드롭 영역 및 파일 목록 (다중 파일 지원) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {/* 상단 안내 & 파일 추가/비우기 버튼 바 */}
+                    {/* 상단 안내 & 파일 추가/리셋 버튼 바 */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <Layers size={15} color="var(--accent-blue)" />
@@ -1145,12 +1153,13 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={handleClearAllTargetFiles}
+                                    onClick={handleResetUpload}
                                     className="btn-outline"
-                                    style={{ padding: '4px 10px', fontSize: '11.5px', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    style={{ padding: '4px 10px', fontSize: '11.5px', color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.35)', display: 'flex', alignItems: 'center', gap: '4px' }}
                                     disabled={isValidating}
+                                    title="등록된 파일 목록을 모두 비우고 초기화합니다"
                                 >
-                                    <Trash2 size={13} /> 전체 삭제
+                                    <RefreshCw size={13} /> 업로드 리셋
                                 </button>
                             </div>
                         )}
@@ -1318,15 +1327,28 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                 )}
 
                 {/* 실행 버튼 영역 */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                    {batchResults.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
+                    {(targetFiles.length > 0 || batchResults.length > 0) && (
                         <button
-                            onClick={handleClearAllTargetFiles}
-                            className="btn-outline"
-                            style={{ padding: '10px 18px', fontSize: '13px' }}
+                            type="button"
+                            onClick={handleResetUpload}
+                            className="btn-outline interactive"
+                            style={{
+                                padding: '10px 18px',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                color: '#f87171',
+                                borderColor: 'rgba(239, 68, 68, 0.4)',
+                                background: 'rgba(239, 68, 68, 0.06)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: isValidating ? 'not-allowed' : 'pointer'
+                            }}
                             disabled={isValidating}
+                            title="업로드된 모든 파일과 검수 결과를 초기화합니다"
                         >
-                            초기화
+                            <RefreshCw size={14} /> 업로드 리셋 (전체 초기화)
                         </button>
                     )}
                     <button
