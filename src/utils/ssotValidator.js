@@ -2002,7 +2002,8 @@ export async function exportOfficialRtmToExcel({
     batchResults = [],
     companyName = '㈜한국아이티컨설팅',
     issueDate = '2025.12.17.',
-    mode = 'auto' // 'auto' (검수 결과 자동 연동) | 'template' (표준 템플릿 원본)
+    mode = 'auto', // 'auto' (검수 결과 자동 연동) | 'template' (표준 템플릿 원본)
+    includeDocChecklist = false // 산출물현황 시트 포함 여부 (기본 false: 요구사항추적표 단일 시트만 생성)
 }) {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = `${companyName} (건강한 프로젝트 RTM)`;
@@ -2152,112 +2153,114 @@ export async function exportOfficialRtmToExcel({
         gCell.border = borderThin;
     });
 
-    // ── 시트 2: 산출물현황표 ────────────────────────────────────
-    const docSheet = workbook.addWorksheet('산출물현황표', {
-        views: [{ showGridLines: true }]
-    });
+    // ── 시트 2: 산출물현황표 (선택 시에만 포함, 기본값 false) ─────────────
+    if (includeDocChecklist) {
+        const docSheet = workbook.addWorksheet('산출물현황표', {
+            views: [{ showGridLines: true }]
+        });
 
-    docSheet.columns = [
-        { width: 4 },   // A (여백)
-        { width: 8 },   // B: 구분
-        { width: 38 },  // C: 서류
-        { width: 14 },  // D: 현황
-        { width: 55 },  // E: 파일명
-        { width: 20 }   // F: 비고(작성근거)
-    ];
+        docSheet.columns = [
+            { width: 4 },   // A (여백)
+            { width: 8 },   // B: 구분
+            { width: 38 },  // C: 서류
+            { width: 14 },  // D: 현황
+            { width: 55 },  // E: 파일명
+            { width: 20 }   // F: 비고(작성근거)
+        ];
 
-    // 상단 작성자/일자 정보 (F5)
-    docSheet.mergeCells('E5:F5');
-    const docAuthorCell = docSheet.getCell('E5');
-    docAuthorCell.value = `${companyName}\n${issueDate}`;
-    docAuthorCell.font = { name: '맑은 고딕', size: 10, bold: true };
-    docAuthorCell.alignment = { vertical: 'middle', horizontal: 'right', wrapText: true };
-    docSheet.getRow(5).height = 30;
+        // 상단 작성자/일자 정보 (F5)
+        docSheet.mergeCells('E5:F5');
+        const docAuthorCell = docSheet.getCell('E5');
+        docAuthorCell.value = `${companyName}\n${issueDate}`;
+        docAuthorCell.font = { name: '맑은 고딕', size: 10, bold: true };
+        docAuthorCell.alignment = { vertical: 'middle', horizontal: 'right', wrapText: true };
+        docSheet.getRow(5).height = 30;
 
-    // 헤더 행 (Row 7)
-    const docHeaderRow = docSheet.getRow(7);
-    docHeaderRow.height = 28;
+        // 헤더 행 (Row 7)
+        const docHeaderRow = docSheet.getRow(7);
+        docHeaderRow.height = 28;
 
-    const docHeaders = [
-        { col: 2, title: '구분' },
-        { col: 3, title: '서류' },
-        { col: 4, title: '현황' },
-        { col: 5, title: '파일명' },
-        { col: 6, title: '비고(작성근거)' }
-    ];
+        const docHeaders = [
+            { col: 2, title: '구분' },
+            { col: 3, title: '서류' },
+            { col: 4, title: '현황' },
+            { col: 5, title: '파일명' },
+            { col: 6, title: '비고(작성근거)' }
+        ];
 
-    docHeaders.forEach(h => {
-        const cell = docHeaderRow.getCell(h.col);
-        cell.value = h.title;
-        cell.font = { name: '맑은 고딕', size: 10, bold: true };
-        cell.fill = headerFill;
-        cell.border = borderThin;
-        cell.alignment = { vertical: 'middle', horizontal: 'center' };
-    });
+        docHeaders.forEach(h => {
+            const cell = docHeaderRow.getCell(h.col);
+            cell.value = h.title;
+            cell.font = { name: '맑은 고딕', size: 10, bold: true };
+            cell.fill = headerFill;
+            cell.border = borderThin;
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        });
 
-    // 34대 산출물 현황 데이터 렌더링
-    const docItemsToRender = OFFICIAL_DOCUMENT_CHECKLIST_ITEMS.map(item => {
-        // 만약 batchResults에 실제 업로드된 파일이 있고 이름이 유사하면 매칭
-        let matchedFileName = item.fileName;
-        if (mode === 'auto' && batchResults.length > 0) {
-            const foundFile = batchResults.find(b => {
-                const bName = (b.fileName || '').toLowerCase();
-                const docKey = item.docName.replace(/\s+/g, '').toLowerCase();
-                return bName.includes(docKey) || docKey.includes(bName.slice(0, 4));
-            });
-            if (foundFile) {
-                matchedFileName = foundFile.fileName;
+        // 34대 산출물 현황 데이터 렌더링
+        const docItemsToRender = OFFICIAL_DOCUMENT_CHECKLIST_ITEMS.map(item => {
+            let matchedFileName = item.fileName;
+            if (mode === 'auto' && batchResults.length > 0) {
+                const foundFile = batchResults.find(b => {
+                    const bName = (b.fileName || '').toLowerCase();
+                    const docKey = item.docName.replace(/\s+/g, '').toLowerCase();
+                    return bName.includes(docKey) || docKey.includes(bName.slice(0, 4));
+                });
+                if (foundFile) {
+                    matchedFileName = foundFile.fileName;
+                }
             }
-        }
-        return {
-            ...item,
-            fileName: matchedFileName
-        };
-    });
+            return {
+                ...item,
+                fileName: matchedFileName
+            };
+        });
 
-    docItemsToRender.forEach((item, idx) => {
-        const row = docSheet.getRow(8 + idx);
-        row.height = item.fileName && item.fileName.includes('\n') ? 36 : 24;
+        docItemsToRender.forEach((item, idx) => {
+            const row = docSheet.getRow(8 + idx);
+            row.height = item.fileName && item.fileName.includes('\n') ? 36 : 24;
 
-        // B열: 구분
-        const bCell = row.getCell(2);
-        bCell.value = item.seq;
-        bCell.font = { name: '맑은 고딕', size: 9.5 };
-        bCell.alignment = { vertical: 'middle', horizontal: 'center' };
-        bCell.border = borderThin;
+            // B열: 구분
+            const bCell = row.getCell(2);
+            bCell.value = item.seq;
+            bCell.font = { name: '맑은 고딕', size: 9.5 };
+            bCell.alignment = { vertical: 'middle', horizontal: 'center' };
+            bCell.border = borderThin;
 
-        // C열: 서류
-        const cCell = row.getCell(3);
-        cCell.value = item.docName;
-        cCell.font = { name: '맑은 고딕', size: 9.5 };
-        cCell.alignment = { vertical: 'middle', horizontal: 'left' };
-        cCell.border = borderThin;
+            // C열: 서류
+            const cCell = row.getCell(3);
+            cCell.value = item.docName;
+            cCell.font = { name: '맑은 고딕', size: 9.5 };
+            cCell.alignment = { vertical: 'middle', horizontal: 'left' };
+            cCell.border = borderThin;
 
-        // D열: 현황
-        const dCell = row.getCell(4);
-        dCell.value = item.status || '작성완료';
-        dCell.font = { name: '맑은 고딕', size: 9.5 };
-        dCell.alignment = { vertical: 'middle', horizontal: 'center' };
-        dCell.border = borderThin;
+            // D열: 현황
+            const dCell = row.getCell(4);
+            dCell.value = item.status || '작성완료';
+            dCell.font = { name: '맑은 고딕', size: 9.5 };
+            dCell.alignment = { vertical: 'middle', horizontal: 'center' };
+            dCell.border = borderThin;
 
-        // E열: 파일명
-        const eCell = row.getCell(5);
-        eCell.value = item.fileName || '';
-        eCell.font = { name: '맑은 고딕', size: 9.5 };
-        eCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
-        eCell.border = borderThin;
+            // E열: 파일명
+            const eCell = row.getCell(5);
+            eCell.value = item.fileName || '';
+            eCell.font = { name: '맑은 고딕', size: 9.5 };
+            eCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+            eCell.border = borderThin;
 
-        // F열: 비고
-        const fCell = row.getCell(6);
-        fCell.value = item.note || '';
-        fCell.font = { name: '맑은 고딕', size: 9.5 };
-        fCell.alignment = { vertical: 'middle', horizontal: 'left' };
-        fCell.border = borderThin;
-    });
+            // F열: 비고
+            const fCell = row.getCell(6);
+            fCell.value = item.note || '';
+            fCell.font = { name: '맑은 고딕', size: 9.5 };
+            fCell.alignment = { vertical: 'middle', horizontal: 'left' };
+            fCell.border = borderThin;
+        });
+    }
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const downloadName = `요구사항추적표_및_산출물현황표_${(ssotData.metadata?.projectName || '공공ISP').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const filePrefix = includeDocChecklist ? '요구사항추적표_및_산출물현황표' : '요구사항추적표(조견표)';
+    const downloadName = `${filePrefix}_${(ssotData.metadata?.projectName || '공공ISP').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
     saveAs(blob, downloadName);
 }
 

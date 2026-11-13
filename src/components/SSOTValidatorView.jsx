@@ -111,6 +111,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}.`;
     });
     const [rtmMode, setRtmMode] = useState('auto'); // 'auto' | 'template'
+    const [includeDocChecklist, setIncludeDocChecklist] = useState(false); // 산출물현황표 시트 포함 여부 (기본 미포함)
     const [isGeneratingRtm, setIsGeneratingRtm] = useState(false);
 
     // ── 사업 RFP 자동 분석 및 마스터 정보 동기화 상태 ────────────────
@@ -702,7 +703,8 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                 batchResults,
                 companyName: rtmCompanyName || '㈜한국아이티컨설팅',
                 issueDate: rtmIssueDate || '2025.12.17.',
-                mode: rtmMode
+                mode: rtmMode,
+                includeDocChecklist
             });
             setShowOfficialRtmModal(false);
         } catch (err) {
@@ -2702,10 +2704,10 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 </div>
                                 <div>
                                     <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                        공공 표준 요구사항추적표 & 산출물현황표 엑셀 작성
+                                        공공 표준 요구사항추적표(조견표) 엑셀 작성
                                     </h3>
                                     <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                                        ㈜한국아이티컨설팅 공식 양식 기준 2개 시트(추적표 + 산출물현황) 자동 빌드
+                                        ㈜한국아이티컨설팅 표준 서식 기준 요구사항추적표 자동 빌드
                                     </p>
                                 </div>
                             </div>
@@ -2809,14 +2811,29 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                     </label>
                                 </div>
                             </div>
+
+                            {/* 산출물현황표 시트 포함 여부 옵션 (기본 미포함) */}
+                            <div style={{ paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={includeDocChecklist}
+                                        onChange={(e) => setIncludeDocChecklist(e.target.checked)}
+                                        style={{ accentColor: 'var(--accent-blue)', width: '16px', height: '16px' }}
+                                    />
+                                    <span>[선택 옵션] 산출물현황표 시트 함께 포함 (34종 산출물 점검표 시트가 필요한 경우에만 체크)</span>
+                                </label>
+                            </div>
                         </div>
 
                         {/* 시트 구성 미리보기 안내 */}
                         <div style={{ background: 'rgba(0,0,0,0.25)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>엑셀 시트 구성 안내:</span>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>엑셀 시트 구성:</span>
                             <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <div>• <strong>시트 1 [요구사항추적표]:</strong> 요구사항번호, 요구사항명칭, 충족여부, 관련 파일, 해당 페이지(예: 7~58, 전 페이지)</div>
-                                <div>• <strong>시트 2 [산출물현황표]:</strong> 구분, 서류(환경분석서, 현황분석서 등 34종), 현황, 파일명, 비고(작성근거)</div>
+                                {includeDocChecklist && (
+                                    <div style={{ color: '#93c5fd' }}>• <strong>시트 2 [산출물현황표]:</strong> 구분, 서류(환경분석서, 현황분석서 등 34종), 현황, 파일명, 비고(작성근거)</div>
+                                )}
                             </div>
                         </div>
 
