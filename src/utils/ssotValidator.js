@@ -103,49 +103,231 @@ export const DEFAULT_GLOSSARY = [
     }
 ];
 
-// ── 요구사항 마스터 리스트 기본 프리셋 ────────────────────────────
-export const DEFAULT_REQUIREMENTS = [
+// ── 공공보건의료 AI ISP 공식 44개 마스터 요구사항 표준 프리셋 ────────────
+export const PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS = [
     {
         id: 'CNR-001',
-        name: '공공보건의료 데이터 통합 연계 및 표준화 체계 수립',
-        keywords: '데이터, 연계, 표준화, EMR, 연계체계'
+        name: '공공의료 정보화 환경 및 법·제도 분석',
+        keywords: '공공의료, 정보화, 환경, 법·제도'
     },
     {
-        id: 'SFR-001',
-        name: 'AI 기반 진료지원(CDSS) 알고리즘 실증 및 고도화',
-        keywords: 'AI, 진료지원, CDSS, 알고리즘, 실증'
+        id: 'CNR-002',
+        name: '보건의료 AI 활용 동향 및 적용 가능성 분석',
+        keywords: '보건의료, AI, 활용, 동향'
     },
     {
-        id: 'SFR-002',
-        name: '실시간 응급의료 관제 및 이송 모니터링 대시보드 구축',
-        keywords: '응급의료, 관제, 모니터링, 대시보드, 이송'
+        id: 'CNR-003',
+        name: '공공의료 정보시스템 업무/정보기술(IT) 현황 분석',
+        keywords: '시스템, 구성, 기술, 환경, 분석'
     },
     {
-        id: 'SFR-003',
-        name: '지방의료원 간 진료정보교류 및 협진 지원 인터페이스 개발',
-        keywords: '지방의료원, 진료정보교류, 협진, 인터페이스'
+        id: 'CNR-004',
+        name: '선진사례 벤치마킹 및 차이 분석',
+        keywords: '선진사례, 벤치마킹, 차이, 분석'
     },
     {
-        id: 'PMR-001',
-        name: '개인정보보호 및 의료법 규제 준수 거버넌스 수립',
-        keywords: '개인정보, 의료법, 거버넌스, 가명처리, 규제'
+        id: 'CNR-005',
+        name: '과업 분야별 업무 개선방향 및 개선과제 도출',
+        keywords: '과업, 분야별, 업무, 개선방향'
     },
     {
-        id: 'TER-001',
-        name: '민간·공공 하이브리드 클라우드 인프라 표준 아키텍처 설계',
-        keywords: '클라우드, 인프라, 아키텍처, 하이브리드, 가용성'
+        id: 'CNR-006',
+        name: '공공의료 AI 정보화 비전 및 전략 수립',
+        keywords: '공공의료, AI, 정보화, 비전'
     },
     {
-        id: 'DSR-001',
-        name: '데이터 레이크 및 AI 학습용 합성데이터셋 파이프라인 구축',
-        keywords: '데이터 레이크, 학습데이터, 합성데이터, 파이프라인'
+        id: 'CNR-007',
+        name: 'AI 기반 공공의료 정보시스템 목표모델(To-Be) 설계',
+        keywords: 'AI, 기반, 공공의료, 정보시스템'
+    },
+    {
+        id: 'CNR-008',
+        name: '차세대 정보시스템/데이터 플랫폼 구축 전략 및 기술 아키텍쳐 설계',
+        keywords: '차세대, 정보시스템/데이터, 플랫폼, 구축'
+    },
+    {
+        id: 'CNR-009',
+        name: '공공의료 AI 거버넌스 및 데이터 관리체계 설계',
+        keywords: '공공의료, AI, 거버넌스, 데이터'
+    },
+    {
+        id: 'CNR-010',
+        name: '공공병원 AI 서비스 확산 및 스마트병원 활성화 추진 전략',
+        keywords: '공공병원, AI, 서비스, 확산'
+    },
+    {
+        id: 'CNR-011',
+        name: '재난·재해 대응, 개인정보보호 및 정보보안 강화 전략 수립',
+        keywords: '재난·재해, 대응,, 개인정보보호, 정보보안'
+    },
+    {
+        id: 'CNR-012',
+        name: '공공병원 AX 단계별 추진 로드맵 수립',
+        keywords: '공공병원, AX, 단계별, 추진'
+    },
+    {
+        id: 'CNR-013',
+        name: 'AI 기반 차세대 시스템 구축에 따른 기대효과 및 성과지표 도출',
+        keywords: 'AI, 기반, 차세대, 시스템'
+    },
+    {
+        id: 'CNR-014',
+        name: '사업계획 수립 및 소요예산 산출, 개선과제 이행방안 수립',
+        keywords: '사업계획, 수립, 소요예산, 산출,'
+    },
+    {
+        id: 'CNR-015',
+        name: '세부 사업계획서 및 제안요청서 작성',
+        keywords: '세부, 사업계획서, 제안요청서, 작성'
+    },
+    {
+        id: 'CNR-016',
+        name: '공통기반 시스템 연계·활용 방안 검토',
+        keywords: '공통기반, 시스템, 연계·활용, 방안'
+    },
+    {
+        id: 'CNR-017',
+        name: 'OpenAPI 기능의 활용성 확장 및 타 시스템 간 연계',
+        keywords: 'OpenAPI, 기능의, 활용성, 확장'
+    },
+    {
+        id: 'DAR-001',
+        name: '데이터 표준화 방안 제시',
+        keywords: '데이터, 표준화, 방안, 제시'
+    },
+    {
+        id: 'DAR-002',
+        name: '데이터 표준관리 방안 제시',
+        keywords: '데이터, 표준관리, 방안, 제시'
+    },
+    {
+        id: 'DAR-003',
+        name: '데이터 구조 설계 방안 제시',
+        keywords: '데이터, 구조, 설계, 방안'
+    },
+    {
+        id: 'DAR-004',
+        name: '데이터 구조 검증 및 개선방안 제시',
+        keywords: '데이터, 구조, 검증, 개선방안'
+    },
+    {
+        id: 'DAR-005',
+        name: '데이터 구조 관리 방안 제시',
+        keywords: '데이터, 구조, 관리, 방안'
+    },
+    {
+        id: 'DAR-006',
+        name: '데이터 값 검증 방안 제시',
+        keywords: '데이터, 검증, 방안, 제시'
+    },
+    {
+        id: 'DAR-007',
+        name: '이관 데이터 값 검증 방안 제시',
+        keywords: '이관, 데이터, 검증, 방안'
+    },
+    {
+        id: 'DAR-008',
+        name: '데이터 관리체계 현황분석 및 목표모델 제시',
+        keywords: '데이터, 관리체계, 현황분석, 목표모델'
+    },
+    {
+        id: 'DAR-009',
+        name: '데이터 개방 및 메타데이터 관리체계',
+        keywords: '데이터, 개방, 메타데이터, 관리체계'
+    },
+    {
+        id: 'DAR-010',
+        name: '보건의료데이터 표준화',
+        keywords: '보건의료데이터, 표준화'
+    },
+    {
+        id: 'SER-001',
+        name: '보안관리 준수사항',
+        keywords: '보안관리, 준수사항'
+    },
+    {
+        id: 'SER-002',
+        name: '누출금지 대상정보',
+        keywords: '누출금지, 대상정보'
+    },
+    {
+        id: 'SER-003',
+        name: '사업자 보안위규 처리기준',
+        keywords: '사업자, 보안위규, 처리기준'
+    },
+    {
+        id: 'SER-004',
+        name: '사업자 보안위약금 부과기준',
+        keywords: '사업자, 보안위약금, 부과기준'
+    },
+    {
+        id: 'QUR-001',
+        name: '품질관리 준수',
+        keywords: '품질관리, 준수'
     },
     {
         id: 'COR-001',
-        name: '장애 대응 이중화 및 재해복구(DR) 체계 구축 방안',
-        keywords: '이중화, 재해복구, DR, 장애대응, 무중단'
-    }
+        name: '정보화기반 표준화 지침 및 가이드라인 준수',
+        keywords: '정보화기반, 표준화, 지침, 가이드라인'
+    },
+    {
+        id: 'COR-002',
+        name: '저작권 및 지식재산권',
+        keywords: '저작권, 지식재산권'
+    },
+    {
+        id: 'COR-003',
+        name: '정보시스템 운영 성과측정 기능활용도 측정 방안 마련',
+        keywords: '정보시스템, 운영, 성과측정, 기능활용도'
+    },
+    {
+        id: 'PMR-001',
+        name: '업무보고',
+        keywords: '업무보고'
+    },
+    {
+        id: 'PMR-002',
+        name: '프로젝트 일정관리 방안 제시',
+        keywords: '프로젝트, 일정관리, 방안, 제시'
+    },
+    {
+        id: 'PMR-003',
+        name: '사업수행 산출물 작성 및 제출',
+        keywords: '사업수행, 산출물, 작성, 제출'
+    },
+    {
+        id: 'PMR-004',
+        name: '프로젝트 조직구성(인력관리 등)',
+        keywords: '프로젝트, 조직구성(인력관리, 등)'
+    },
+    {
+        id: 'PSR-001',
+        name: '관련 기술 이전 및 지원',
+        keywords: '관련, 기술, 이전, 지원'
+    },
+    {
+        id: 'PSR-002',
+        name: '전산장비 및 각종 사무기기 확보',
+        keywords: '전산장비, 각종, 사무기기, 확보'
+    },
+    {
+        id: 'PSR-003',
+        name: '하자보수 일반',
+        keywords: '하자보수, 일반'
+    },
+    {
+        id: 'PSR-004',
+        name: '행사(보고회) 및 워크숍 지원',
+        keywords: '행사(보고회), 워크숍, 지원'
+    },
+    {
+        id: 'PSR-005',
+        name: '추가제안',
+        keywords: '추가제안'
+    },
 ];
+
+export const DEFAULT_REQUIREMENTS = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS;
 
 // ── LocalStorage 로드 / 저장 유틸 ──────────────────────────────
 export function loadSSOTData() {
@@ -1083,6 +1265,165 @@ export async function exportSSOTReportToExcel({
 /**
  * 6-2. 다중 파일 일괄 검수 종합 엑셀 리포트 내보내기 (ExcelJS 활용)
  */
+
+/**
+ * 다중 산출물 일괄 검수 결과 프로젝트 레벨 통합 집계 엔진
+ * - 개별 파일 단위 가짜 Missing ID 오탐 제거
+ * - 전체 44개 마스터 요구사항 대비 프로젝트 종합 RTM 충족률 계산 (어느 파일에도 없는 것만 '전수 누락' 지적)
+ * - 산출물 간 정합성(Cross-Document Consistency) 분석 (용어 표기 불일치, 유령 ID 확산)
+ */
+export function aggregateBatchSSOT(batchResults = [], ssotData = {}) {
+    const { requirements = [], glossary = [] } = ssotData;
+
+    // 1) 전체 산출물 대상 요구사항 매핑 현황 집계
+    const rtmMap = new Map();
+    requirements.forEach(req => {
+        rtmMap.set(req.id.toUpperCase(), {
+            ...req,
+            appearingFiles: [],
+            pagesByFile: {},
+            anyKeywordMissing: false
+        });
+    });
+
+    batchResults.forEach(res => {
+        const matrix = res.stage1?.rtmMatrix || [];
+        matrix.forEach(m => {
+            if (m.isPresent) {
+                const item = rtmMap.get(m.id.toUpperCase());
+                if (item) {
+                    item.appearingFiles.push(res.fileName);
+                    item.pagesByFile[res.fileName] = m.pages || [];
+                    if (m.status && m.status.includes('누락')) {
+                        item.anyKeywordMissing = true;
+                    }
+                }
+            }
+        });
+    });
+
+    const projectRtmMatrix = Array.from(rtmMap.values()).map(r => {
+        const isPresentOverall = r.appearingFiles.length > 0;
+        let overallStatus = '미출현 (전체 파일 누락)';
+        if (isPresentOverall) {
+            overallStatus = r.anyKeywordMissing ? '키워드 일부 누락' : '정상 반영';
+        }
+        return {
+            ...r,
+            isPresentOverall,
+            overallStatus
+        };
+    });
+
+    const coveredReqs = projectRtmMatrix.filter(r => r.isPresentOverall);
+    const missingReqs = projectRtmMatrix.filter(r => !r.isPresentOverall);
+    const projectRtmRate = requirements.length > 0 ? Math.round((coveredReqs.length / requirements.length) * 100) : 0;
+
+    // 2) 프로젝트 전체 전수 누락 결함 (개별 파일마다 44개씩 발생하던 중복 오탐 제거 -> 전수 미출현 건만 1회 표기)
+    const projectMissingIssues = missingReqs.map((req, idx) => ({
+        id: `PROJ-MIS-${req.id}`,
+        stage: '프로젝트 통합 RTM',
+        category: '요구사항 누락',
+        errorType: '전체 산출물 미반영 (Missing ID)',
+        severity: 'HIGH',
+        page: '-',
+        fileName: '전체 산출물 전수 누락',
+        matchedTerm: `[${req.id}] ${req.name}`,
+        originalText: `(프로젝트 전체 ${batchResults.length}개 산출물 어디에서도 [${req.id}] 미발견)`,
+        suggestedText: `요구사항 [${req.id}] ${req.name} 관련 산출물 본문 반영 필요`,
+        reason: `RFP 마스터 요구사항 [${req.id}]이(가) 등록된 ${batchResults.length}개 산출물 중 단 한 곳에도 작성되지 않았습니다.`
+    }));
+
+    // 3) 산출물별 실제 결함 (개별 파일의 Missing ID 결함은 제외하고, 실제 용어 오표기/수치 오류/유령 ID만 수록)
+    const fileActualIssues = [];
+    batchResults.forEach(res => {
+        const issues = res.allIssues || [];
+        issues.forEach(iss => {
+            if (iss.errorType === '요구사항 미출현(Missing ID)' || iss.id?.startsWith('S1-RTM-MIS-')) {
+                return; // 개별 파일 레벨의 Missing ID 오탐은 제외!
+            }
+            fileActualIssues.push({
+                ...iss,
+                fileName: res.fileName
+            });
+        });
+    });
+
+    // 4) 산출물 간 용어 정합성 분석 (어떤 파일은 표준어, 어떤 파일은 금지어를 교차 사용하여 비정합이 발생했는지)
+    const termConsistency = [];
+    glossary.forEach(g => {
+        const approved = (g.approved || '').trim();
+        const forbiddens = (g.forbidden || '').split(',').map(f => f.trim()).filter(Boolean);
+        if (!approved) return;
+
+        const filesUsingForbidden = [];
+        const filesUsingApproved = [];
+
+        batchResults.forEach(res => {
+            const text = res.stage1?.fullText || '';
+            const issues = res.stage1?.glossaryIssues || [];
+
+            const hasForbidden = issues.some(iss => iss.suggestedText === approved || (iss.matchedTerm && forbiddens.includes(iss.matchedTerm)));
+            if (hasForbidden) {
+                filesUsingForbidden.push(res.fileName);
+            }
+            if (text.includes(approved)) {
+                filesUsingApproved.push(res.fileName);
+            }
+        });
+
+        if (filesUsingForbidden.length > 0) {
+            termConsistency.push({
+                category: g.category || '행정용어',
+                approved,
+                forbidden: g.forbidden,
+                filesUsingForbidden,
+                filesUsingApproved,
+                isInconsistent: filesUsingForbidden.length > 0 && filesUsingApproved.length > 0
+            });
+        }
+    });
+
+    // 5) 산출물 간 비표준 유령 ID 확산도 분석
+    const ghostMap = new Map();
+    batchResults.forEach(res => {
+        const issues = res.stage1?.ghostIdIssues || [];
+        issues.forEach(iss => {
+            const gid = iss.detectedId || iss.matchedTerm;
+            if (!gid) return;
+            if (!ghostMap.has(gid)) {
+                ghostMap.set(gid, {
+                    ghostId: gid,
+                    files: new Set(),
+                    totalCount: 0
+                });
+            }
+            const gItem = ghostMap.get(gid);
+            gItem.files.add(res.fileName);
+            gItem.totalCount++;
+        });
+    });
+
+    const ghostIdSpread = Array.from(ghostMap.values()).map(g => ({
+        ghostId: g.ghostId,
+        fileCount: g.files.size,
+        files: Array.from(g.files),
+        totalCount: g.totalCount
+    })).sort((a, b) => b.fileCount - a.fileCount);
+
+    return {
+        projectRtmMatrix,
+        coveredReqCount: coveredReqs.length,
+        missingReqCount: missingReqs.length,
+        totalMasterReqCount: requirements.length,
+        projectRtmRate,
+        projectMissingIssues,
+        fileActualIssues,
+        termConsistency,
+        ghostIdSpread
+    };
+}
+
 export async function exportBatchSSOTReportToExcel({
     batchResults = [],
     ssotData = {}
@@ -1093,9 +1434,18 @@ export async function exportBatchSSOTReportToExcel({
 
     const { metadata = {}, requirements = [] } = ssotData;
 
+    // ── 프로젝트 레벨 통합 집계 (개별 파일 가짜 Missing ID 오탐 제거 및 정합성 분석) ──
+    const agg = aggregateBatchSSOT(batchResults, ssotData);
+
     const headerStyle = {
         font: { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FFFFFFFF' } },
         fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }, // Slate 800
+        alignment: { vertical: 'middle', horizontal: 'center' }
+    };
+
+    const subHeaderStyle = {
+        font: { name: '맑은 고딕', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } }, // Slate 700
         alignment: { vertical: 'middle', horizontal: 'center' }
     };
 
@@ -1113,10 +1463,10 @@ export async function exportBatchSSOTReportToExcel({
 
     summarySheet.columns = [
         { width: 6 },   // No.
-        { width: 35 },  // 파일명
-        { width: 15 },  // 검수 상태
-        { width: 16 },  // RTM 매핑률
-        { width: 14 },  // 총 결함 수
+        { width: 42 },  // 파일명
+        { width: 14 },  // 검수 상태
+        { width: 18 },  // RTM 출현 건수
+        { width: 14 },  // 실제 결함 수
         { width: 14 },  // 치명(HIGH)
         { width: 14 },  // 주의(MEDIUM)
         { width: 14 }   // 권고(LOW)
@@ -1148,43 +1498,55 @@ export async function exportBatchSSOTReportToExcel({
     summarySheet.getCell('E4').value = `■ 검수 일시: ${new Date().toLocaleString()} (총 ${batchResults.length}건 중 완료 ${validCount}건)`;
     summarySheet.getCell('E4').font = { name: '맑은 고딕', size: 10, color: { argb: 'FF475569' } };
 
-    // 파일별 요약 테이블 헤더 (Row 6)
-    const tableHeaderRow = summarySheet.getRow(6);
+    // 프로젝트 전체 RTM 및 산출물 간 정합성 핵심 지표 요약 배너 (Row 6)
+    summarySheet.mergeCells('A6:H6');
+    const kpiCell = summarySheet.getCell('A6');
+    kpiCell.value = `🎯 [프로젝트 전체 정합성 종합 진단] 총 요구사항 ${agg.totalMasterReqCount}건 중 충족 ${agg.coveredReqCount}건 (${agg.projectRtmRate}%) | 전수 누락: ${agg.missingReqCount}건 | 산출물 간 비정합 용어: ${agg.termConsistency.filter(t => t.isInconsistent).length}건 | 비표준 유령ID: ${agg.ghostIdSpread.length}건`;
+    kpiCell.font = { name: '맑은 고딕', size: 10.5, bold: true, color: { argb: 'FF1E3A8A' } };
+    kpiCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
+    kpiCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    kpiCell.border = borderStyle;
+    summarySheet.getRow(6).height = 30;
+
+    // 파일별 요약 테이블 헤더 (Row 8)
+    const tableHeaderRow = summarySheet.getRow(8);
     tableHeaderRow.height = 28;
-    const headers = ['No.', '산출물 파일명', '검수 상태', 'RTM 매핑률', '총 결함 수', '치명 (HIGH)', '주의 (MEDIUM)', '경미 (LOW)'];
+    const headers = ['No.', '산출물 파일명', '검수 상태', '해당파일 RTM 출현', '실제 결함 수', '치명 (HIGH)', '주의 (MEDIUM)', '경미 (LOW)'];
     headers.forEach((h, idx) => {
         const cell = tableHeaderRow.getCell(idx + 1);
         cell.value = h;
         cell.style = headerStyle;
     });
 
-    let totalIssuesAll = 0;
+    let totalActualIssuesAll = 0;
     let totalHighAll = 0;
     let totalMediumAll = 0;
     let totalLowAll = 0;
 
     batchResults.forEach((res, idx) => {
-        const rowNum = 7 + idx;
+        const rowNum = 9 + idx;
         const row = summarySheet.getRow(rowNum);
         row.height = 26;
 
-        const allIssues = res.allIssues || [];
-        const highCount = res.highCount ?? allIssues.filter(i => i.severity === 'HIGH').length;
-        const medCount = res.mediumCount ?? allIssues.filter(i => i.severity === 'MEDIUM').length;
-        const lowCount = res.lowCount ?? allIssues.filter(i => i.severity === 'LOW').length;
+        // 개별 파일에서는 가짜 Missing ID 결함 제외한 실제 결함만 카운트!
+        const fileActualIssues = (res.allIssues || []).filter(i => i.errorType !== '요구사항 미출현(Missing ID)' && !i.id?.startsWith('S1-RTM-MIS-'));
+        const highCount = fileActualIssues.filter(i => i.severity === 'HIGH').length;
+        const medCount = fileActualIssues.filter(i => i.severity === 'MEDIUM').length;
+        const lowCount = fileActualIssues.filter(i => i.severity === 'LOW').length;
 
-        totalIssuesAll += allIssues.length;
+        totalActualIssuesAll += fileActualIssues.length;
         totalHighAll += highCount;
         totalMediumAll += medCount;
         totalLowAll += lowCount;
 
-        const rtmRateStr = res.stage1 ? `${res.stage1.rtmMappingRate || 0}% (${res.stage1.coveredReqCount || 0}/${res.stage1.totalMasterReqCount || requirements.length})` : '-';
+        const coveredInThisFile = (res.stage1?.rtmMatrix || []).filter(m => m.isPresent).length;
+        const rtmStr = `${coveredInThisFile}건 반영 (${res.stage1?.coveredReqCount || coveredInThisFile}/${agg.totalMasterReqCount})`;
 
         row.getCell(1).value = idx + 1;
         row.getCell(2).value = res.fileName || `파일 #${idx + 1}`;
         row.getCell(3).value = res.status === 'DONE' ? '검수 완료' : (res.status === 'ERROR' ? `실패: ${res.errorMsg || '오류'}` : '대기');
-        row.getCell(4).value = rtmRateStr;
-        row.getCell(5).value = allIssues.length;
+        row.getCell(4).value = rtmStr;
+        row.getCell(5).value = fileActualIssues.length;
         row.getCell(6).value = highCount;
         row.getCell(7).value = medCount;
         row.getCell(8).value = lowCount;
@@ -1200,7 +1562,6 @@ export async function exportBatchSSOTReportToExcel({
             }
         }
 
-        // HIGH 건수 강조
         if (highCount > 0) {
             row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
             row.getCell(6).font = { name: '맑은 고딕', color: { argb: 'FFDC2626' }, bold: true };
@@ -1208,15 +1569,15 @@ export async function exportBatchSSOTReportToExcel({
     });
 
     // 합계 Row
-    const sumRowNum = 7 + batchResults.length;
+    const sumRowNum = 9 + batchResults.length;
     const sumRow = summarySheet.getRow(sumRowNum);
     sumRow.height = 28;
     sumRow.getCell(1).value = '';
-    sumRow.getCell(2).value = '총 합 계';
+    sumRow.getCell(2).value = '총 합 계 (개별 산출물 실제 결함 누적)';
     sumRow.getCell(2).font = { name: '맑은 고딕', bold: true };
     sumRow.getCell(3).value = `${batchResults.length}개 파일`;
-    sumRow.getCell(4).value = '-';
-    sumRow.getCell(5).value = totalIssuesAll;
+    sumRow.getCell(4).value = `${agg.coveredReqCount}/${agg.totalMasterReqCount}건 충족`;
+    sumRow.getCell(5).value = totalActualIssuesAll;
     sumRow.getCell(6).value = totalHighAll;
     sumRow.getCell(7).value = totalMediumAll;
     sumRow.getCell(8).value = totalLowAll;
@@ -1233,21 +1594,21 @@ export async function exportBatchSSOTReportToExcel({
         }
     }
 
-    // ── 시트 2: 통합 상세 결함 목록 ──────────────────────────────
+    // ── 시트 2: 통합 상세 결함 목록 (오탐 완전 제거) ───────────────────
     const issueSheet = workbook.addWorksheet('통합 상세 결함 목록', {
         views: [{ showGridLines: true }]
     });
 
     issueSheet.columns = [
         { header: 'No.', width: 8 },
-        { header: '산출물 파일명', width: 30 },
+        { header: '대상 산출물', width: 35 },
         { header: '검증 단계', width: 20 },
         { header: '분류', width: 16 },
-        { header: '오류 유형', width: 22 },
+        { header: '오류 유형', width: 24 },
         { header: '심각도', width: 12 },
         { header: '위치', width: 12 },
         { header: '원문 발췌', width: 45 },
-        { header: '수정 권고안', width: 32 },
+        { header: '수정 권고안', width: 35 },
         { header: '판단 근거 및 상세 사유', width: 50 }
     ];
 
@@ -1258,45 +1619,74 @@ export async function exportBatchSSOTReportToExcel({
     }
 
     let globalIssueIdx = 1;
-    batchResults.forEach(res => {
-        const fileName = res.fileName || '산출물';
-        const issues = res.allIssues || [];
 
-        issues.forEach(issue => {
-            const row = issueSheet.addRow([
-                globalIssueIdx++,
-                fileName,
-                issue.stage || 'Stage 1',
-                issue.category || '-',
-                issue.errorType || '-',
-                issue.severity || 'MEDIUM',
-                issue.page ? `p.${issue.page}` : '-',
-                issue.originalText || issue.matchedTerm || '-',
-                issue.suggestedText || '-',
-                issue.reason || '-'
-            ]);
-            row.height = 28;
-            row.alignment = { vertical: 'middle', wrapText: true };
+    // 1단계: 프로젝트 전체 전수 누락 결함 (어느 파일에도 전혀 없는 요구사항만 1회 표기)
+    agg.projectMissingIssues.forEach(issue => {
+        const row = issueSheet.addRow([
+            globalIssueIdx++,
+            issue.fileName,
+            issue.stage,
+            issue.category,
+            issue.errorType,
+            issue.severity,
+            issue.page,
+            issue.originalText,
+            issue.suggestedText,
+            issue.reason
+        ]);
+        row.height = 28;
+        row.alignment = { vertical: 'middle', wrapText: true };
 
-            const sevCell = row.getCell(6);
-            if (issue.severity === 'HIGH') {
-                sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
-                sevCell.font = { name: '맑은 고딕', color: { argb: 'FFB91C1C' }, bold: true };
-            } else if (issue.severity === 'MEDIUM') {
-                sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
-                sevCell.font = { name: '맑은 고딕', color: { argb: 'FFB45309' }, bold: true };
-            } else {
-                sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
-                sevCell.font = { name: '맑은 고딕', color: { argb: 'FF475569' } };
+        const sevCell = row.getCell(6);
+        sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+        sevCell.font = { name: '맑은 고딕', color: { argb: 'FFB91C1C' }, bold: true };
+
+        const targetCell = row.getCell(2);
+        targetCell.font = { name: '맑은 고딕', color: { argb: 'FFDC2626' }, bold: true };
+
+        for (let col = 1; col <= 10; col++) {
+            row.getCell(col).border = borderStyle;
+            if (col === 1 || col === 3 || col === 4 || col === 6 || col === 7) {
+                row.getCell(col).alignment = { vertical: 'middle', horizontal: 'center' };
             }
+        }
+    });
 
-            for (let col = 1; col <= 10; col++) {
-                row.getCell(col).border = borderStyle;
-                if (col === 1 || col === 3 || col === 4 || col === 6 || col === 7) {
-                    row.getCell(col).alignment = { vertical: 'middle', horizontal: 'center' };
-                }
+    // 2단계: 각 산출물별 실제 결함 (Missing ID 제외한 용어, 수치, 유령ID 등 실제 결함)
+    agg.fileActualIssues.forEach(issue => {
+        const row = issueSheet.addRow([
+            globalIssueIdx++,
+            issue.fileName,
+            issue.stage || 'Stage 1',
+            issue.category || '-',
+            issue.errorType || '-',
+            issue.severity || 'MEDIUM',
+            issue.page ? `p.${issue.page}` : '-',
+            issue.originalText || issue.matchedTerm || '-',
+            issue.suggestedText || '-',
+            issue.reason || '-'
+        ]);
+        row.height = 28;
+        row.alignment = { vertical: 'middle', wrapText: true };
+
+        const sevCell = row.getCell(6);
+        if (issue.severity === 'HIGH') {
+            sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+            sevCell.font = { name: '맑은 고딕', color: { argb: 'FFB91C1C' }, bold: true };
+        } else if (issue.severity === 'MEDIUM') {
+            sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+            sevCell.font = { name: '맑은 고딕', color: { argb: 'FFB45309' }, bold: true };
+        } else {
+            sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+            sevCell.font = { name: '맑은 고딕', color: { argb: 'FF475569' } };
+        }
+
+        for (let col = 1; col <= 10; col++) {
+            row.getCell(col).border = borderStyle;
+            if (col === 1 || col === 3 || col === 4 || col === 6 || col === 7) {
+                row.getCell(col).alignment = { vertical: 'middle', horizontal: 'center' };
             }
-        });
+        }
     });
 
     // ── 시트 3: 통합 요구사항 추적 매트릭스(RTM) ───────────────────
@@ -1307,11 +1697,11 @@ export async function exportBatchSSOTReportToExcel({
     rtmSheet.columns = [
         { header: '순번', width: 8 },
         { header: '요구사항 ID', width: 16 },
-        { header: '요구사항명', width: 40 },
-        { header: '필수 키워드', width: 30 },
+        { header: '요구사항명', width: 42 },
+        { header: '필수 키워드', width: 32 },
         { header: '출현 파일 수', width: 14 },
-        { header: '출현 파일 및 위치 목록', width: 50 },
-        { header: '종합 정합성 상태', width: 18 }
+        { header: '출현 파일 및 위치 목록', width: 55 },
+        { header: '종합 정합성 상태', width: 22 }
     ];
 
     const rtmHead = rtmSheet.getRow(1);
@@ -1320,38 +1710,20 @@ export async function exportBatchSSOTReportToExcel({
         rtmHead.getCell(c).style = headerStyle;
     }
 
-    requirements.forEach((req, idx) => {
-        const cleanId = (req.id || '').trim().toUpperCase();
-
-        const appearingFiles = [];
-        let anyKeywordMissing = false;
-
-        batchResults.forEach(res => {
-            const matrix = res.stage1?.rtmMatrix || [];
-            const found = matrix.find(m => (m.id || '').toUpperCase() === cleanId);
-            if (found && found.isPresent) {
-                const pageStr = found.pages && found.pages.length > 0 ? `(p.${found.pages.join(',')})` : '';
-                appearingFiles.push(`${res.fileName}${pageStr}`);
-                if (found.status && found.status.includes('누락')) {
-                    anyKeywordMissing = true;
-                }
-            }
+    agg.projectRtmMatrix.forEach((r, idx) => {
+        const fileLocs = r.appearingFiles.map(fn => {
+            const pages = r.pagesByFile[fn] || [];
+            return pages.length > 0 ? `${fn}(p.${pages.join(',')})` : fn;
         });
-
-        const isPresentOverall = appearingFiles.length > 0;
-        let overallStatus = '미출현 (전체 파일 누락)';
-        if (isPresentOverall) {
-            overallStatus = anyKeywordMissing ? '키워드 일부 누락' : '정상 반영';
-        }
 
         const row = rtmSheet.addRow([
             idx + 1,
-            req.id,
-            req.name,
-            req.keywords,
-            appearingFiles.length,
-            appearingFiles.length > 0 ? appearingFiles.join('; ') : '-',
-            overallStatus
+            r.id,
+            r.name,
+            r.keywords,
+            r.appearingFiles.length,
+            fileLocs.length > 0 ? fileLocs.join('; ') : '-',
+            r.overallStatus
         ]);
         row.height = 24;
         row.alignment = { vertical: 'middle' };
@@ -1359,11 +1731,11 @@ export async function exportBatchSSOTReportToExcel({
         const statusCell = row.getCell(7);
         const countCell = row.getCell(5);
 
-        if (!isPresentOverall) {
+        if (!r.isPresentOverall) {
             statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
             statusCell.font = { name: '맑은 고딕', color: { argb: 'FFDC2626' }, bold: true };
             countCell.font = { name: '맑은 고딕', color: { argb: 'FFDC2626' }, bold: true };
-        } else if (anyKeywordMissing) {
+        } else if (r.overallStatus.includes('누락')) {
             statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
             statusCell.font = { name: '맑은 고딕', color: { argb: 'FFD97706' }, bold: true };
         } else {
@@ -1379,11 +1751,148 @@ export async function exportBatchSSOTReportToExcel({
         }
     });
 
+    // ── 시트 4 (신설): 산출물 간 정합성 분석 (Cross-Document Consistency) ──
+    const crossSheet = workbook.addWorksheet('산출물간 정합성 분석', {
+        views: [{ showGridLines: true }]
+    });
+
+    crossSheet.columns = [
+        { width: 8 },   // A: No.
+        { width: 14 },  // B: 구분
+        { width: 22 },  // C: 표준 공식 표기 (Approved)
+        { width: 24 },  // D: 비표준/금지/유령 표기
+        { width: 16 },  // E: 정합성 상태
+        { width: 38 },  // F: 표준어 사용 산출물 목록
+        { width: 38 },  // G: 비표준어 사용 산출물 목록 (수정필요)
+        { width: 30 }   // H: 비고 및 개선 권고
+    ];
+
+    crossSheet.mergeCells('A1:H1');
+    const crossTitle = crossSheet.getCell('A1');
+    crossTitle.value = `[SSOT] 산출물 간 교차 정합성(Cross-Document Consistency) 종합 분석`;
+    crossTitle.font = { name: '맑은 고딕', size: 15, bold: true, color: { argb: 'FF0F172A' } };
+    crossTitle.alignment = { vertical: 'middle' };
+    crossSheet.getRow(1).height = 34;
+
+    // 섹션 1: 산출물 간 표준용어 불일치 현황
+    crossSheet.mergeCells('A3:H3');
+    const termSec = crossSheet.getCell('A3');
+    termSec.value = `1. 산출물 간 용어 표기 불일치 분석 (동일 프로젝트 내 표준어 vs 금지어 교차 사용 현황)`;
+    termSec.font = { name: '맑은 고딕', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+    termSec.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
+    crossSheet.getRow(3).height = 26;
+
+    const termHead = crossSheet.getRow(4);
+    termHead.height = 26;
+    const termHeaders = ['No.', '분류', '표준 공식 표기', '금지동의어/오표기', '정합성 상태', '표준어 사용 산출물', '금지어 사용 산출물 (수정 권고)', '개선 조치안'];
+    termHeaders.forEach((th, idx) => {
+        const c = termHead.getCell(idx + 1);
+        c.value = th;
+        c.style = subHeaderStyle;
+    });
+
+    let crossRowIdx = 5;
+    if (agg.termConsistency.length === 0) {
+        const row = crossSheet.getRow(crossRowIdx++);
+        row.getCell(1).value = 1;
+        row.getCell(2).value = '용어';
+        row.getCell(3).value = '전체 표준용어 준수';
+        row.getCell(4).value = '-';
+        row.getCell(5).value = '정합 (일치)';
+        row.getCell(6).value = '전체 산출물 일관 표기';
+        row.getCell(7).value = '-';
+        row.getCell(8).value = '산출물 간 용어 불일치 없음';
+        for (let c = 1; c <= 8; c++) row.getCell(c).border = borderStyle;
+    } else {
+        agg.termConsistency.forEach((tc, idx) => {
+            const row = crossSheet.getRow(crossRowIdx++);
+            row.height = 24;
+            row.getCell(1).value = idx + 1;
+            row.getCell(2).value = tc.category;
+            row.getCell(3).value = tc.approved;
+            row.getCell(4).value = tc.forbidden;
+            row.getCell(5).value = tc.isInconsistent ? '불일치 (비정합)' : '금지어 단독사용';
+            row.getCell(6).value = tc.filesUsingApproved.join(', ') || '-';
+            row.getCell(7).value = tc.filesUsingForbidden.join(', ');
+            row.getCell(8).value = `금지어 표기를 공식 표준어 '${tc.approved}'(으)로 통일 필요`;
+
+            for (let c = 1; c <= 8; c++) {
+                row.getCell(c).border = borderStyle;
+                if (c === 1 || c === 2 || c === 5) row.getCell(c).alignment = { vertical: 'middle', horizontal: 'center' };
+                else if (c === 6 || c === 7) row.getCell(c).alignment = { vertical: 'middle', wrapText: true };
+            }
+
+            if (tc.isInconsistent) {
+                row.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+                row.getCell(5).font = { name: '맑은 고딕', color: { argb: 'FFB91C1C' }, bold: true };
+                row.getCell(7).font = { name: '맑은 고딕', color: { argb: 'FFB91C1C' } };
+            }
+        });
+    }
+
+    // 섹션 2: 산출물 간 비표준 유령 ID(Ghost ID) 확산 현황
+    crossRowIdx += 2;
+    crossSheet.mergeCells(`A${crossRowIdx}:H${crossRowIdx}`);
+    const ghostSec = crossSheet.getCell(`A${crossRowIdx}`);
+    ghostSec.value = `2. 산출물 간 비표준 유령 ID(Ghost ID) 확산 분석 (RFP 마스터 미등록 ID의 다중 산출물 침투 현황)`;
+    ghostSec.font = { name: '맑은 고딕', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+    ghostSec.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
+    crossSheet.getRow(crossRowIdx).height = 26;
+
+    crossRowIdx++;
+    const ghostHead = crossSheet.getRow(crossRowIdx);
+    ghostHead.height = 26;
+    const ghostHeaders = ['No.', '유형', '검출된 비표준 ID', '확산 파일 수', '확산 심각도', '출현 산출물 목록', '총 출현 횟수', '개선 권고안'];
+    ghostHeaders.forEach((gh, idx) => {
+        const c = ghostHead.getCell(idx + 1);
+        c.value = gh;
+        c.style = subHeaderStyle;
+    });
+
+    crossRowIdx++;
+    if (agg.ghostIdSpread.length === 0) {
+        const row = crossSheet.getRow(crossRowIdx++);
+        row.getCell(1).value = 1;
+        row.getCell(2).value = '유령ID';
+        row.getCell(3).value = '비표준 ID 없음';
+        row.getCell(4).value = '0개 파일';
+        row.getCell(5).value = '정상';
+        row.getCell(6).value = '-';
+        row.getCell(7).value = 0;
+        row.getCell(8).value = '모든 산출물이 RFP 마스터 ID 체계를 준수함';
+        for (let c = 1; c <= 8; c++) row.getCell(c).border = borderStyle;
+    } else {
+        agg.ghostIdSpread.forEach((gs, idx) => {
+            const row = crossSheet.getRow(crossRowIdx++);
+            row.height = 24;
+            row.getCell(1).value = idx + 1;
+            row.getCell(2).value = '유령ID';
+            row.getCell(3).value = gs.ghostId;
+            row.getCell(4).value = `${gs.fileCount}개 파일`;
+            row.getCell(5).value = gs.fileCount >= 3 ? '광역 확산 (치명)' : gs.fileCount >= 2 ? '다중 확산 (주의)' : '단일 파일';
+            row.getCell(6).value = gs.files.join(', ');
+            row.getCell(7).value = `${gs.totalCount}회`;
+            row.getCell(8).value = `마스터 요구사항 ID 체계와 대조하여 공식 ID로 정정하거나 삭제`;
+
+            for (let c = 1; c <= 8; c++) {
+                row.getCell(c).border = borderStyle;
+                if (c === 1 || c === 2 || c === 3 || c === 4 || c === 5 || c === 7) row.getCell(c).alignment = { vertical: 'middle', horizontal: 'center' };
+                else if (c === 6) row.getCell(c).alignment = { vertical: 'middle', wrapText: true };
+            }
+
+            if (gs.fileCount >= 2) {
+                row.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+                row.getCell(5).font = { name: '맑은 고딕', color: { argb: 'FFB91C1C' }, bold: true };
+            }
+        });
+    }
+
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const downloadName = `다중_산출물_통합_정합성_검수_리포트_${new Date().toISOString().slice(0, 10)}.xlsx`;
     saveAs(blob, downloadName);
 }
+
 
 // ── 6-3. 공공 ISP 공식 표준 요구사항추적표 및 산출물현황표 엑셀 엔진 ──
 export const OFFICIAL_RTM_TEMPLATE_ITEMS = [
@@ -1849,24 +2358,33 @@ export function extractRfpWithRules(text, tables = []) {
             keywords = Array.from(new Set(words)).slice(0, 5).join(', ');
         }
 
+        // 표준 카탈로그 조회 (플레이스홀더인 경우 공공의료 AI ISP 표준 명칭 자동 복원)
+        const stdCatalog = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS.find(r => r.id === cleanId);
+        let resolvedName = name;
+        let resolvedKeywords = keywords;
+        if (isPlaceholderName(resolvedName, cleanId) && stdCatalog) {
+            resolvedName = stdCatalog.name;
+            if (!resolvedKeywords) resolvedKeywords = stdCatalog.keywords;
+        }
+
         const existing = reqDict.get(cleanId);
         if (!existing) {
             reqDict.set(cleanId, {
                 id: cleanId,
-                name: !isPlaceholderName(name, cleanId) ? name : `요구사항 ${cleanId}`,
-                keywords: keywords || (name && !isPlaceholderName(name, cleanId) ? name.split(/\s+/).filter(w => w.length >= 2).slice(0, 4).join(', ') : '')
+                name: !isPlaceholderName(resolvedName, cleanId) ? resolvedName : `요구사항 ${cleanId}`,
+                keywords: resolvedKeywords || (resolvedName && !isPlaceholderName(resolvedName, cleanId) ? resolvedName.split(/\s+/).filter(w => w.length >= 2).slice(0, 4).join(', ') : '')
             });
         } else {
             // 기존 이름이 플레이스홀더인데 새 이름이 유효한 경우 교체!
-            if (isPlaceholderName(existing.name, cleanId) && !isPlaceholderName(name, cleanId)) {
-                existing.name = name;
-                if (!existing.keywords && keywords) existing.keywords = keywords;
-            } else if (!isPlaceholderName(name, cleanId) && name.length > existing.name.length && !existing.name.includes(name)) {
+            if (isPlaceholderName(existing.name, cleanId) && !isPlaceholderName(resolvedName, cleanId)) {
+                existing.name = resolvedName;
+                if (!existing.keywords && resolvedKeywords) existing.keywords = resolvedKeywords;
+            } else if (!isPlaceholderName(resolvedName, cleanId) && resolvedName.length > existing.name.length && !existing.name.includes(resolvedName)) {
                 // 더 구체적인 이름이 발견되면 업데이트
-                existing.name = name;
-                if (keywords) existing.keywords = keywords;
-            } else if (!existing.keywords && keywords) {
-                existing.keywords = keywords;
+                existing.name = resolvedName;
+                if (resolvedKeywords) existing.keywords = resolvedKeywords;
+            } else if (!existing.keywords && resolvedKeywords) {
+                existing.keywords = resolvedKeywords;
             }
         }
     };
@@ -2021,9 +2539,11 @@ export function extractRfpWithRules(text, tables = []) {
         // 2. 글머리표 + CNR-001 요구사항명
         /(?:^|\n)[ \t]*(?:[□■▶◆○●*·-]|가\.|나\.|다\.|라\.|[0-9]+[.)])?[ \t]*([A-Z]{2,6}[-_]\d{2,4})[ \t]*[:：\-–—./)\]][ \t]*([가-힣A-Za-z0-9][^\n\r]{2,80})/g,
         // 3. 콜론 없는 공백형: CNR-001 공공의료 정보화 환경 및 법·제도 분석
-        /(?:^|\n)[ \t]*(?:[□■▶◆○●*·-]|가\.|나\.|다\.|라\.|[0-9]+[.)])?[ \t]*([A-Z]{2,6}[-_]\d{2,4})[ \t]{1,4}([가-힣][^\n\r]{2,80})/g,
+        /(?:^|\n)[ \t]*(?:[□■▶◆○●*·-]|가\.|나\.|다\.|라\.|[0-9]+[.)])?[ \t]*([A-Z]{2,6}[-_]\d{2,4})[ \t]{1,6}([가-힣A-Za-z0-9][^\n\r]{2,80})/g,
         // 4. 요구사항ID : 요구사항명
-        /(?:요구사항\s*(?:ID|번호|고유번호)?[ \t]*[:：|][ \t]*)([A-Z]{2,6}[-_]\d{2,4})[ \t\n\r]*(?:요구사항명[ \t]*[:：|][ \t]*)([가-힣A-Za-z0-9][^\n\r]{2,80})/g
+        /(?:요구사항\s*(?:ID|번호|고유번호)?[ \t]*[:：|][ \t]*)([A-Z]{2,6}[-_]\d{2,4})[ \t\n\r]*(?:요구사항명[ \t]*[:：|][ \t]*)([가-힣A-Za-z0-9][^\n\r]{2,80})/g,
+        // 5. 표 텍스트 변환 시 나타나는 줄바꿈 분리형: CNR-001\n요구사항명
+        /(?:^|\n)[ \t]*([A-Z]{2,6}[-_]\d{2,4})[ \t]*\n[ \t]*([가-힣][^\n\r]{2,80})/g
     ];
 
     for (const pat of regexPatterns) {

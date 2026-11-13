@@ -35,6 +35,8 @@ import {
     DEFAULT_PROJECT_METADATA,
     DEFAULT_GLOSSARY,
     DEFAULT_REQUIREMENTS,
+    PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS,
+    aggregateBatchSSOT,
     extractTablesFromFile,
     runStage1Validation,
     runStage2AIValidation,
@@ -83,6 +85,14 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         }
         return null;
     }, [batchResults, selectedFileIdx]);
+
+    // 다중 산출물 일괄 검수 시 프로젝트 레벨 통합 RTM 및 산출물 간 정합성 집계
+    const batchAggregation = useMemo(() => {
+        if (batchResults.length > 0) {
+            return aggregateBatchSSOT(batchResults, ssotData);
+        }
+        return null;
+    }, [batchResults, ssotData]);
 
     // 결과 뷰 필터 및 검색
     const [activeResultTab, setActiveResultTab] = useState('all'); // 'all' | 'requirements' | 'glossary' | 'numbers' | 'ai' | 'rtm'
@@ -252,6 +262,80 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         });
     };
 
+    // ── 공공의료 AI ISP 44종 표준 요구사항 즉시 적용 ──
+    const handleApplyPublicHealthcarePreset = () => {
+        if (window.confirm('공공의료 AI ISP 공식 44개 마스터 요구사항 전체 목록으로 교체하시겠습니까? (기존 목록은 대체됩니다)')) {
+            setSsotData(prev => ({
+                ...prev,
+                requirements: [...PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS]
+            }));
+            alert('✅ 공공의료 AI ISP 공식 44개 마스터 요구사항이 성공적으로 반영되었습니다!');
+        }
+    };
+
+    // 요구사항 엑셀 다운로드
+    const handleExportRequirementsExcel = () => {
+        const rows = ssotData.requirements.map((r, idx) => ({
+            '순번': idx + 1,
+            '요구사항 ID': r.id || '',
+            '요구사항명': r.name || '',
+            '필수 키워드 (쉼표 구분)': r.keywords || ''
+        }));
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, '요구사항마스터');
+        XLSX.writeFile(workbook, `요구사항_마스터_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    };
+
+    // 요구사항 엑셀 가져오기
+    const handleImportRequirementsExcel = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+
+                const imported = jsonData.map(r => {
+                    const id = (r['요구사항 ID'] || r['요구사항ID'] || r['ID'] || r['고유번호'] || '').trim().toUpperCase();
+                    let name = (r['요구사항명'] || r['요구사항 명'] || r['과업명'] || r['명칭'] || '').trim();
+                    let keywords = (r['필수 키워드 (쉼표 구분)'] || r['필수 키워드'] || r['키워드'] || '').trim();
+
+                    const std = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS.find(s => s.id === id);
+                    if ((!name || name.startsWith('요구사항 ')) && std) {
+                        name = std.name;
+                        if (!keywords) keywords = std.keywords;
+                    }
+
+                    return {
+                        id,
+                        name: name || `요구사항 ${id}`,
+                        keywords
+                    };
+                }).filter(r => /^[A-Z]{2,6}[-_]\d{2,4}$/.test(r.id));
+
+                if (imported.length > 0) {
+                    setSsotData(prev => ({
+                        ...prev,
+                        requirements: imported
+                    }));
+                    alert(`성공적으로 ${imported.length}건의 요구사항을 마스터에 등록했습니다.`);
+                } else {
+                    alert('유효한 요구사항 데이터를 찾을 수 없습니다. 엑셀 열(요구사항 ID, 요구사항명)을 확인해주세요.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('엑셀 파일 파싱 중 오류가 발생했습니다.');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = '';
+    };
+
     // 요구사항 텍스트 일괄 파싱 등록
     const handleApplyBulkRequirements = () => {
         if (!bulkReqText.trim()) return;
@@ -267,11 +351,13 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                     name: parts[1],
                     keywords: parts[2] || ''
                 });
-            } else if (parts.length === 1 && /^[A-Z]{2,4}-\d{3,4}/i.test(parts[0])) {
+            } else if (parts.length === 1 && /^[A-Z]{2,6}[-_]\d{2,4}/i.test(parts[0])) {
+                const cleanId = parts[0].toUpperCase();
+                const std = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS.find(s => s.id === cleanId);
                 parsed.push({
-                    id: parts[0].toUpperCase(),
-                    name: `요구사항 ${parts[0]}`,
-                    keywords: ''
+                    id: cleanId,
+                    name: std ? std.name : `요구사항 ${cleanId}`,
+                    keywords: std ? std.keywords : ''
                 });
             }
         });
@@ -504,7 +590,9 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                             percent: percentBase + Math.round((1 / totalFiles) * 35),
                             message: `[${fileNum}/${totalFiles}] '${currentFile.name}' Stage 1 룰 및 RTM/수치 정합성 검증 중...`
                         });
-                        stage1Result = await runStage1Validation(fileContent, tables, ssotData, { inspectionScope });
+                        // 다중 파일 검수 시 단위 파일에서 가짜 Missing ID 오탐 생성 방지 (전수 검증은 프로젝트 레벨에서 통합 집계)
+                        const effectiveScope = totalFiles > 1 ? 'unit' : inspectionScope;
+                        stage1Result = await runStage1Validation(fileContent, tables, ssotData, { inspectionScope: effectiveScope });
                     }
 
                     // 4. Stage 2 Gemini AI 문맥·오탈자 검증
@@ -1029,13 +1117,54 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                                     💡 과업지시서/RFP 요구사항 ID(예: CNR-001)를 등록하면 산출물 내 누락(Missing ID) 및 유령(Ghost ID)을 검출합니다.
                                 </span>
-                                <div style={{ display: 'flex', gap: '8px' }}>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    <button
+                                        onClick={handleApplyPublicHealthcarePreset}
+                                        className="interactive"
+                                        style={{
+                                            padding: '6px 12px',
+                                            fontSize: '12px',
+                                            fontWeight: 700,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '5px',
+                                            background: 'rgba(59, 130, 246, 0.18)',
+                                            border: '1px solid rgba(59, 130, 246, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#93c5fd',
+                                            cursor: 'pointer'
+                                        }}
+                                        title="공공의료 AI ISP 공식 44개 마스터 요구사항 전체 목록 즉시 로드"
+                                    >
+                                        <Sparkles size={13} /> 공공의료 AI ISP 44종 표준 적용
+                                    </button>
+                                    <button
+                                        onClick={handleExportRequirementsExcel}
+                                        className="btn-outline"
+                                        style={{ padding: '6px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                                    >
+                                        <Download size={13} /> 엑셀 다운로드
+                                    </button>
+                                    <button
+                                        onClick={() => reqExcelInputRef.current?.click()}
+                                        className="btn-outline"
+                                        style={{ padding: '6px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                                    >
+                                        <Upload size={13} /> 엑셀 업로드
+                                    </button>
+                                    <input
+                                        type="file"
+                                        ref={reqExcelInputRef}
+                                        onChange={handleImportRequirementsExcel}
+                                        accept=".xlsx,.xls"
+                                        style={{ display: 'none' }}
+                                    />
                                     <button
                                         onClick={() => setShowBulkReqModal(true)}
                                         className="btn-outline"
                                         style={{ padding: '6px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}
                                     >
-                                        <FileText size={13} /> 텍스트 일괄 붙여넣기
+                                        <FileText size={13} /> 텍스트 붙여넣기
                                     </button>
                                     <button
                                         onClick={handleAddRequirement}
@@ -1524,6 +1653,57 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                             </div>
                         </div>
                     )}
+                    {/* 다중 산출물 일괄 검수 시: 프로젝트 전체 종합 RTM 및 산출물 간 정합성 진단 배너 */}
+                    {targetFiles.length > 1 && batchAggregation && (
+                        <div style={{
+                            background: 'rgba(30, 58, 138, 0.25)',
+                            border: '1px solid rgba(59, 130, 246, 0.4)',
+                            borderRadius: '10px',
+                            padding: '16px 20px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '18px' }}>🎯</span>
+                                    <span style={{ fontSize: '14.5px', fontWeight: 800, color: '#93c5fd' }}>
+                                        다중 산출물(총 {targetFiles.length}개 파일) 종합 정합성 진단 결과
+                                    </span>
+                                </div>
+                                <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                                    단위 파일 개별 누락을 제외한 <strong>프로젝트 전수 기준 정합성</strong> 집계
+                                </span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                                <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', borderLeft: '3px solid #3b82f6' }}>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>프로젝트 요구사항 충족률</span>
+                                    <span style={{ fontSize: '18px', fontWeight: 800, color: batchAggregation.projectRtmRate === 100 ? '#10b981' : '#f59e0b' }}>
+                                        {batchAggregation.projectRtmRate}% ({batchAggregation.coveredReqCount}/{batchAggregation.totalMasterReqCount}건)
+                                    </span>
+                                </div>
+                                <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', borderLeft: '3px solid #ef4444' }}>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>전체 산출물 전수 누락</span>
+                                    <span style={{ fontSize: '18px', fontWeight: 800, color: batchAggregation.missingReqCount > 0 ? '#ef4444' : '#10b981' }}>
+                                        {batchAggregation.missingReqCount}건
+                                    </span>
+                                </div>
+                                <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', borderLeft: '3px solid #f59e0b' }}>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>산출물 간 용어 불일치</span>
+                                    <span style={{ fontSize: '18px', fontWeight: 800, color: batchAggregation.termConsistency.filter(t => t.isInconsistent).length > 0 ? '#f59e0b' : '#10b981' }}>
+                                        {batchAggregation.termConsistency.filter(t => t.isInconsistent).length}건
+                                    </span>
+                                </div>
+                                <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', borderLeft: '3px solid #a855f7' }}>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>비표준 유령 ID 확산</span>
+                                    <span style={{ fontSize: '18px', fontWeight: 800, color: batchAggregation.ghostIdSpread.length > 0 ? '#ef4444' : '#10b981' }}>
+                                        {batchAggregation.ghostIdSpread.length}건
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* 상단 4대 핵심 지표 요약 카드 */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                         {/* 카드 1: 총 결함 건수 */}
@@ -1601,6 +1781,10 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                 {[
                                     { id: 'all', label: `전체 (${validationResult.allIssues.length})` },
+                                    ...(targetFiles.length > 1 && batchAggregation ? [{
+                                        id: 'cross',
+                                        label: `🔗 산출물 간 정합성 분석 (${batchAggregation.termConsistency.filter(t => t.isInconsistent).length + batchAggregation.ghostIdSpread.length}건)`
+                                    }] : []),
                                     { id: 'requirements', label: `요구사항 ID (${validationResult.allIssues.filter(i => i.category.includes('요구사항')).length})` },
                                     { id: 'glossary', label: `용어 불일치 (${stats.glossary})` },
                                     { id: 'numbers', label: `수치 오류 (${validationResult.allIssues.filter(i => i.category === '수치 오류').length})` },
@@ -1706,8 +1890,197 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                             </div>
                         )}
 
-                        {/* RTM 매트릭스 전용 표 보기 */}
-                        {activeResultTab === 'rtm' ? (
+                        {/* 산출물 간 교차 정합성 분석 전용 뷰 (Cross-Document Consistency) */}
+                        {activeResultTab === 'cross' && batchAggregation ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                {/* 1. 산출물 간 용어 불일치 분석 */}
+                                <div style={{ border: '1px solid var(--panel-border)', borderRadius: '8px', overflow: 'hidden' }}>
+                                    <div style={{ padding: '12px 16px', background: 'rgba(59, 130, 246, 0.1)', borderBottom: '1px solid var(--panel-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ fontSize: '15px' }}>📖</span>
+                                            <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#93c5fd' }}>
+                                                1. 산출물 간 용어 표기 불일치 분석 (동일 프로젝트 내 표준어 vs 금지어 교차 사용)
+                                            </span>
+                                        </div>
+                                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                                            총 {batchAggregation.termConsistency.length}개 용어 분석 ({batchAggregation.termConsistency.filter(t => t.isInconsistent).length}건 불일치)
+                                        </span>
+                                    </div>
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                            <thead>
+                                                <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--panel-border)', textAlign: 'left' }}>
+                                                    <th style={{ padding: '8px 10px', width: '50px', textAlign: 'center' }}>No.</th>
+                                                    <th style={{ padding: '8px 10px', width: '90px' }}>분류</th>
+                                                    <th style={{ padding: '8px 10px', width: '150px' }}>표준 공식 표기</th>
+                                                    <th style={{ padding: '8px 10px', width: '160px' }}>금지어/오표기</th>
+                                                    <th style={{ padding: '8px 10px', width: '110px', textAlign: 'center' }}>정합성 상태</th>
+                                                    <th style={{ padding: '8px 10px' }}>표준어 사용 산출물</th>
+                                                    <th style={{ padding: '8px 10px' }}>금지어 사용 산출물 (수정 권고)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {batchAggregation.termConsistency.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={7} style={{ padding: '24px', textAlign: 'center', color: '#10b981' }}>
+                                                            ✓ 모든 산출물이 표준용어 사전을 일관되게 준수하고 있습니다.
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    batchAggregation.termConsistency.map((tc, idx) => (
+                                                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: tc.isInconsistent ? 'rgba(239, 68, 68, 0.05)' : undefined }}>
+                                                            <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--text-muted)' }}>{idx + 1}</td>
+                                                            <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}>{tc.category}</td>
+                                                            <td style={{ padding: '8px 10px', fontWeight: 700, color: '#10b981' }}>{tc.approved}</td>
+                                                            <td style={{ padding: '8px 10px', color: '#ef4444' }}>{tc.forbidden}</td>
+                                                            <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                                                <span style={{
+                                                                    padding: '2px 8px',
+                                                                    borderRadius: '8px',
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 700,
+                                                                    background: tc.isInconsistent ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                                                                    color: tc.isInconsistent ? '#ef4444' : '#f59e0b'
+                                                                }}>
+                                                                    {tc.isInconsistent ? '불일치 (비정합)' : '금지어 사용'}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ padding: '8px 10px', fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                                                                {tc.filesUsingApproved.length > 0 ? tc.filesUsingApproved.join(', ') : '-'}
+                                                            </td>
+                                                            <td style={{ padding: '8px 10px', fontSize: '11.5px', color: '#f87171', fontWeight: 600 }}>
+                                                                {tc.filesUsingForbidden.join(', ')}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* 2. 산출물 간 비표준 유령 ID 확산 분석 */}
+                                <div style={{ border: '1px solid var(--panel-border)', borderRadius: '8px', overflow: 'hidden' }}>
+                                    <div style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.1)', borderBottom: '1px solid var(--panel-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ fontSize: '15px' }}>👻</span>
+                                            <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#fca5a5' }}>
+                                                2. 산출물 간 비표준 유령 ID(Ghost ID) 확산 분석 (RFP 마스터 미등록 ID의 다중 산출물 침투)
+                                            </span>
+                                        </div>
+                                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                                            총 {batchAggregation.ghostIdSpread.length}종의 비표준 ID 검출
+                                        </span>
+                                    </div>
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                            <thead>
+                                                <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--panel-border)', textAlign: 'left' }}>
+                                                    <th style={{ padding: '8px 10px', width: '50px', textAlign: 'center' }}>No.</th>
+                                                    <th style={{ padding: '8px 10px', width: '140px' }}>검출된 비표준 ID</th>
+                                                    <th style={{ padding: '8px 10px', width: '110px', textAlign: 'center' }}>확산 파일 수</th>
+                                                    <th style={{ padding: '8px 10px', width: '120px', textAlign: 'center' }}>확산 심각도</th>
+                                                    <th style={{ padding: '8px 10px' }}>출현 산출물 목록</th>
+                                                    <th style={{ padding: '8px 10px', width: '90px', textAlign: 'center' }}>출현 횟수</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {batchAggregation.ghostIdSpread.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#10b981' }}>
+                                                            ✓ 모든 산출물이 RFP 마스터 요구사항 ID 체계를 정상 준수하고 있습니다.
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    batchAggregation.ghostIdSpread.map((gs, idx) => (
+                                                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                                            <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--text-muted)' }}>{idx + 1}</td>
+                                                            <td style={{ padding: '8px 10px', fontWeight: 700, color: '#f87171' }}>{gs.ghostId}</td>
+                                                            <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700 }}>{gs.fileCount}개 파일</td>
+                                                            <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                                                <span style={{
+                                                                    padding: '2px 8px',
+                                                                    borderRadius: '8px',
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 700,
+                                                                    background: gs.fileCount >= 3 ? 'rgba(239, 68, 68, 0.25)' : gs.fileCount >= 2 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(255,255,255,0.08)',
+                                                                    color: gs.fileCount >= 3 ? '#ef4444' : gs.fileCount >= 2 ? '#f59e0b' : 'var(--text-secondary)'
+                                                                }}>
+                                                                    {gs.fileCount >= 3 ? '광역 확산 (치명)' : gs.fileCount >= 2 ? '다중 확산 (주의)' : '단일 파일'}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ padding: '8px 10px', fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                                                                {gs.files.join(', ')}
+                                                            </td>
+                                                            <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--text-muted)' }}>{gs.totalCount}회</td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* 3. 프로젝트 전체 요구사항 분산 현황표 */}
+                                <div style={{ border: '1px solid var(--panel-border)', borderRadius: '8px', overflow: 'hidden' }}>
+                                    <div style={{ padding: '12px 16px', background: 'rgba(16, 185, 129, 0.1)', borderBottom: '1px solid var(--panel-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ fontSize: '15px' }}>📊</span>
+                                            <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#6ee7b7' }}>
+                                                3. 프로젝트 전체 마스터 요구사항 분산 매핑 현황 (총 {batchAggregation.totalMasterReqCount}건)
+                                            </span>
+                                        </div>
+                                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                                            충족: <strong style={{ color: '#10b981' }}>{batchAggregation.coveredReqCount}건</strong> / 전수 누락: <strong style={{ color: '#ef4444' }}>{batchAggregation.missingReqCount}건</strong>
+                                        </span>
+                                    </div>
+                                    <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                            <thead>
+                                                <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--panel-border)', textAlign: 'left' }}>
+                                                    <th style={{ padding: '8px 10px', width: '50px', textAlign: 'center' }}>No.</th>
+                                                    <th style={{ padding: '8px 10px', width: '120px' }}>요구사항 ID</th>
+                                                    <th style={{ padding: '8px 10px', width: '220px' }}>요구사항명</th>
+                                                    <th style={{ padding: '8px 10px', width: '80px', textAlign: 'center' }}>출현 파일수</th>
+                                                    <th style={{ padding: '8px 10px' }}>작성된 산출물 및 페이지</th>
+                                                    <th style={{ padding: '8px 10px', width: '120px', textAlign: 'center' }}>종합 상태</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {batchAggregation.projectRtmMatrix.map((r, idx) => (
+                                                    <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: !r.isPresentOverall ? 'rgba(239, 68, 68, 0.05)' : undefined }}>
+                                                        <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--text-muted)' }}>{idx + 1}</td>
+                                                        <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--accent-blue)' }}>{r.id}</td>
+                                                        <td style={{ padding: '8px 10px', color: 'var(--text-primary)' }}>{r.name}</td>
+                                                        <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, color: r.appearingFiles.length > 0 ? '#10b981' : '#ef4444' }}>
+                                                            {r.appearingFiles.length}
+                                                        </td>
+                                                        <td style={{ padding: '8px 10px', fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                                                            {r.appearingFiles.length > 0 ? r.appearingFiles.map(fn => {
+                                                                const p = r.pagesByFile[fn] || [];
+                                                                return p.length > 0 ? `${fn} (p.${p.join(',')})` : fn;
+                                                            }).join('; ') : '-'}
+                                                        </td>
+                                                        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                                            <span style={{
+                                                                padding: '2px 8px',
+                                                                borderRadius: '8px',
+                                                                fontSize: '11px',
+                                                                fontWeight: 700,
+                                                                background: !r.isPresentOverall ? 'rgba(239, 68, 68, 0.15)' : r.overallStatus.includes('누락') ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                                                                color: !r.isPresentOverall ? '#ef4444' : r.overallStatus.includes('누락') ? '#f59e0b' : '#10b981'
+                                                            }}>
+                                                                {r.overallStatus}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : activeResultTab === 'rtm' ? (
                             <div style={{ overflowX: 'auto', border: '1px solid var(--panel-border)', borderRadius: '8px' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                                     <thead>
