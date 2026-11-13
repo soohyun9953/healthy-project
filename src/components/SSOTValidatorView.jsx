@@ -40,6 +40,8 @@ import {
     runStage2AIValidation,
     exportSSOTReportToExcel,
     exportBatchSSOTReportToExcel,
+    exportOfficialRtmToExcel,
+    OFFICIAL_RTM_TEMPLATE_ITEMS,
     parseRfpContent,
     applyRfpToMasterData
 } from '../utils/ssotValidator';
@@ -90,6 +92,16 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
     // 텍스트 일괄 붙여넣기 모달
     const [showBulkReqModal, setShowBulkReqModal] = useState(false);
     const [bulkReqText, setBulkReqText] = useState('');
+
+    // ── 공공 표준 요구사항추적표(RTM) 모달 상태 ───────────────────
+    const [showOfficialRtmModal, setShowOfficialRtmModal] = useState(false);
+    const [rtmCompanyName, setRtmCompanyName] = useState('㈜한국아이티컨설팅');
+    const [rtmIssueDate, setRtmIssueDate] = useState(() => {
+        const d = new Date();
+        return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}.`;
+    });
+    const [rtmMode, setRtmMode] = useState('auto'); // 'auto' | 'template'
+    const [isGeneratingRtm, setIsGeneratingRtm] = useState(false);
 
     // ── 사업 RFP 자동 분석 및 마스터 정보 동기화 상태 ────────────────
     const [showRfpModal, setShowRfpModal] = useState(false);
@@ -593,6 +605,26 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         }
     };
 
+    // ── 공공 표준 요구사항추적표(RTM) 엑셀 생성 및 다운로드 ──────
+    const handleGenerateOfficialRtm = async () => {
+        setIsGeneratingRtm(true);
+        try {
+            await exportOfficialRtmToExcel({
+                ssotData,
+                batchResults,
+                companyName: rtmCompanyName || '㈜한국아이티컨설팅',
+                issueDate: rtmIssueDate || '2025.12.17.',
+                mode: rtmMode
+            });
+            setShowOfficialRtmModal(false);
+        } catch (err) {
+            console.error('공식 RTM 엑셀 생성 오류:', err);
+            alert(`요구사항추적표 엑셀 생성 중 오류가 발생했습니다: ${err.message}`);
+        } finally {
+            setIsGeneratingRtm(false);
+        }
+    };
+
     // ── 결과 필터링 ─────────────────────────────────────────────
     const filteredIssues = useMemo(() => {
         if (!validationResult) return [];
@@ -678,7 +710,27 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                        onClick={() => setShowOfficialRtmModal(true)}
+                        className="interactive"
+                        style={{
+                            padding: '8px 14px',
+                            fontSize: '12.5px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: 'rgba(59, 130, 246, 0.15)',
+                            border: '1px solid rgba(59, 130, 246, 0.4)',
+                            borderRadius: '8px',
+                            color: '#60a5fa',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                        }}
+                        title="공공 ISP 공식 양식의 요구사항추적표 및 산출물현황표 엑셀 문서를 작성하고 다운로드합니다"
+                    >
+                        <ListChecks size={15} /> 요구사항추적표 엑셀 작성
+                    </button>
                     <button
                         onClick={() => {
                             setShowRfpModal(true);
@@ -1574,24 +1626,47 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 ))}
                             </div>
 
-                            {/* 우측 엑셀 다운로드 버튼 (선택된 파일 개별 리포트) */}
-                            <button
-                                onClick={handleDownloadExcelReport}
-                                className="btn-primary"
-                                style={{
-                                    padding: '8px 16px',
-                                    fontSize: '13px',
-                                    fontWeight: 700,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    background: 'linear-gradient(135deg, #10b981, #059669)',
-                                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
-                                }}
-                            >
-                                <Download size={15} />
-                                {targetFiles.length > 1 ? `[${validationResult.fileName}] 검수 리포트 (.xlsx) 다운로드` : '통합 정합성 검수 리포트 (.xlsx) 다운로드'}
-                            </button>
+                            {/* 우측 엑셀 다운로드 및 공식 RTM 작성 버튼 그룹 */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button
+                                    onClick={() => setShowOfficialRtmModal(true)}
+                                    className="interactive"
+                                    style={{
+                                        padding: '8px 14px',
+                                        fontSize: '13px',
+                                        fontWeight: 700,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        background: 'rgba(59, 130, 246, 0.15)',
+                                        border: '1px solid rgba(59, 130, 246, 0.4)',
+                                        borderRadius: '8px',
+                                        color: '#60a5fa',
+                                        cursor: 'pointer'
+                                    }}
+                                    title="공공 ISP 공식 양식의 요구사항추적표 및 산출물현황표 엑셀 작성"
+                                >
+                                    <ListChecks size={15} />
+                                    공식 요구사항추적표(RTM) 엑셀
+                                </button>
+                                <button
+                                    onClick={handleDownloadExcelReport}
+                                    className="btn-primary"
+                                    style={{
+                                        padding: '8px 16px',
+                                        fontSize: '13px',
+                                        fontWeight: 700,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                                        boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+                                    }}
+                                >
+                                    <Download size={15} />
+                                    {targetFiles.length > 1 ? `[${validationResult.fileName}] 검수 리포트 (.xlsx) 다운로드` : '통합 정합성 검수 리포트 (.xlsx) 다운로드'}
+                                </button>
+                            </div>
                         </div>
 
                         {/* 검색창 및 심각도 필터 (RTM 표가 아닐 때 노출) */}
@@ -2214,6 +2289,198 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 </div>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── 공공 표준 요구사항추적표(RTM) 모달 ── */}
+            {showOfficialRtmModal && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0,0,0,0.7)',
+                    backdropFilter: 'blur(5px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000,
+                    padding: '20px'
+                }}>
+                    <div className="glass-panel animate-scale-in" style={{
+                        width: '100%',
+                        maxWidth: '650px',
+                        background: '#0f172a',
+                        border: '1px solid rgba(59, 130, 246, 0.4)',
+                        borderRadius: '16px',
+                        padding: '28px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '20px',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+                    }}>
+                        {/* 헤더 */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
+                                    <ListChecks size={22} />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                        공공 표준 요구사항추적표 & 산출물현황표 엑셀 작성
+                                    </h3>
+                                    <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                        ㈜한국아이티컨설팅 공식 양식 기준 2개 시트(추적표 + 산출물현황) 자동 빌드
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowOfficialRtmModal(false)}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                            >
+                                <XCircle size={22} />
+                            </button>
+                        </div>
+
+                        {/* 설정 폼 */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', background: 'rgba(255,255,255,0.03)', padding: '18px', borderRadius: '12px', border: '1px solid var(--panel-border)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                                        수행기관 / 작성자 (우측 상단 표기)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={rtmCompanyName}
+                                        onChange={(e) => setRtmCompanyName(e.target.value)}
+                                        placeholder="예: ㈜한국아이티컨설팅"
+                                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '13px' }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                                        작성 기준일자
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={rtmIssueDate}
+                                        onChange={(e) => setRtmIssueDate(e.target.value)}
+                                        placeholder="예: 2025.12.17."
+                                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '13px' }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* 데이터 매핑 모드 선택 */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                    데이터 생성 모드 선택
+                                </label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <label style={{
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '10px',
+                                        padding: '12px 14px',
+                                        borderRadius: '8px',
+                                        background: rtmMode === 'auto' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(0,0,0,0.2)',
+                                        border: `1px solid ${rtmMode === 'auto' ? 'rgba(59, 130, 246, 0.4)' : 'var(--panel-border)'}`,
+                                        cursor: 'pointer'
+                                    }}>
+                                        <input
+                                            type="radio"
+                                            name="rtmMode"
+                                            value="auto"
+                                            checked={rtmMode === 'auto'}
+                                            onChange={() => setRtmMode('auto')}
+                                            style={{ accentColor: 'var(--accent-blue)', marginTop: '2px' }}
+                                        />
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                            <span style={{ fontSize: '13px', fontWeight: 700, color: rtmMode === 'auto' ? '#60a5fa' : 'var(--text-primary)' }}>
+                                                검수 결과 자동 매핑 모드 (권장)
+                                            </span>
+                                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                                현재 프로젝트 마스터 요구사항(총 {ssotData.requirements.length}건) 및 업로드된 산출물({targetFiles.length}개)의 검증 결과(충족/미충족, 관련 파일명, 출현 페이지 구간: 예 '7~58')를 자동으로 취합하여 작성합니다.
+                                            </span>
+                                        </div>
+                                    </label>
+
+                                    <label style={{
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '10px',
+                                        padding: '12px 14px',
+                                        borderRadius: '8px',
+                                        background: rtmMode === 'template' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(0,0,0,0.2)',
+                                        border: `1px solid ${rtmMode === 'template' ? 'rgba(16, 185, 129, 0.4)' : 'var(--panel-border)'}`,
+                                        cursor: 'pointer'
+                                    }}>
+                                        <input
+                                            type="radio"
+                                            name="rtmMode"
+                                            value="template"
+                                            checked={rtmMode === 'template'}
+                                            onChange={() => setRtmMode('template')}
+                                            style={{ accentColor: '#10b981', marginTop: '2px' }}
+                                        />
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                            <span style={{ fontSize: '13px', fontWeight: 700, color: rtmMode === 'template' ? '#34d399' : 'var(--text-primary)' }}>
+                                                공식 표준 원본 템플릿 모드
+                                            </span>
+                                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                                제공된 32개 공공 ISP 표준 요구사항(CSR-001~020, DAR, COR, SER 등) 및 34대 표준 산출물 점검표 원본 양식 그대로 엑셀을 다운로드합니다.
+                                            </span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 시트 구성 미리보기 안내 */}
+                        <div style={{ background: 'rgba(0,0,0,0.25)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>엑셀 시트 구성 안내:</span>
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div>• <strong>시트 1 [요구사항추적표]:</strong> 요구사항번호, 요구사항명칭, 충족여부, 관련 파일, 해당 페이지(예: 7~58, 전 페이지)</div>
+                                <div>• <strong>시트 2 [산출물현황표]:</strong> 구분, 서류(환경분석서, 현황분석서 등 34종), 현황, 파일명, 비고(작성근거)</div>
+                            </div>
+                        </div>
+
+                        {/* 하단 액션 버튼 */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                            <button
+                                onClick={() => setShowOfficialRtmModal(false)}
+                                className="btn-outline"
+                                style={{ padding: '9px 18px', fontSize: '13px' }}
+                                disabled={isGeneratingRtm}
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleGenerateOfficialRtm}
+                                disabled={isGeneratingRtm}
+                                className="btn-primary"
+                                style={{
+                                    padding: '9px 24px',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+                                    boxShadow: '0 4px 14px rgba(59, 130, 246, 0.4)'
+                                }}
+                            >
+                                {isGeneratingRtm ? (
+                                    <>생성 중...</>
+                                ) : (
+                                    <>
+                                        <Download size={16} /> 요구사항추적표 엑셀(.xlsx) 생성 및 다운로드
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

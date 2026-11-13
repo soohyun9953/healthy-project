@@ -1385,6 +1385,373 @@ export async function exportBatchSSOTReportToExcel({
     saveAs(blob, downloadName);
 }
 
+// ── 6-3. 공공 ISP 공식 표준 요구사항추적표 및 산출물현황표 엑셀 엔진 ──
+export const OFFICIAL_RTM_TEMPLATE_ITEMS = [
+    { id: 'CSR-001', name: '내·외부 환경분석', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅱ.환경분석.pptx', pages: '7~58' },
+    { id: 'CSR-002', name: '법·제도 분석', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅱ.환경분석.pptx', pages: '123~195' },
+    { id: 'CSR-003', name: '정기술(IT) 환경분석', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅱ.환경분석.pptx', pages: '59~122' },
+    { id: 'CSR-004', name: '업무 현황 분석', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅲ.현황분석.pptx', pages: '5~75' },
+    { id: 'CSR-005', name: '정보기술(IT) 현황 분석', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅲ.현황분석.pptx', pages: '76~347' },
+    { id: 'CSR-006', name: '벤치마킹', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅲ.현황분석.pptx', pages: '348~484' },
+    { id: 'CSR-007', name: '차이(Gap) 분석', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅲ.현황분석.pptx', pages: '485~487' },
+    { id: 'CSR-008', name: '이슈통합 및 개선과제 도출', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅲ.현황분석.pptx', pages: '488~503' },
+    { id: 'CSR-009', name: '정보화 비전 및 전략 수립', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '6~19' },
+    { id: 'CSR-010', name: 'To-Be 개선과제 상세화', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '23~112' },
+    { id: 'CSR-011', name: 'To-Be 업무 프로세스 설계', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '113~414' },
+    { id: 'CSR-012', name: 'To-Be 정보시스템 구조 설계', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '415~731' },
+    { id: 'CSR-013', name: 'To-Be 데이터 구조 설계', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '732~1105' },
+    { id: 'CSR-014', name: 'To-Be 기술 및 보안 구조 설계', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '1106~1219' },
+    { id: 'CSR-015', name: 'To-Be 정보관리 구조 설계', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '1220~1233' },
+    { id: 'CSR-016', name: '통합이행계획 수립', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅴ.이행계획수립.pptx', pages: '1~66' },
+    { id: 'CSR-017', name: '총 구축비 산출', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅴ.이행계획수립.pptx', pages: '67~87' },
+    { id: 'CSR-018', name: '기대효과 분석', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅴ.이행계획수립.pptx', pages: '87~91' },
+    { id: 'CSR-019', name: '제안요청서(RFP) 작성', status: '충족', file: "2025_K-BDS_ISP_제안요청서_차세대 K-BDS 시스템 구축 용역 _27년.hwp\n2025_K-BDS_ISP_제안요청서_차세대 K-BDS 시스템 구축 용역 _28년.hwp", pages: '전 페이지' },
+    { id: 'CSR-020', name: 'ISP 최종산출물 검토신청서 작성', status: '충족', file: '2025_K-BDS_ISP_검토신청서.hwpx', pages: '전 페이지' },
+    { id: 'DAR-001', name: '데이터 표준화 방안 제시', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '758~761' },
+    { id: 'DAR-002', name: '데이터 표준관리 방안 제시', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '783~791' },
+    { id: 'DAR-003', name: '데이터 구조 설계 방안 제시', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '775~782' },
+    { id: 'DAR-004', name: '데이터 구조 관리 방안 제시', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '1106' },
+    { id: 'DAR-005', name: '데이터 관리체계 현황분석 및 목표모델 제시', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '1109~1110' },
+    { id: 'DAR-006', name: '데이터 개방 및 메타데이터 관리체계 제시', status: '충족', file: '2025_K-BDS_ISP_K-BDS_ISP_Ⅳ.목표모델수립.pptx', pages: '1107~1108' },
+    { id: 'COR-001', name: '기술적용계획표 준수', status: '충족', file: '2025_K-BDS_ISP_[별지 1] 기술적용계획표 및 기술적용결과표(행정기관 및 공공기관 정보시스템 구축·운영 지침 ).hwpx', pages: '전 페이지' },
+    { id: 'COR-002', name: '정보화사업 관련 법ㆍ규정 준수', status: '충족', file: '2025_K-BDS_ISP_[별지 1] 기술적용계획표 및 기술적용결과표(행정기관 및 공공기관 정보시스템 구축·운영 지침 ).hwpx', pages: '전 페이지' },
+    { id: 'SER-001', name: '보안준수 일반사항', status: '충족', file: '착수계(사업수행계획서, 외부자 보안서약서, 개인정보 취급자보안서약서 등)', pages: '전 페이지' },
+    { id: 'SER-002', name: '자료보안관리', status: '충족', file: '착수계(사업수행계획서, 외부자 보안서약서, 개인정보 취급자보안서약서 등)', pages: '전 페이지' },
+    { id: 'SER-003', name: '인력보안관리', status: '충족', file: '착수계(사업수행계획서, 외부자 보안서약서, 개인정보 취급자보안서약서 등)', pages: '전 페이지' },
+    { id: 'SER-004', name: '작업장소 보안관리', status: '충족', file: '착수계(사업수행계획서, 외부자 보안서약서, 개인정보 취급자보안서약서 등)', pages: '전 페이지' }
+];
+
+export const OFFICIAL_DOCUMENT_CHECKLIST_ITEMS = [
+    { seq: 1, docName: '환경 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅱ.환경분석.pptx', note: '' },
+    { seq: 2, docName: '현황 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
+    { seq: 3, docName: '법·제도 분석', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅱ.환경분석.pptx', note: '' },
+    { seq: 4, docName: '정보기술 동향 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅱ.환경분석.pptx', note: '' },
+    { seq: 5, docName: '업무 현황 분석서(인터뷰 결과 포함)', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
+    { seq: 6, docName: '정보기술(IT) 현황 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
+    { seq: 7, docName: '선진사례 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
+    { seq: 8, docName: '차이(Gap) 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
+    { seq: 9, docName: '요구사항 및 개선과제 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅲ.현황분석.pptx', note: '' },
+    { seq: 10, docName: '정보화 전략 정의서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 11, docName: 'To-Be 과제 상세 정의서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 12, docName: 'To-Be 업무 프로세스 설계서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 13, docName: 'To-Be 정보관리 ', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 14, docName: 'To-Be 정보시스템 구조 설계서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 15, docName: 'To-Be 데이터 구조 설계서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 16, docName: 'To-Be 기술 및 보안 구조 설계서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 17, docName: 'To-Be 정보관리 구조 설계서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 18, docName: '통합이행계획 수립서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅴ.이행계획수립.pptx', note: '' },
+    { seq: 19, docName: '소요예산 산정내역서(산출근거 포함)', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅴ.이행계획수립.pptx', note: '' },
+    { seq: 20, docName: '기대효과 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅴ.이행계획수립.pptx', note: '' },
+    { seq: 21, docName: '제안요청서(RFP) ', status: '작성완료', fileName: "제안요청서_차세대 K-BDS 시스템 구축 용역 '27.hwp\n제안요청서_차세대 K-BDS 시스템 구축 용역 '28.hwp", note: '' },
+    { seq: 22, docName: 'ISP 최종산출물 검토신청서', status: '작성완료', fileName: 'K-BDS_ISP_검토신청서(2025년).hwpx', note: '' },
+    { seq: 23, docName: '최종산출물 점검표', status: '작성완료', fileName: 'K-BDS_ISP_검토신청서(2025년).hwpx', note: '' },
+    { seq: 24, docName: '목표시스템 데이터 표준화 방안', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 25, docName: '데이터 표준관리 현황 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 26, docName: '데이터 구조현황 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 27, docName: '데이터 구조 설계 방안', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 28, docName: '데이터 구조 관리현황 분석서', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 29, docName: '데이터 구조 관리방안', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 30, docName: '목표시스템 데이터(표준, 구조, 값, 연계)관리방안', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 31, docName: '메타데이터 등록·관리현황', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 32, docName: '데이터 개방 및 메타데이터 관리방안', status: '작성완료', fileName: 'KRIBB_K-BDS_ISP_Ⅳ.목표모델수립.pptx', note: '' },
+    { seq: 33, docName: '기술적용계획표 및 결과표', status: '작성완료', fileName: '[별지 1] 기술적용계획표 및 기술적용결과표(행정기관 및 공공기관 정보시스템 구축·운영 지침 ).hwpx', note: '' },
+    { seq: 34, docName: '보안계획서 및 관련 문서', status: '작성완료', fileName: '착수계(사업수행계획서, 외부자 보안서약서, 개인정보 취급자보안서약서 등)', note: '' }
+];
+
+/**
+ * 페이지 배열을 '7~58' 또는 'p.12, 15~18' 형식으로 스마트 축약
+ */
+export function formatPageRanges(pages = []) {
+    if (!pages || pages.length === 0) return '-';
+    const nums = Array.from(new Set(pages.map(p => parseInt(p, 10)).filter(n => !isNaN(n)))).sort((a, b) => a - b);
+    if (nums.length === 0) return '전 페이지';
+    if (nums.length >= 10 && (nums[nums.length - 1] - nums[0] + 1) === nums.length) {
+        return `${nums[0]}~${nums[nums.length - 1]}`;
+    }
+    const ranges = [];
+    let start = nums[0];
+    let prev = nums[0];
+    for (let i = 1; i < nums.length; i++) {
+        const cur = nums[i];
+        if (cur === prev + 1) {
+            prev = cur;
+        } else {
+            ranges.push(start === prev ? `${start}` : `${start}~${prev}`);
+            start = cur;
+            prev = cur;
+        }
+    }
+    ranges.push(start === prev ? `${start}` : `${start}~${prev}`);
+    return ranges.join(', ');
+}
+
+/**
+ * 공공기관 ISP/ISMP 공식 표준 요구사항추적표 및 산출물점검표 엑셀 생성
+ */
+export async function exportOfficialRtmToExcel({
+    ssotData = {},
+    batchResults = [],
+    companyName = '㈜한국아이티컨설팅',
+    issueDate = '2025.12.17.',
+    mode = 'auto' // 'auto' (검수 결과 자동 연동) | 'template' (표준 템플릿 원본)
+}) {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = `${companyName} (건강한 프로젝트 RTM)`;
+    workbook.created = new Date();
+
+    const borderThin = {
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
+    };
+
+    const headerFill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF2F2F2' } // 연회색
+    };
+
+    // ── 시트 1: 요구사항추적표 ────────────────────────────────────
+    const rtmSheet = workbook.addWorksheet('요구사항추적표', {
+        views: [{ showGridLines: true }]
+    });
+
+    // 열 너비 설정 (A, B는 여백, C~G는 데이터)
+    rtmSheet.columns = [
+        { width: 4 },   // A (여백)
+        { width: 4 },   // B (여백)
+        { width: 16 },  // C: 요구사항번호
+        { width: 36 },  // D: 요구사항명칭
+        { width: 12 },  // E: 충족여부
+        { width: 55 },  // F: 관련 파일
+        { width: 18 }   // G: 해당 페이지
+    ];
+
+    // 상단 여백 및 작성자/일자 정보 (G5 위치)
+    rtmSheet.mergeCells('F5:G5');
+    const authorCell = rtmSheet.getCell('F5');
+    authorCell.value = `${companyName}\n${issueDate}`;
+    authorCell.font = { name: '맑은 고딕', size: 10, bold: true };
+    authorCell.alignment = { vertical: 'middle', horizontal: 'right', wrapText: true };
+    rtmSheet.getRow(5).height = 30;
+
+    // 헤더 행 (Row 7)
+    const rtmHeaderRow = rtmSheet.getRow(7);
+    rtmHeaderRow.height = 28;
+
+    const rtmHeaders = [
+        { col: 3, title: '요구사항번호' },
+        { col: 4, title: '요구사항명칭' },
+        { col: 5, title: '충족여부' },
+        { col: 6, title: '관련 파일' },
+        { col: 7, title: '해당 페이지' }
+    ];
+
+    rtmHeaders.forEach(h => {
+        const cell = rtmHeaderRow.getCell(h.col);
+        cell.value = h.title;
+        cell.font = { name: '맑은 고딕', size: 10, bold: true };
+        cell.fill = headerFill;
+        cell.border = borderThin;
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    // 데이터 행 생성
+    let itemsToRender = [];
+
+    if (mode === 'template') {
+        itemsToRender = OFFICIAL_RTM_TEMPLATE_ITEMS;
+    } else {
+        // mode === 'auto': 현재 ssotData.requirements와 검수결과(batchResults) 결합
+        const masterReqs = ssotData.requirements || [];
+
+        if (masterReqs.length > 0) {
+            itemsToRender = masterReqs.map(req => {
+                const reqId = (req.id || '').trim().toUpperCase();
+                const matchedFiles = [];
+                const pageCollector = [];
+
+                batchResults.forEach(res => {
+                    const rtmMatrix = res.stage1?.rtmMatrix || [];
+                    const found = rtmMatrix.find(m => (m.id || '').toUpperCase() === reqId);
+                    if (found && found.isPresent) {
+                        matchedFiles.push(res.fileName);
+                        if (found.pages && found.pages.length > 0) {
+                            pageCollector.push(...found.pages);
+                        }
+                    }
+                });
+
+                const isPresent = matchedFiles.length > 0;
+                let pageStr = '-';
+                if (isPresent) {
+                    pageStr = pageCollector.length > 0 ? formatPageRanges(pageCollector) : '전 페이지';
+                }
+
+                return {
+                    id: req.id,
+                    name: req.name,
+                    status: isPresent ? '충족' : (batchResults.length > 0 ? '미충족' : '충족'),
+                    file: matchedFiles.length > 0 ? matchedFiles.join('\n') : (batchResults.length > 0 ? '미확인 산출물' : '산출물 확인 필요'),
+                    pages: pageStr
+                };
+            });
+        } else {
+            itemsToRender = OFFICIAL_RTM_TEMPLATE_ITEMS;
+        }
+    }
+
+    let startRow = 8;
+    itemsToRender.forEach((item, idx) => {
+        const row = rtmSheet.getRow(startRow + idx);
+        row.height = item.file && item.file.includes('\n') ? 36 : 24;
+
+        // C열: 요구사항번호
+        const cCell = row.getCell(3);
+        cCell.value = item.id;
+        cCell.font = { name: '맑은 고딕', size: 9.5 };
+        cCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cCell.border = borderThin;
+
+        // D열: 요구사항명칭
+        const dCell = row.getCell(4);
+        dCell.value = item.name;
+        dCell.font = { name: '맑은 고딕', size: 9.5 };
+        dCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        dCell.border = borderThin;
+
+        // E열: 충족여부
+        const eCell = row.getCell(5);
+        eCell.value = item.status || '충족';
+        eCell.font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: item.status === '미충족' ? 'FFDC2626' : 'FF000000' } };
+        eCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        eCell.border = borderThin;
+
+        // F열: 관련 파일
+        const fCell = row.getCell(6);
+        fCell.value = item.file || '-';
+        fCell.font = { name: '맑은 고딕', size: 9.5 };
+        fCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+        fCell.border = borderThin;
+
+        // G열: 해당 페이지
+        const gCell = row.getCell(7);
+        gCell.value = item.pages || '-';
+        gCell.font = { name: '맑은 고딕', size: 9.5 };
+        gCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        gCell.border = borderThin;
+    });
+
+    // ── 시트 2: 산출물현황표 ────────────────────────────────────
+    const docSheet = workbook.addWorksheet('산출물현황표', {
+        views: [{ showGridLines: true }]
+    });
+
+    docSheet.columns = [
+        { width: 4 },   // A (여백)
+        { width: 8 },   // B: 구분
+        { width: 38 },  // C: 서류
+        { width: 14 },  // D: 현황
+        { width: 55 },  // E: 파일명
+        { width: 20 }   // F: 비고(작성근거)
+    ];
+
+    // 상단 작성자/일자 정보 (F5)
+    docSheet.mergeCells('E5:F5');
+    const docAuthorCell = docSheet.getCell('E5');
+    docAuthorCell.value = `${companyName}\n${issueDate}`;
+    docAuthorCell.font = { name: '맑은 고딕', size: 10, bold: true };
+    docAuthorCell.alignment = { vertical: 'middle', horizontal: 'right', wrapText: true };
+    docSheet.getRow(5).height = 30;
+
+    // 헤더 행 (Row 7)
+    const docHeaderRow = docSheet.getRow(7);
+    docHeaderRow.height = 28;
+
+    const docHeaders = [
+        { col: 2, title: '구분' },
+        { col: 3, title: '서류' },
+        { col: 4, title: '현황' },
+        { col: 5, title: '파일명' },
+        { col: 6, title: '비고(작성근거)' }
+    ];
+
+    docHeaders.forEach(h => {
+        const cell = docHeaderRow.getCell(h.col);
+        cell.value = h.title;
+        cell.font = { name: '맑은 고딕', size: 10, bold: true };
+        cell.fill = headerFill;
+        cell.border = borderThin;
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    // 34대 산출물 현황 데이터 렌더링
+    const docItemsToRender = OFFICIAL_DOCUMENT_CHECKLIST_ITEMS.map(item => {
+        // 만약 batchResults에 실제 업로드된 파일이 있고 이름이 유사하면 매칭
+        let matchedFileName = item.fileName;
+        if (mode === 'auto' && batchResults.length > 0) {
+            const foundFile = batchResults.find(b => {
+                const bName = (b.fileName || '').toLowerCase();
+                const docKey = item.docName.replace(/\s+/g, '').toLowerCase();
+                return bName.includes(docKey) || docKey.includes(bName.slice(0, 4));
+            });
+            if (foundFile) {
+                matchedFileName = foundFile.fileName;
+            }
+        }
+        return {
+            ...item,
+            fileName: matchedFileName
+        };
+    });
+
+    docItemsToRender.forEach((item, idx) => {
+        const row = docSheet.getRow(8 + idx);
+        row.height = item.fileName && item.fileName.includes('\n') ? 36 : 24;
+
+        // B열: 구분
+        const bCell = row.getCell(2);
+        bCell.value = item.seq;
+        bCell.font = { name: '맑은 고딕', size: 9.5 };
+        bCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        bCell.border = borderThin;
+
+        // C열: 서류
+        const cCell = row.getCell(3);
+        cCell.value = item.docName;
+        cCell.font = { name: '맑은 고딕', size: 9.5 };
+        cCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        cCell.border = borderThin;
+
+        // D열: 현황
+        const dCell = row.getCell(4);
+        dCell.value = item.status || '작성완료';
+        dCell.font = { name: '맑은 고딕', size: 9.5 };
+        dCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        dCell.border = borderThin;
+
+        // E열: 파일명
+        const eCell = row.getCell(5);
+        eCell.value = item.fileName || '';
+        eCell.font = { name: '맑은 고딕', size: 9.5 };
+        eCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+        eCell.border = borderThin;
+
+        // F열: 비고
+        const fCell = row.getCell(6);
+        fCell.value = item.note || '';
+        fCell.font = { name: '맑은 고딕', size: 9.5 };
+        fCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        fCell.border = borderThin;
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const downloadName = `요구사항추적표_및_산출물현황표_${(ssotData.metadata?.projectName || '공공ISP').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    saveAs(blob, downloadName);
+}
+
 // ── 7. RFP(제안요청서) 파싱 및 마스터 정보 추출 엔진 ────────────────
 /**
  * 룰 기반 결정론적 RFP 분석기 (초고속, 오프라인)
