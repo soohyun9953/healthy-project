@@ -39,6 +39,7 @@ import {
     runStage1Validation,
     runStage2AIValidation,
     exportSSOTReportToExcel,
+    exportBatchSSOTReportToExcel,
     parseRfpContent,
     applyRfpToMasterData
 } from '../utils/ssotValidator';
@@ -55,8 +56,11 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         saveSSOTData(ssotData);
     }, [ssotData]);
 
-    // ── 검수 대상 파일 및 실행 상태 ──────────────────────────────
-    const [targetFile, setTargetFile] = useState(null);
+    // ── 검수 대상 파일 목록 (다중 파일 지원) 및 실행 상태 ──────────────
+    const [targetFiles, setTargetFiles] = useState([]); // File[]
+    const [batchResults, setBatchResults] = useState([]); // 검수 결과 배열
+    const [selectedFileIdx, setSelectedFileIdx] = useState(0); // 현재 상세 검토 중인 파일 인덱스
+
     const [isExtracting, setIsExtracting] = useState(false);
     const [isValidating, setIsValidating] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
@@ -70,9 +74,13 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
     // AI 진행 상태
     const [aiProgress, setAiProgress] = useState({ current: 0, total: 0, percent: 0, message: '' });
 
-    // 검증 결과 상태
-    const [validationResult, setValidationResult] = useState(null);
-    // { fileName, stage1, stage2Issues, allIssues }
+    // 현재 선택된 파일의 단일 검증 결과 (기존 상세 뷰 호환)
+    const validationResult = useMemo(() => {
+        if (batchResults.length > 0) {
+            return batchResults[selectedFileIdx] || batchResults[0] || null;
+        }
+        return null;
+    }, [batchResults, selectedFileIdx]);
 
     // 결과 뷰 필터 및 검색
     const [activeResultTab, setActiveResultTab] = useState('all'); // 'all' | 'requirements' | 'glossary' | 'numbers' | 'ai' | 'rtm'
@@ -365,31 +373,61 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         }));
     };
 
-    // ── 파일 드롭 및 선택 ────────────────────────────────────────
+    // ── 파일 드롭 및 선택 (다중 파일 지원) ────────────────────────
     const handleFileDrop = (e) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDragging(false);
-        const files = Array.from(e.dataTransfer.files);
-        if (files.length > 0) {
-            setTargetFile(files[0]);
-            setValidationResult(null);
+        const dropped = Array.from(e.dataTransfer.files).filter(f => {
+            const ext = f.name.split('.').pop()?.toLowerCase();
+            return ['hwpx', 'docx', 'pptx', 'xlsx', 'xls', 'pdf', 'txt', 'md'].includes(ext);
+        });
+        if (dropped.length > 0) {
+            setTargetFiles(prev => {
+                const existing = new Set(prev.map(f => f.name));
+                const filtered = dropped.filter(f => !existing.has(f.name));
+                return [...prev, ...filtered];
+            });
+            setBatchResults([]);
+            setSelectedFileIdx(0);
         }
     };
 
     const handleFileSelect = (e) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            setTargetFile(file);
-            setValidationResult(null);
+        const selected = Array.from(e.target.files || []).filter(f => {
+            const ext = f.name.split('.').pop()?.toLowerCase();
+            return ['hwpx', 'docx', 'pptx', 'xlsx', 'xls', 'pdf', 'txt', 'md'].includes(ext);
+        });
+        if (selected.length > 0) {
+            setTargetFiles(prev => {
+                const existing = new Set(prev.map(f => f.name));
+                const filtered = selected.filter(f => !existing.has(f.name));
+                return [...prev, ...filtered];
+            });
+            setBatchResults([]);
+            setSelectedFileIdx(0);
         }
         e.target.value = '';
     };
 
-    // ── 검증 실행 ───────────────────────────────────────────────
+    const handleRemoveTargetFile = (idx, e) => {
+        if (e) e.stopPropagation();
+        setTargetFiles(prev => prev.filter((_, i) => i !== idx));
+        setBatchResults([]);
+        setSelectedFileIdx(0);
+    };
+
+    const handleClearAllTargetFiles = (e) => {
+        if (e) e.stopPropagation();
+        setTargetFiles([]);
+        setBatchResults([]);
+        setSelectedFileIdx(0);
+    };
+
+    // ── 다중 파일 일괄 검증 실행 ─────────────────────────────────
     const handleStartValidation = async () => {
-        if (!targetFile) {
-            alert('검수할 문서를 먼저 업로드해주세요.');
+        if (targetFiles.length === 0) {
+            alert('검수할 문서를 최소 1개 이상 업로드해주세요.');
             return;
         }
 
@@ -405,62 +443,119 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
 
         setIsValidating(true);
         setIsExtracting(true);
-        setAiProgress({ current: 0, total: 0, percent: 0, message: '문서 구조 및 텍스트/표 데이터 추출 중...' });
+        setBatchResults([]);
+        setSelectedFileIdx(0);
+
+        const results = [];
+        const totalFiles = targetFiles.length;
 
         try {
-            // 1. 문서 텍스트 및 페이지 구조 추출
-            const fileContent = await extractStructuredFileContent(targetFile);
-            // 2. 표 데이터(2D 배열) 추출
-            const tables = await extractTablesFromFile(targetFile);
-            setIsExtracting(false);
+            for (let i = 0; i < totalFiles; i++) {
+                const currentFile = targetFiles[i];
+                const fileNum = i + 1;
+                const percentBase = Math.round((i / totalFiles) * 100);
 
-            let stage1Result = {
-                issues: [],
-                rtmMatrix: [],
-                rtmMappingRate: 100,
-                coveredReqCount: 0,
-                totalMasterReqCount: ssotData.requirements.length
-            };
-
-            // 3. Stage 1 결정론적 Rule 검증
-            if (runStage1) {
-                setAiProgress({ current: 0, total: 100, percent: 30, message: 'Stage 1 결정론적 룰 및 RTM/수치 정합성 검증 중...' });
-                stage1Result = await runStage1Validation(fileContent, tables, ssotData, { inspectionScope });
-            }
-
-            // 4. Stage 2 Gemini AI 문맥·오탈자 검증
-            let stage2Issues = [];
-            if (runStage2) {
-                stage2Issues = await runStage2AIValidation({
-                    fileContent,
-                    masterData: ssotData,
-                    apiKey,
-                    modelId: selectedModel,
-                    onProgress: (p) => setAiProgress(p)
+                setAiProgress({
+                    current: fileNum,
+                    total: totalFiles,
+                    percent: percentBase,
+                    message: `[${fileNum}/${totalFiles}] '${currentFile.name}' 구조 및 텍스트/표 데이터 추출 중...`
                 });
+
+                try {
+                    // 1. 문서 텍스트 및 페이지 구조 추출
+                    const fileContent = await extractStructuredFileContent(currentFile);
+                    // 2. 표 데이터 추출
+                    const tables = await extractTablesFromFile(currentFile);
+
+                    let stage1Result = {
+                        issues: [],
+                        rtmMatrix: [],
+                        rtmMappingRate: 100,
+                        coveredReqCount: 0,
+                        totalMasterReqCount: ssotData.requirements.length
+                    };
+
+                    // 3. Stage 1 결정론적 Rule 검증
+                    if (runStage1) {
+                        setAiProgress({
+                            current: fileNum,
+                            total: totalFiles,
+                            percent: percentBase + Math.round((1 / totalFiles) * 35),
+                            message: `[${fileNum}/${totalFiles}] '${currentFile.name}' Stage 1 룰 및 RTM/수치 정합성 검증 중...`
+                        });
+                        stage1Result = await runStage1Validation(fileContent, tables, ssotData, { inspectionScope });
+                    }
+
+                    // 4. Stage 2 Gemini AI 문맥·오탈자 검증
+                    let stage2Issues = [];
+                    if (runStage2) {
+                        stage2Issues = await runStage2AIValidation({
+                            fileContent,
+                            masterData: ssotData,
+                            apiKey,
+                            modelId: selectedModel,
+                            onProgress: (p) => setAiProgress({
+                                current: fileNum,
+                                total: totalFiles,
+                                percent: percentBase + Math.round((1 / totalFiles) * (35 + ((p.percent || 0) * 0.6))),
+                                message: `[${fileNum}/${totalFiles}] '${currentFile.name}' ${p.message || 'Stage 2 AI 정밀 검증 중...'}`
+                            })
+                        });
+                    }
+
+                    const allIssues = [...stage1Result.issues, ...stage2Issues];
+                    const highCount = allIssues.filter(iss => iss.severity === 'HIGH').length;
+                    const mediumCount = allIssues.filter(iss => iss.severity === 'MEDIUM').length;
+                    const lowCount = allIssues.filter(iss => iss.severity === 'LOW').length;
+
+                    results.push({
+                        file: currentFile,
+                        fileName: currentFile.name,
+                        fileSize: currentFile.size,
+                        pages: fileContent.pages,
+                        stage1: stage1Result,
+                        stage2Issues,
+                        allIssues,
+                        totalCount: allIssues.length,
+                        highCount,
+                        mediumCount,
+                        lowCount,
+                        status: 'DONE'
+                    });
+                } catch (fileErr) {
+                    console.error(`파일 [${currentFile.name}] 검증 실패:`, fileErr);
+                    results.push({
+                        file: currentFile,
+                        fileName: currentFile.name,
+                        fileSize: currentFile.size,
+                        pages: 0,
+                        stage1: { issues: [], rtmMatrix: [], rtmMappingRate: 0, coveredReqCount: 0, totalMasterReqCount: ssotData.requirements.length },
+                        stage2Issues: [],
+                        allIssues: [],
+                        totalCount: 0,
+                        highCount: 0,
+                        mediumCount: 0,
+                        lowCount: 0,
+                        status: 'ERROR',
+                        errorMsg: fileErr.message || '검증 실패'
+                    });
+                }
             }
 
-            const allIssues = [...stage1Result.issues, ...stage2Issues];
-
-            setValidationResult({
-                fileName: targetFile.name,
-                fileSize: targetFile.size,
-                pages: fileContent.pages,
-                stage1: stage1Result,
-                stage2Issues,
-                allIssues
-            });
+            setBatchResults(results);
+            setSelectedFileIdx(0);
         } catch (err) {
-            console.error('검증 중 오류 발생:', err);
-            alert(`검증 중 오류가 발생했습니다: ${err.message || '알 수 없는 오류'}`);
+            console.error('일괄 검증 중 치명적 오류 발생:', err);
+            alert(`일괄 검증 중 오류가 발생했습니다: ${err.message || '알 수 없는 오류'}`);
         } finally {
             setIsValidating(false);
             setIsExtracting(false);
-            setAiProgress({ current: 0, total: 0, percent: 100, message: '검증 완료' });
+            setAiProgress({ current: totalFiles, total: totalFiles, percent: 100, message: `총 ${totalFiles}개 산출물 일괄 검수 완료!` });
         }
     };
 
-    // ── 리포트 다운로드 ──────────────────────────────────────────
+    // ── 리포트 다운로드 (개별 파일) ─────────────────────────────
     const handleDownloadExcelReport = async () => {
         if (!validationResult) return;
         try {
@@ -471,8 +566,22 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                 allIssues: validationResult.allIssues
             });
         } catch (err) {
-            console.error('엑셀 리포트 생성 실패:', err);
-            alert('리포트 엑셀 생성 중 오류가 발생했습니다.');
+            console.error('리포트 생성 오류:', err);
+            alert(`엑셀 리포트 생성 중 오류가 발생했습니다: ${err.message}`);
+        }
+    };
+
+    // ── 리포트 다운로드 (다중 파일 전체 통합) ────────────────────
+    const handleDownloadBatchExcelReport = async () => {
+        if (batchResults.length === 0) return;
+        try {
+            await exportBatchSSOTReportToExcel({
+                batchResults,
+                ssotData
+            });
+        } catch (err) {
+            console.error('다중 통합 엑셀 리포트 생성 오류:', err);
+            alert(`다중 통합 엑셀 리포트 생성 중 오류가 발생했습니다: ${err.message}`);
         }
     };
 
@@ -1015,65 +1124,171 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                     </div>
                 </div>
 
-                {/* 드래그 앤 드롭 영역 */}
-                <div
-                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                    onDragLeave={() => setIsDragging(false)}
-                    onDrop={handleFileDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    style={{
-                        border: `2px dashed ${isDragging ? '#10b981' : targetFile ? 'var(--accent-blue)' : 'var(--panel-border)'}`,
-                        borderRadius: '12px',
-                        padding: '30px 20px',
-                        textAlign: 'center',
-                        cursor: 'pointer',
-                        background: isDragging ? 'rgba(16, 185, 129, 0.05)' : targetFile ? 'rgba(59, 130, 246, 0.04)' : 'rgba(255,255,255,0.02)',
-                        transition: 'all 0.2s ease',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '10px'
-                    }}
-                >
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        accept=".hwpx,.docx,.pptx,.xlsx,.xls,.pdf,.txt,.md"
-                        style={{ display: 'none' }}
-                        onChange={handleFileSelect}
-                    />
+                {/* 드래그 앤 드롭 영역 및 파일 목록 (다중 파일 지원) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {/* 상단 안내 & 파일 추가/비우기 버튼 바 */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Layers size={15} color="var(--accent-blue)" />
+                            검수 대상 산출물 ({targetFiles.length}개 파일 등록됨)
+                        </span>
+                        {targetFiles.length > 0 && (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="btn-outline"
+                                    style={{ padding: '4px 10px', fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    disabled={isValidating}
+                                >
+                                    <Plus size={13} /> 파일 추가
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleClearAllTargetFiles}
+                                    className="btn-outline"
+                                    style={{ padding: '4px 10px', fontSize: '11.5px', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    disabled={isValidating}
+                                >
+                                    <Trash2 size={13} /> 전체 삭제
+                                </button>
+                            </div>
+                        )}
+                    </div>
 
-                    {targetFile ? (
-                        <>
-                            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-blue)' }}>
-                                <FileSpreadsheet size={26} />
+                    {/* 드래그 앤 드롭 드롭존 */}
+                    <div
+                        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                        onDragLeave={() => setIsDragging(false)}
+                        onDrop={handleFileDrop}
+                        onClick={() => fileInputRef.current?.click()}
+                        style={{
+                            border: `2px dashed ${isDragging ? '#10b981' : targetFiles.length > 0 ? 'var(--accent-blue)' : 'var(--panel-border)'}`,
+                            borderRadius: '12px',
+                            padding: targetFiles.length > 0 ? '16px 20px' : '32px 20px',
+                            textAlign: 'center',
+                            cursor: 'pointer',
+                            background: isDragging ? 'rgba(16, 185, 129, 0.05)' : targetFiles.length > 0 ? 'rgba(59, 130, 246, 0.03)' : 'rgba(255,255,255,0.02)',
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '8px'
+                        }}
+                    >
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            multiple
+                            accept=".hwpx,.docx,.pptx,.xlsx,.xls,.pdf,.txt,.md"
+                            style={{ display: 'none' }}
+                            onChange={handleFileSelect}
+                        />
+
+                        {targetFiles.length === 0 ? (
+                            <>
+                                <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+                                    <Upload size={24} />
+                                </div>
+                                <div>
+                                    <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                        클릭하여 검수 대상 파일을 선택하거나 이곳으로 드래그하세요 (다중 파일 일괄 선택 지원)
+                                    </span>
+                                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                                        HWPX, DOCX, PPTX, XLSX, PDF 등 공공기관 표준 산출물 형식 지원 · 여러 파일 동시 선택 가능
+                                    </p>
+                                </div>
+                            </>
+                        ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-blue)', fontSize: '12.5px', fontWeight: 600 }}>
+                                <Upload size={16} /> 이곳을 클릭하거나 파일을 더 끌어다 놓아 추가할 수 있습니다 (총 {targetFiles.length}개 파일 등록됨)
                             </div>
-                            <div>
-                                <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                    {targetFile.name}
-                                </span>
-                                <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                                    ({(targetFile.size / 1024).toFixed(1)} KB)
-                                </span>
-                            </div>
-                            <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600 }}>
-                                ✓ 검수 준비 완료. 아래 '정합성 검증 시작' 버튼을 눌러주세요. (클릭하여 다른 파일 선택)
-                            </span>
-                        </>
-                    ) : (
-                        <>
-                            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
-                                <Upload size={24} />
-                            </div>
-                            <div>
-                                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                    클릭하여 검수 대상 파일을 선택하거나 이곳으로 드래그하세요
-                                </span>
-                                <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
-                                    HWPX, DOCX, PPTX, XLSX, PDF 등 공공기관 표준 산출물 형식 지원
-                                </p>
-                            </div>
-                        </>
+                        )}
+                    </div>
+
+                    {/* 등록된 파일 목록 리스트 카드 (파일이 1개 이상일 때) */}
+                    {targetFiles.length > 0 && (
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                            maxHeight: '220px',
+                            overflowY: 'auto',
+                            padding: '8px',
+                            background: 'rgba(0,0,0,0.2)',
+                            borderRadius: '10px',
+                            border: '1px solid var(--panel-border)'
+                        }}>
+                            {targetFiles.map((file, idx) => {
+                                const res = batchResults[idx];
+                                const isCurrentViewing = selectedFileIdx === idx;
+                                return (
+                                    <div
+                                        key={`${file.name}-${idx}`}
+                                        onClick={() => { if (batchResults.length > 0) setSelectedFileIdx(idx); }}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            padding: '8px 12px',
+                                            borderRadius: '8px',
+                                            background: isCurrentViewing && batchResults.length > 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.03)',
+                                            border: `1px solid ${isCurrentViewing && batchResults.length > 0 ? 'var(--accent-blue)' : 'rgba(255,255,255,0.05)'}`,
+                                            cursor: batchResults.length > 0 ? 'pointer' : 'default',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                                            <FileSpreadsheet size={18} color="var(--accent-blue)" style={{ flexShrink: 0 }} />
+                                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {file.name}
+                                            </span>
+                                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
+                                                ({(file.size / 1024).toFixed(1)} KB)
+                                            </span>
+                                        </div>
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                            {/* 검수 상태 뱃지 */}
+                                            {res ? (
+                                                res.status === 'DONE' ? (
+                                                    <span style={{
+                                                        padding: '2px 8px',
+                                                        borderRadius: '6px',
+                                                        fontSize: '11px',
+                                                        fontWeight: 700,
+                                                        background: res.highCount > 0 ? 'rgba(239, 68, 68, 0.15)' : res.totalCount > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                                                        color: res.highCount > 0 ? '#fca5a5' : res.totalCount > 0 ? '#fcd34d' : '#86efac',
+                                                        border: `1px solid ${res.highCount > 0 ? 'rgba(239, 68, 68, 0.3)' : res.totalCount > 0 ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                                                    }}>
+                                                        {res.highCount > 0 ? `치명 ${res.highCount}건 / 총 ${res.totalCount}건` : res.totalCount > 0 ? `결함 ${res.totalCount}건` : '✓ 결함 없음'}
+                                                    </span>
+                                                ) : (
+                                                    <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(239, 68, 68, 0.2)', color: '#f87171' }}>
+                                                        실패
+                                                    </span>
+                                                )
+                                            ) : isValidating ? (
+                                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>대기 중</span>
+                                            ) : (
+                                                <span style={{ fontSize: '11px', color: '#10b981' }}>검수 준비</span>
+                                            )}
+
+                                            {!isValidating && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleRemoveTargetFile(idx, e)}
+                                                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                                                    title="파일 제거"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     )}
                 </div>
 
@@ -1104,9 +1319,9 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
 
                 {/* 실행 버튼 영역 */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                    {validationResult && (
+                    {batchResults.length > 0 && (
                         <button
-                            onClick={() => { setTargetFile(null); setValidationResult(null); }}
+                            onClick={handleClearAllTargetFiles}
                             className="btn-outline"
                             style={{ padding: '10px 18px', fontSize: '13px' }}
                             disabled={isValidating}
@@ -1116,7 +1331,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                     )}
                     <button
                         onClick={handleStartValidation}
-                        disabled={isValidating || !targetFile}
+                        disabled={isValidating || targetFiles.length === 0}
                         className="btn-primary"
                         style={{
                             padding: '10px 24px',
@@ -1127,19 +1342,114 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                             gap: '8px',
                             background: 'linear-gradient(135deg, #10b981, #059669)',
                             boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
-                            opacity: (isValidating || !targetFile) ? 0.6 : 1,
-                            cursor: (isValidating || !targetFile) ? 'not-allowed' : 'pointer'
+                            opacity: (isValidating || targetFiles.length === 0) ? 0.6 : 1,
+                            cursor: (isValidating || targetFiles.length === 0) ? 'not-allowed' : 'pointer'
                         }}
                     >
                         <FileCheck2 size={18} />
-                        {isValidating ? '정합성 정밀 검증 중...' : '정합성 검증 시작 (Run SSOT)'}
+                        {isValidating
+                            ? `일괄 정합성 검증 중... (${aiProgress.current || 1}/${aiProgress.total || targetFiles.length})`
+                            : targetFiles.length > 1
+                                ? `총 ${targetFiles.length}개 산출물 일괄 정합성 검증 시작 (Batch SSOT)`
+                                : '정합성 검증 시작 (Run SSOT)'}
                     </button>
                 </div>
             </div>
 
             {/* 검증 결과 대시보드 */}
-            {validationResult && (
+            {batchResults.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* 다중 파일 일괄 검수 종합 요약 배너 (파일이 2개 이상일 때) */}
+                    {batchResults.length > 1 && (
+                        <div className="glass-panel" style={{
+                            padding: '16px 20px',
+                            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8))',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            borderRadius: '12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '12px'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <Layers size={22} color="var(--accent-blue)" />
+                                    <div>
+                                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                            다중 산출물 일괄 검수 종합 현황 (총 {batchResults.length}개 파일)
+                                        </h3>
+                                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                            정상 검수 완료: {batchResults.filter(r => r.status === 'DONE').length}건 / 실패: {batchResults.filter(r => r.status === 'ERROR').length}건
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={handleDownloadBatchExcelReport}
+                                    className="interactive"
+                                    style={{
+                                        padding: '9px 18px',
+                                        borderRadius: '8px',
+                                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                                        color: 'white',
+                                        border: 'none',
+                                        fontWeight: 700,
+                                        fontSize: '13px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                                    }}
+                                >
+                                    <Download size={16} /> 다중 산출물 전체 통합 엑셀 리포트(.xlsx) 다운로드
+                                </button>
+                            </div>
+
+                            {/* 파일 전환 탭 바 */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', flexShrink: 0 }}>
+                                    상세 조회 파일:
+                                </span>
+                                {batchResults.map((r, fIdx) => {
+                                    const isSel = selectedFileIdx === fIdx;
+                                    return (
+                                        <button
+                                            key={fIdx}
+                                            onClick={() => setSelectedFileIdx(fIdx)}
+                                            style={{
+                                                padding: '6px 12px',
+                                                borderRadius: '8px',
+                                                border: `1px solid ${isSel ? 'var(--accent-blue)' : 'var(--panel-border)'}`,
+                                                background: isSel ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.03)',
+                                                color: isSel ? '#60a5fa' : 'var(--text-secondary)',
+                                                fontSize: '12px',
+                                                fontWeight: isSel ? 700 : 500,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                flexShrink: 0,
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                        >
+                                            <FileText size={13} />
+                                            <span>{r.fileName}</span>
+                                            <span style={{
+                                                fontSize: '10.5px',
+                                                padding: '1px 5px',
+                                                borderRadius: '4px',
+                                                background: r.highCount > 0 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255,255,255,0.1)',
+                                                color: r.highCount > 0 ? '#fca5a5' : 'inherit',
+                                                fontWeight: 700
+                                            }}>
+                                                {r.totalCount}건
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                     {/* 상단 4대 핵심 지표 요약 카드 */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                         {/* 카드 1: 총 결함 건수 */}
@@ -1242,7 +1552,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 ))}
                             </div>
 
-                            {/* 우측 엑셀 다운로드 버튼 */}
+                            {/* 우측 엑셀 다운로드 버튼 (선택된 파일 개별 리포트) */}
                             <button
                                 onClick={handleDownloadExcelReport}
                                 className="btn-primary"
@@ -1258,7 +1568,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 }}
                             >
                                 <Download size={15} />
-                                통합 정합성 검수 리포트 (.xlsx) 다운로드
+                                {targetFiles.length > 1 ? `[${validationResult.fileName}] 검수 리포트 (.xlsx) 다운로드` : '통합 정합성 검수 리포트 (.xlsx) 다운로드'}
                             </button>
                         </div>
 

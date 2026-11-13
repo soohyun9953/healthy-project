@@ -1080,6 +1080,311 @@ export async function exportSSOTReportToExcel({
     saveAs(blob, downloadName);
 }
 
+/**
+ * 6-2. 다중 파일 일괄 검수 종합 엑셀 리포트 내보내기 (ExcelJS 활용)
+ */
+export async function exportBatchSSOTReportToExcel({
+    batchResults = [],
+    ssotData = {}
+}) {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = '건강한 프로젝트 AI 산출물 검수기 (SSOT Batch)';
+    workbook.created = new Date();
+
+    const { metadata = {}, requirements = [] } = ssotData;
+
+    const headerStyle = {
+        font: { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }, // Slate 800
+        alignment: { vertical: 'middle', horizontal: 'center' }
+    };
+
+    const borderStyle = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+    };
+
+    // ── 시트 1: 다중 산출물 검수 종합 요약 ──────────────────────────
+    const summarySheet = workbook.addWorksheet('다중산출물 검수 종합 요약', {
+        views: [{ showGridLines: true }]
+    });
+
+    summarySheet.columns = [
+        { width: 6 },   // No.
+        { width: 35 },  // 파일명
+        { width: 15 },  // 검수 상태
+        { width: 16 },  // RTM 매핑률
+        { width: 14 },  // 총 결함 수
+        { width: 14 },  // 치명(HIGH)
+        { width: 14 },  // 주의(MEDIUM)
+        { width: 14 }   // 권고(LOW)
+    ];
+
+    // 타이틀
+    summarySheet.mergeCells('A1:H1');
+    const titleCell = summarySheet.getCell('A1');
+    titleCell.value = `[SSOT] 다중 산출물 정합성·용어 일괄 검수 종합 리포트`;
+    titleCell.font = { name: '맑은 고딕', size: 16, bold: true, color: { argb: 'FF0F172A' } };
+    titleCell.alignment = { vertical: 'middle' };
+    summarySheet.getRow(1).height = 36;
+
+    // 프로젝트 메타정보 블록
+    summarySheet.mergeCells('A3:D3');
+    summarySheet.getCell('A3').value = `■ 사업명: ${metadata.projectName || '-'}`;
+    summarySheet.getCell('A3').font = { name: '맑은 고딕', size: 11, bold: true };
+
+    summarySheet.mergeCells('E3:H3');
+    summarySheet.getCell('E3').value = `■ 발주기관: ${metadata.clientAgency || '-'}`;
+    summarySheet.getCell('E3').font = { name: '맑은 고딕', size: 11, bold: true };
+
+    summarySheet.mergeCells('A4:D4');
+    summarySheet.getCell('A4').value = `■ 총사업비: ${metadata.budget || '-'} / 수행기간: ${metadata.period || '-'}`;
+    summarySheet.getCell('A4').font = { name: '맑은 고딕', size: 10, color: { argb: 'FF475569' } };
+
+    summarySheet.mergeCells('E4:H4');
+    const validCount = batchResults.filter(r => r.status === 'DONE').length;
+    summarySheet.getCell('E4').value = `■ 검수 일시: ${new Date().toLocaleString()} (총 ${batchResults.length}건 중 완료 ${validCount}건)`;
+    summarySheet.getCell('E4').font = { name: '맑은 고딕', size: 10, color: { argb: 'FF475569' } };
+
+    // 파일별 요약 테이블 헤더 (Row 6)
+    const tableHeaderRow = summarySheet.getRow(6);
+    tableHeaderRow.height = 28;
+    const headers = ['No.', '산출물 파일명', '검수 상태', 'RTM 매핑률', '총 결함 수', '치명 (HIGH)', '주의 (MEDIUM)', '경미 (LOW)'];
+    headers.forEach((h, idx) => {
+        const cell = tableHeaderRow.getCell(idx + 1);
+        cell.value = h;
+        cell.style = headerStyle;
+    });
+
+    let totalIssuesAll = 0;
+    let totalHighAll = 0;
+    let totalMediumAll = 0;
+    let totalLowAll = 0;
+
+    batchResults.forEach((res, idx) => {
+        const rowNum = 7 + idx;
+        const row = summarySheet.getRow(rowNum);
+        row.height = 26;
+
+        const allIssues = res.allIssues || [];
+        const highCount = res.highCount ?? allIssues.filter(i => i.severity === 'HIGH').length;
+        const medCount = res.mediumCount ?? allIssues.filter(i => i.severity === 'MEDIUM').length;
+        const lowCount = res.lowCount ?? allIssues.filter(i => i.severity === 'LOW').length;
+
+        totalIssuesAll += allIssues.length;
+        totalHighAll += highCount;
+        totalMediumAll += medCount;
+        totalLowAll += lowCount;
+
+        const rtmRateStr = res.stage1 ? `${res.stage1.rtmMappingRate || 0}% (${res.stage1.coveredReqCount || 0}/${res.stage1.totalMasterReqCount || requirements.length})` : '-';
+
+        row.getCell(1).value = idx + 1;
+        row.getCell(2).value = res.fileName || `파일 #${idx + 1}`;
+        row.getCell(3).value = res.status === 'DONE' ? '검수 완료' : (res.status === 'ERROR' ? `실패: ${res.errorMsg || '오류'}` : '대기');
+        row.getCell(4).value = rtmRateStr;
+        row.getCell(5).value = allIssues.length;
+        row.getCell(6).value = highCount;
+        row.getCell(7).value = medCount;
+        row.getCell(8).value = lowCount;
+
+        for (let c = 1; c <= 8; c++) {
+            row.getCell(c).border = borderStyle;
+            if (c === 1 || c === 3 || c === 4) {
+                row.getCell(c).alignment = { vertical: 'middle', horizontal: 'center' };
+            } else if (c >= 5) {
+                row.getCell(c).alignment = { vertical: 'middle', horizontal: 'right' };
+            } else {
+                row.getCell(c).alignment = { vertical: 'middle', horizontal: 'left' };
+            }
+        }
+
+        // HIGH 건수 강조
+        if (highCount > 0) {
+            row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+            row.getCell(6).font = { name: '맑은 고딕', color: { argb: 'FFDC2626' }, bold: true };
+        }
+    });
+
+    // 합계 Row
+    const sumRowNum = 7 + batchResults.length;
+    const sumRow = summarySheet.getRow(sumRowNum);
+    sumRow.height = 28;
+    sumRow.getCell(1).value = '';
+    sumRow.getCell(2).value = '총 합 계';
+    sumRow.getCell(2).font = { name: '맑은 고딕', bold: true };
+    sumRow.getCell(3).value = `${batchResults.length}개 파일`;
+    sumRow.getCell(4).value = '-';
+    sumRow.getCell(5).value = totalIssuesAll;
+    sumRow.getCell(6).value = totalHighAll;
+    sumRow.getCell(7).value = totalMediumAll;
+    sumRow.getCell(8).value = totalLowAll;
+
+    for (let c = 1; c <= 8; c++) {
+        const cell = sumRow.getCell(c);
+        cell.border = borderStyle;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        cell.font = { name: '맑은 고딕', bold: true };
+        if (c === 2 || c === 3 || c === 4) {
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        } else if (c >= 5) {
+            cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+    }
+
+    // ── 시트 2: 통합 상세 결함 목록 ──────────────────────────────
+    const issueSheet = workbook.addWorksheet('통합 상세 결함 목록', {
+        views: [{ showGridLines: true }]
+    });
+
+    issueSheet.columns = [
+        { header: 'No.', width: 8 },
+        { header: '산출물 파일명', width: 30 },
+        { header: '검증 단계', width: 20 },
+        { header: '분류', width: 16 },
+        { header: '오류 유형', width: 22 },
+        { header: '심각도', width: 12 },
+        { header: '위치', width: 12 },
+        { header: '원문 발췌', width: 45 },
+        { header: '수정 권고안', width: 32 },
+        { header: '판단 근거 및 상세 사유', width: 50 }
+    ];
+
+    const issueHead = issueSheet.getRow(1);
+    issueHead.height = 28;
+    for (let c = 1; c <= 10; c++) {
+        issueHead.getCell(c).style = headerStyle;
+    }
+
+    let globalIssueIdx = 1;
+    batchResults.forEach(res => {
+        const fileName = res.fileName || '산출물';
+        const issues = res.allIssues || [];
+
+        issues.forEach(issue => {
+            const row = issueSheet.addRow([
+                globalIssueIdx++,
+                fileName,
+                issue.stage || 'Stage 1',
+                issue.category || '-',
+                issue.errorType || '-',
+                issue.severity || 'MEDIUM',
+                issue.page ? `p.${issue.page}` : '-',
+                issue.originalText || issue.matchedTerm || '-',
+                issue.suggestedText || '-',
+                issue.reason || '-'
+            ]);
+            row.height = 28;
+            row.alignment = { vertical: 'middle', wrapText: true };
+
+            const sevCell = row.getCell(6);
+            if (issue.severity === 'HIGH') {
+                sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+                sevCell.font = { name: '맑은 고딕', color: { argb: 'FFB91C1C' }, bold: true };
+            } else if (issue.severity === 'MEDIUM') {
+                sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+                sevCell.font = { name: '맑은 고딕', color: { argb: 'FFB45309' }, bold: true };
+            } else {
+                sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+                sevCell.font = { name: '맑은 고딕', color: { argb: 'FF475569' } };
+            }
+
+            for (let col = 1; col <= 10; col++) {
+                row.getCell(col).border = borderStyle;
+                if (col === 1 || col === 3 || col === 4 || col === 6 || col === 7) {
+                    row.getCell(col).alignment = { vertical: 'middle', horizontal: 'center' };
+                }
+            }
+        });
+    });
+
+    // ── 시트 3: 통합 요구사항 추적 매트릭스(RTM) ───────────────────
+    const rtmSheet = workbook.addWorksheet('통합 요구사항 추적(RTM)', {
+        views: [{ showGridLines: true }]
+    });
+
+    rtmSheet.columns = [
+        { header: '순번', width: 8 },
+        { header: '요구사항 ID', width: 16 },
+        { header: '요구사항명', width: 40 },
+        { header: '필수 키워드', width: 30 },
+        { header: '출현 파일 수', width: 14 },
+        { header: '출현 파일 및 위치 목록', width: 50 },
+        { header: '종합 정합성 상태', width: 18 }
+    ];
+
+    const rtmHead = rtmSheet.getRow(1);
+    rtmHead.height = 28;
+    for (let c = 1; c <= 7; c++) {
+        rtmHead.getCell(c).style = headerStyle;
+    }
+
+    requirements.forEach((req, idx) => {
+        const cleanId = (req.id || '').trim().toUpperCase();
+
+        const appearingFiles = [];
+        let anyKeywordMissing = false;
+
+        batchResults.forEach(res => {
+            const matrix = res.stage1?.rtmMatrix || [];
+            const found = matrix.find(m => (m.id || '').toUpperCase() === cleanId);
+            if (found && found.isPresent) {
+                const pageStr = found.pages && found.pages.length > 0 ? `(p.${found.pages.join(',')})` : '';
+                appearingFiles.push(`${res.fileName}${pageStr}`);
+                if (found.status && found.status.includes('누락')) {
+                    anyKeywordMissing = true;
+                }
+            }
+        });
+
+        const isPresentOverall = appearingFiles.length > 0;
+        let overallStatus = '미출현 (전체 파일 누락)';
+        if (isPresentOverall) {
+            overallStatus = anyKeywordMissing ? '키워드 일부 누락' : '정상 반영';
+        }
+
+        const row = rtmSheet.addRow([
+            idx + 1,
+            req.id,
+            req.name,
+            req.keywords,
+            appearingFiles.length,
+            appearingFiles.length > 0 ? appearingFiles.join('; ') : '-',
+            overallStatus
+        ]);
+        row.height = 24;
+        row.alignment = { vertical: 'middle' };
+
+        const statusCell = row.getCell(7);
+        const countCell = row.getCell(5);
+
+        if (!isPresentOverall) {
+            statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+            statusCell.font = { name: '맑은 고딕', color: { argb: 'FFDC2626' }, bold: true };
+            countCell.font = { name: '맑은 고딕', color: { argb: 'FFDC2626' }, bold: true };
+        } else if (anyKeywordMissing) {
+            statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+            statusCell.font = { name: '맑은 고딕', color: { argb: 'FFD97706' }, bold: true };
+        } else {
+            statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
+            statusCell.font = { name: '맑은 고딕', color: { argb: 'FF16A34A' }, bold: true };
+        }
+
+        for (let col = 1; col <= 7; col++) {
+            row.getCell(col).border = borderStyle;
+            if (col === 1 || col === 2 || col === 5 || col === 7) {
+                row.getCell(col).alignment = { vertical: 'middle', horizontal: 'center' };
+            }
+        }
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const downloadName = `다중_산출물_통합_정합성_검수_리포트_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    saveAs(blob, downloadName);
+}
+
 // ── 7. RFP(제안요청서) 파싱 및 마스터 정보 추출 엔진 ────────────────
 /**
  * 룰 기반 결정론적 RFP 분석기 (초고속, 오프라인)
