@@ -1445,91 +1445,237 @@ export function extractRfpWithRules(text, tables = []) {
     }
 
     // 5) 요구사항 목록 추출 (표 우선 -> 텍스트 보완)
-    const requirements = [];
-    const seenReqIds = new Set();
+    // ID -> { id, name, keywords } 맵으로 관리하여 유효한 진짜 이름이 발견되면 즉시 업데이트!
+    const reqDict = new Map();
+
+    const isPlaceholderName = (name, id) => {
+        if (!name) return true;
+        const clean = String(name).trim();
+        if (clean.length < 3) return true;
+        if (clean === `요구사항 ${id}` || clean === `요구사항${id}` || clean === id) return true;
+        if (/^요구사항\s*[A-Z]{2,6}[-_]\d{2,4}$/i.test(clean)) return true;
+        if (/^[0-9\s.,\-_/]+$/.test(clean)) return true;
+        return false;
+    };
+
+    const addOrUpdateReq = (id, rawName, rawDesc) => {
+        if (!id) return;
+        const cleanId = String(id).trim().toUpperCase();
+        if (!/^[A-Z]{2,6}[-_]\d{2,4}$/.test(cleanId)) return;
+
+        let name = String(rawName || '').trim();
+        // 앞뒤 불필요한 번호, 특수기호, 줄바꿈 제거
+        name = name
+            .replace(/[\r\n\t]+/g, ' ')
+            .replace(/^(?:[0-9]+[.)]|[-•*□■▶◆○●])\s*/, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        let keywords = '';
+        if (rawDesc) {
+            const words = String(rawDesc)
+                .replace(/[\r\n\t]+/g, ' ')
+                .replace(/[()[\]{}.,~;:_!?"'`/\\|]/g, ' ')
+                .split(/\s+/)
+                .map(w => w.trim())
+                .filter(w => w.length >= 2 && !['체계', '구축', '방안', '수립', '및', '관한', '위한', '지원', '제공', '등', '에', '의', '수행', '대상', '내용', '정의', '요구사항'].includes(w));
+            keywords = Array.from(new Set(words)).slice(0, 5).join(', ');
+        }
+
+        const existing = reqDict.get(cleanId);
+        if (!existing) {
+            reqDict.set(cleanId, {
+                id: cleanId,
+                name: !isPlaceholderName(name, cleanId) ? name : `요구사항 ${cleanId}`,
+                keywords: keywords || (name && !isPlaceholderName(name, cleanId) ? name.split(/\s+/).filter(w => w.length >= 2).slice(0, 4).join(', ') : '')
+            });
+        } else {
+            // 기존 이름이 플레이스홀더인데 새 이름이 유효한 경우 교체!
+            if (isPlaceholderName(existing.name, cleanId) && !isPlaceholderName(name, cleanId)) {
+                existing.name = name;
+                if (!existing.keywords && keywords) existing.keywords = keywords;
+            } else if (!isPlaceholderName(name, cleanId) && name.length > existing.name.length && !existing.name.includes(name)) {
+                // 더 구체적인 이름이 발견되면 업데이트
+                existing.name = name;
+                if (keywords) existing.keywords = keywords;
+            } else if (!existing.keywords && keywords) {
+                existing.keywords = keywords;
+            }
+        }
+    };
 
     if (Array.isArray(tables)) {
         for (const tbl of tables) {
             const rows = tbl.rows || [];
-            if (rows.length < 2) continue;
+            if (rows.length < 1) continue;
 
-            const header = rows[0].map(c => (c || '').replace(/\s+/g, '').toLowerCase());
-            let idCol = header.findIndex(h => h.includes('id') || h.includes('번호') || h.includes('식별자') || h.includes('코드'));
-            let nameCol = header.findIndex(h => h.includes('명') || h.includes('요구사항명') || h.includes('명칭') || h.includes('제목'));
-            let descCol = header.findIndex(h => h.includes('내용') || h.includes('설명') || h.includes('정의') || h.includes('키워드'));
+            // ── [패턴 1: 양식형 Key-Value 표 (공공 RFP 세부 요구사항 정의서 표)] ──
+            // 한 표 안에 '요구사항 고유번호' 라벨 셀과 '요구사항명' 라벨 셀이 존재하는 경우
+            let kvId = '';
+            let kvName = '';
+            let kvDesc = '';
 
-            for (let r = 1; r < rows.length; r++) {
+            for (let r = 0; r < rows.length; r++) {
                 const row = rows[r];
-                let reqId = '';
-                let reqName = '';
-                let reqDesc = '';
+                for (let c = 0; c < row.length; c++) {
+                    const cell = (row[c] || '').replace(/\s+/g, '');
 
-                if (idCol >= 0 && row[idCol]) {
-                    const m = row[idCol].match(/[A-Z]{2,5}-\d{2,4}/i);
-                    if (m) reqId = m[0].toUpperCase();
-                }
+                    // ID 라벨 탐색
+                    if (cell.includes('요구사항고유번호') || cell.includes('요구사항번호') || cell.includes('요구사항id') || cell.includes('요구사항식별자')) {
+                        // 같은 행 다음 셀 탐색
+                        const nextCell = (row[c + 1] || '').trim();
+                        const idMatch = nextCell.match(/[A-Z]{2,6}[-_]\d{2,4}/i);
+                        if (idMatch) {
+                            kvId = idMatch[0].toUpperCase();
+                        } else if (rows[r + 1] && rows[r + 1][c]) {
+                            // 아래 행 셀 탐색
+                            const belowMatch = (rows[r + 1][c] || '').match(/[A-Z]{2,6}[-_]\d{2,4}/i);
+                            if (belowMatch) kvId = belowMatch[0].toUpperCase();
+                        }
+                    }
 
-                if (!reqId) {
-                    for (let c = 0; c < row.length; c++) {
-                        const m = (row[c] || '').match(/^[A-Z]{2,5}-\d{2,4}$/i);
-                        if (m) {
-                            reqId = m[0].toUpperCase();
-                            if (nameCol < 0 && row[c + 1]) reqName = row[c + 1];
-                            break;
+                    // 요구사항명 라벨 탐색
+                    if ((cell.includes('요구사항명') || cell.includes('과업명') || cell.includes('기능명')) && !cell.includes('내용') && !cell.includes('설명')) {
+                        const nextCell = (row[c + 1] || '').trim();
+                        if (nextCell && nextCell.length >= 3 && !nextCell.includes('고유번호')) {
+                            kvName = nextCell;
+                        } else if (rows[r + 1] && rows[r + 1][c]) {
+                            const belowCell = (rows[r + 1][c] || '').trim();
+                            if (belowCell && belowCell.length >= 3) kvName = belowCell;
+                        }
+                    }
+
+                    // 세부내용 라벨 탐색
+                    if (cell.includes('세부내용') || cell.includes('요구사항세부') || cell.includes('과업내용')) {
+                        const nextCell = (row[c + 1] || '').trim();
+                        if (nextCell && nextCell.length >= 5) {
+                            kvDesc = nextCell;
+                        } else if (rows[r + 1] && rows[r + 1][c]) {
+                            const belowCell = (rows[r + 1][c] || '').trim();
+                            if (belowCell && belowCell.length >= 5) kvDesc = belowCell;
                         }
                     }
                 }
+            }
 
-                if (reqId && !seenReqIds.has(reqId)) {
-                    if (!reqName && nameCol >= 0 && row[nameCol]) {
-                        reqName = row[nameCol].trim();
+            if (kvId && kvName) {
+                addOrUpdateReq(kvId, kvName, kvDesc);
+            }
+
+            // ── [패턴 2: 그리드형 요구사항 총괄/목록 테이블] ──
+            // 첫 1~3개 행 중에서 열 헤더 감지
+            let bestHeaderRow = 0;
+            let idCol = -1;
+            let nameCol = -1;
+            let descCol = -1;
+
+            for (let r = 0; r < Math.min(4, rows.length); r++) {
+                const headerRow = rows[r].map(c => (c || '').replace(/\s+/g, '').toLowerCase());
+                const curId = headerRow.findIndex(h => h.includes('고유번호') || h.includes('요구사항id') || h.includes('요구사항번호') || h === 'id' || h.includes('식별자') || (h.includes('번호') && !h.includes('전화') && !h.includes('순번')));
+                const curName = headerRow.findIndex(h => (h.includes('요구사항명') || h.includes('기능명') || h.includes('과업명') || h.includes('항목명') || h === '명칭' || h === '제목' || h === '과제명') && !h.includes('설명') && !h.includes('구분'));
+                const curDesc = headerRow.findIndex(h => h.includes('내용') || h.includes('설명') || h.includes('정의') || h.includes('키워드') || h.includes('개요'));
+
+                if (curId >= 0 || curName >= 0) {
+                    bestHeaderRow = r;
+                    idCol = curId;
+                    nameCol = curName;
+                    descCol = curDesc;
+                    break;
+                }
+            }
+
+            for (let r = bestHeaderRow + 1; r < rows.length; r++) {
+                const row = rows[r];
+                let rowReqId = '';
+                let rowReqName = '';
+                let rowReqDesc = '';
+
+                // 1) idCol에서 ID 추출 시도
+                if (idCol >= 0 && row[idCol]) {
+                    const m = row[idCol].match(/[A-Z]{2,6}[-_]\d{2,4}/i);
+                    if (m) rowReqId = m[0].toUpperCase();
+                }
+
+                // 2) 전체 셀에서 ID 탐색 (Fallback)
+                let idCellIdx = -1;
+                if (!rowReqId) {
+                    for (let c = 0; c < row.length; c++) {
+                        const m = (row[c] || '').match(/\b([A-Z]{2,6}[-_]\d{2,4})\b/i);
+                        if (m) {
+                            rowReqId = m[1].toUpperCase();
+                            idCellIdx = c;
+                            break;
+                        }
                     }
+                } else if (idCol >= 0) {
+                    idCellIdx = idCol;
+                }
+
+                if (rowReqId) {
+                    // nameCol에서 이름 추출 시도
+                    if (nameCol >= 0 && row[nameCol]) {
+                        const candidate = row[nameCol].trim();
+                        if (candidate.length >= 3 && !candidate.match(/^[A-Z]{2,6}[-_]\d{2,4}$/i)) {
+                            rowReqName = candidate;
+                        }
+                    }
+
+                    // nameCol로 못 찾았거나 없으면, ID 셀 다음 셀(c+1) 또는 2번째 다음 셀(c+2) 탐색
+                    if (!rowReqName && idCellIdx >= 0) {
+                        for (let offset = 1; offset <= 3; offset++) {
+                            const nextC = idCellIdx + offset;
+                            if (nextC < row.length && row[nextC]) {
+                                const candidate = row[nextC].trim();
+                                // 길이가 3 이상이고, 단순 숫자/특수문자/구분자가 아닌 한글 포함 문자열
+                                if (candidate.length >= 3 && /[가-힣]/.test(candidate) && !candidate.match(/^[A-Z]{2,6}[-_]\d{2,4}$/i) && !['공통', '기능', '보안', '품질', '운영', '필수'].includes(candidate)) {
+                                    rowReqName = candidate;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // 설명 추출
                     if (descCol >= 0 && row[descCol]) {
-                        reqDesc = row[descCol].trim();
+                        rowReqDesc = row[descCol].trim();
                     }
 
-                    let keywords = '';
-                    if (reqDesc) {
-                        const words = reqDesc
-                            .replace(/[()[\]{}.,~;:_!?"'`/\\|]/g, ' ')
-                            .split(/\s+/)
-                            .map(w => w.trim())
-                            .filter(w => w.length >= 2 && !['체계', '구축', '방안', '수립', '및', '관한', '위한', '지원', '제공', '등', '에', '의', '수행', '대상'].includes(w));
-                        keywords = Array.from(new Set(words)).slice(0, 5).join(', ');
-                    }
-
-                    seenReqIds.add(reqId);
-                    requirements.push({
-                        id: reqId,
-                        name: reqName || `요구사항 ${reqId}`,
-                        keywords: keywords || reqName.split(/\s+/).filter(w => w.length >= 2).slice(0, 4).join(', ')
-                    });
+                    addOrUpdateReq(rowReqId, rowReqName, rowReqDesc);
                 }
             }
         }
     }
 
-    // 텍스트 본문 정규식 보완
-    const lineRegex = /(?:^|[•\s*-]+)([A-Z]{2,5}-\d{2,4})\s*[:：|/–—\-]\s*([^\n\r]+)/g;
-    let lm;
-    while ((lm = lineRegex.exec(cleanText)) !== null) {
-        const id = lm[1].trim().toUpperCase();
-        if (!seenReqIds.has(id)) {
-            let fullStr = lm[2].trim();
-            let keywords = '';
-            const bracketMatch = fullStr.match(/\[([^\]]+)\]/);
-            if (bracketMatch) {
-                keywords = bracketMatch[1].trim();
-                fullStr = fullStr.replace(/\[[^\]]+\]/, '').trim();
+    // ── 3) 텍스트 본문 정규식 전수 탐색 및 보완 ──
+    // 공공기관 RFP의 다양한 표기 패턴 전수 수용
+    const regexPatterns = [
+        // 1. [CNR-001] 요구사항명 또는 [CNR-001] : 요구사항명
+        /\[([A-Z]{2,6}[-_]\d{2,4})\][ \t]*[:：\-–—./)\]]?[ \t]*([가-힣A-Za-z0-9][^\n\r]{2,80})/g,
+        // 2. 글머리표 + CNR-001 요구사항명
+        /(?:^|\n)[ \t]*(?:[□■▶◆○●*·-]|가\.|나\.|다\.|라\.|[0-9]+[.)])?[ \t]*([A-Z]{2,6}[-_]\d{2,4})[ \t]*[:：\-–—./)\]][ \t]*([가-힣A-Za-z0-9][^\n\r]{2,80})/g,
+        // 3. 콜론 없는 공백형: CNR-001 공공의료 정보화 환경 및 법·제도 분석
+        /(?:^|\n)[ \t]*(?:[□■▶◆○●*·-]|가\.|나\.|다\.|라\.|[0-9]+[.)])?[ \t]*([A-Z]{2,6}[-_]\d{2,4})[ \t]{1,4}([가-힣][^\n\r]{2,80})/g,
+        // 4. 요구사항ID : 요구사항명
+        /(?:요구사항\s*(?:ID|번호|고유번호)?[ \t]*[:：|][ \t]*)([A-Z]{2,6}[-_]\d{2,4})[ \t\n\r]*(?:요구사항명[ \t]*[:：|][ \t]*)([가-힣A-Za-z0-9][^\n\r]{2,80})/g
+    ];
+
+    for (const pat of regexPatterns) {
+        let m;
+        while ((m = pat.exec(cleanText)) !== null) {
+            const id = m[1].trim().toUpperCase();
+            let rawName = m[2].trim();
+            // 괄호 안의 부가설명이나 [필수] 태그 분리
+            let kw = '';
+            const bMatch = rawName.match(/\[([^\]]+)\]/);
+            if (bMatch) {
+                kw = bMatch[1].trim();
+                rawName = rawName.replace(/\[[^\]]+\]/, '').trim();
             }
-            seenReqIds.add(id);
-            requirements.push({
-                id,
-                name: fullStr,
-                keywords: keywords || fullStr.split(/\s+/).filter(w => w.length >= 2).slice(0, 4).join(', ')
-            });
+            addOrUpdateReq(id, rawName, kw);
         }
     }
+
+    const requirements = Array.from(reqDict.values());
 
     // 6) 표준 용어 추출 (RFP 내 빈출 주요 약어 및 공공 의료/행정 고유명사)
     const glossary = [];
@@ -1621,10 +1767,35 @@ export async function extractRfpWithAI({
 }) {
     onProgress({ percent: 20, message: 'RFP 핵심 요약 및 요구사항 표 데이터 선별 중...' });
 
-    const textSnippet = (text || '').slice(0, 15000);
+    const fullText = text || '';
+    // 앞부분 8,000자 (사업개요, 발주처, 예산, 기간 집중)
+    const introSnippet = fullText.slice(0, 8000);
 
-    const tableSnippets = (tables || []).slice(0, 6).map((t, idx) => {
-        const rowsStr = (t.rows || []).slice(0, 25).map(r => r.join(' | ')).join('\n');
+    // 요구사항 ID(예: CNR-001) 또는 '요구사항' 키워드가 밀집된 본문 단락 지능적 수집
+    const paragraphs = fullText.split(/\n{2,}/);
+    const reqParagraphs = [];
+    let reqChars = 0;
+
+    for (const p of paragraphs) {
+        if (/[A-Z]{2,6}[-_]\d{2,4}/.test(p) || (p.includes('요구사항') && (p.includes('기능') || p.includes('분석') || p.includes('체계') || p.includes('구축')))) {
+            reqParagraphs.push(p);
+            reqChars += p.length;
+            if (reqChars > 40000) break; // 최대 40,000자
+        }
+    }
+
+    const textSnippet = introSnippet + '\n\n... [중략: 요구사항 핵심 본문 발췌] ...\n\n' + reqParagraphs.join('\n\n');
+
+    // 표 데이터도 요구사항 ID 패턴을 포함한 표들을 최우선 선별 (최대 20개)
+    const relevantTables = (tables || []).filter(t => {
+        const str = JSON.stringify(t.rows || []);
+        return /[A-Z]{2,6}[-_]\d{2,4}/.test(str) || str.includes('요구사항') || str.includes('과업명') || str.includes('고유번호');
+    });
+
+    const tablesToUse = (relevantTables.length > 0 ? relevantTables : (tables || [])).slice(0, 20);
+
+    const tableSnippets = tablesToUse.map((t, idx) => {
+        const rowsStr = (t.rows || []).slice(0, 35).map(r => r.join(' | ')).join('\n');
         return `[표 #${idx + 1} (${t.source || '표'})]:\n${rowsStr}`;
     }).join('\n\n');
 
@@ -1643,7 +1814,8 @@ ${tableSnippets ? `[제안요청서 표 발췌]:\n${tableSnippets}\n` : ''}
    - period: 사업기간 (예: 계약체결일로부터 8개월간 (2026.04 ~ 2026.11))
    - budget: 총사업비/배정예산 (숫자 및 한글 표기, 부가세 포함 여부)
 2. requirements:
-   - RFP 내에 명시된 요구사항 고유번호(ID: 예 CNR-001, SFR-001, PMR-001 등), 요구사항명, 필수 핵심키워드(쉼표 구분)
+   - RFP 내에 명시된 모든 요구사항 고유번호(ID: 예 CNR-001, SFR-001, PMR-001 등), 실제 요구사항명(과업명), 필수 핵심키워드(쉼표 구분)
+   - ★ 주의: 요구사항명을 단순히 '요구사항 CNR-002'처럼 ID를 기재하지 마십시오. 반드시 제안요청서에 기재된 실제 기능명/과업명(예: '공공의료 정보화 환경 및 법·제도 분석')을 정확히 추출하십시오.
 3. glossary:
    - RFP에서 정의하거나 자주 등장하는 핵심 기관명, 시스템명, 행정용어, 약어, 기술용어 8~15개
    - category: '기관명' | '시스템명' | '행정용어' | '약어' | '기술용어'
@@ -1660,7 +1832,7 @@ ${tableSnippets ? `[제안요청서 표 발췌]:\n${tableSnippets}\n` : ''}
     "budget": "총사업비"
   },
   "requirements": [
-    { "id": "CNR-001", "name": "요구사항명", "keywords": "키워드1, 키워드2" }
+    { "id": "CNR-001", "name": "공공의료 정보화 환경 및 법·제도 분석", "keywords": "공공의료, 정보화, 법제도, 환경분석" }
   ],
   "glossary": [
     { "category": "기관명", "approved": "표준어", "forbidden": "오표기, 금지어", "note": "비고" }
@@ -1736,18 +1908,43 @@ export async function parseRfpContent({
             budget: aiResult.metadata?.budget || ruleResult.metadata.budget
         };
 
-        // 요구사항: AI 결과 우선, 룰 기반 요구사항 중 누락된 ID 보완
+        // 요구사항 병합: 플레이스홀더 여부 검사 후 실제 유효한 이름 우선 채택
+        const isPlaceholder = (name, id) => {
+            if (!name) return true;
+            const str = String(name).trim();
+            return str.length < 3 || str === `요구사항 ${id}` || str === id || /^요구사항\s*[A-Z]{2,6}[-_]\d{2,4}$/i.test(str);
+        };
+
         const reqMap = new Map();
-        (ruleResult.requirements || []).forEach(r => reqMap.set(r.id.toUpperCase(), r));
-        (aiResult.requirements || []).forEach(r => {
-            if (r.id) {
-                reqMap.set(r.id.toUpperCase(), {
-                    id: r.id.toUpperCase(),
-                    name: r.name || `요구사항 ${r.id}`,
-                    keywords: r.keywords || ''
+        // 1) 룰 기반 요구사항 먼저 세팅
+        (ruleResult.requirements || []).forEach(r => {
+            if (r.id) reqMap.set(r.id.toUpperCase(), r);
+        });
+
+        // 2) AI 요구사항으로 보강 (AI 이름이 유효하면 우선, AI가 플레이스홀더면 룰 결과 유지)
+        (aiResult.requirements || []).forEach(aiReq => {
+            if (!aiReq.id) return;
+            const key = aiReq.id.toUpperCase();
+            const existing = reqMap.get(key);
+
+            if (!existing) {
+                reqMap.set(key, {
+                    id: key,
+                    name: !isPlaceholder(aiReq.name, key) ? aiReq.name : `요구사항 ${key}`,
+                    keywords: aiReq.keywords || ''
                 });
+            } else {
+                // 기존(룰)이 플레이스홀더인데 AI가 유효한 이름을 가진 경우 AI로 교체
+                if (isPlaceholder(existing.name, key) && !isPlaceholder(aiReq.name, key)) {
+                    existing.name = aiReq.name;
+                }
+                // AI에 키워드가 더 많으면 키워드 보강
+                if (!existing.keywords && aiReq.keywords) {
+                    existing.keywords = aiReq.keywords;
+                }
             }
         });
+
         const mergedReqs = Array.from(reqMap.values());
 
         // 용어사전: AI 결과 + 룰 결과 병합
@@ -1782,7 +1979,8 @@ export async function parseRfpContent({
         return {
             ...ruleResult,
             source: 'RULES (AI 폴백)',
-            ruleReqCount: ruleResult.requirements.length
+            ruleReqCount: ruleResult.requirements.length,
+            ruleGlossaryCount: ruleResult.glossary.length
         };
     }
 }
