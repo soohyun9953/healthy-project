@@ -2101,6 +2101,35 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         💡 여러 개의 PPT 파일을 일괄 수정한 뒤, <strong>순서대로 결합하여 1개의 PPTX 파일로 통합 저장</strong>합니다. (미선택 시 기본 개별 ZIP 압축 파일로 다운로드됩니다.)
                     </div>
                 </div>
+
+                {/* ── 하단 일괄 편집 실행 버튼 ── */}
+                <div style={{ marginTop: '12px' }}>
+                    <button
+                        id="btn-batch-process-bottom"
+                        className="interactive"
+                        onClick={handleBatchProcess}
+                        disabled={batchPptFiles.length === 0 || isProcessingBatch || !hasAnyOptionSelected}
+                        style={{
+                            width: '100%',
+                            padding: '16px',
+                            background: (batchPptFiles.length === 0 || isProcessingBatch || !hasAnyOptionSelected) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #a855f7, #3b82f6)',
+                            color: (batchPptFiles.length === 0 || isProcessingBatch || !hasAnyOptionSelected) ? 'var(--text-muted)' : 'white',
+                            border: 'none',
+                            borderRadius: '12px',
+                            fontSize: '16px',
+                            fontWeight: 700,
+                            cursor: (batchPptFiles.length === 0 || isProcessingBatch || !hasAnyOptionSelected) ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+                            boxShadow: (batchPptFiles.length === 0 || isProcessingBatch || !hasAnyOptionSelected) ? 'none' : '0 4px 14px rgba(168, 85, 247, 0.35)'
+                        }}
+                    >
+                        {isProcessingBatch ? (
+                            <><Loader2 size={20} className="animate-spin" /> {processingStep || (mergeToOneFile && batchPptFiles.length > 1 ? '일괄 편집 및 하나의 PPT로 병합 중...' : '폴더에 순차적으로 적용 및 저장 중...')}</>
+                        ) : (
+                            <><Sparkles size={20} /> {mergeToOneFile && batchPptFiles.length > 1 ? '일괄 편집 및 하나의 PPT 파일로 병합 실행' : '저장할 폴더/위치 선택 및 일괄 편집 실행'}</>
+                        )}
+                    </button>
+                </div>
             </div>
         </div>
     );
