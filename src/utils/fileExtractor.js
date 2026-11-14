@@ -173,6 +173,133 @@ export async function extractTextFromExcel(file) {
     };
 }
 
+// ── PPTX 보조 유틸: 관계(rels)·슬라이드 번호 필드·장 구분 헤더 ─────────────────
+function parsePptxXml(str) {
+    return new DOMParser().parseFromString(str, 'text/xml');
+}
+
+function descendantsByLocalName(el, name) {
+    return Array.from(el.getElementsByTagNameNS('*', name));
+}
+
+// "ppt/slides/slide3.xml" + "../slideLayouts/slideLayout2.xml" → "ppt/slideLayouts/slideLayout2.xml"
+function resolvePartPath(basePath, target) {
+    if (target.startsWith('/')) return target.slice(1);
+    const parts = basePath.split('/').slice(0, -1);
+    target.split('/').forEach(seg => {
+        if (seg === '..') parts.pop();
+        else if (seg && seg !== '.') parts.push(seg);
+    });
+    return parts.join('/');
+}
+
+async function readPartRels(zip, partPath) {
+    const segs = partPath.split('/');
+    const file = segs.pop();
+    const relsPath = `${segs.join('/')}/_rels/${file}.rels`;
+    const rels = [];
+    if (!zip.files[relsPath]) return rels;
+    const doc = parsePptxXml(await zip.files[relsPath].async('string'));
+    descendantsByLocalName(doc, 'Relationship').forEach(r => {
+        if (r.getAttribute('TargetMode') === 'External') return;
+        rels.push({
+            id: r.getAttribute('Id'),
+            type: r.getAttribute('Type') || '',
+            target: resolvePartPath(partPath, r.getAttribute('Target') || '')
+        });
+    });
+    return rels;
+}
+
+// 프레젠테이션의 실제 슬라이드 순서(presentation.xml sldIdLst). 병합된 파일은 slideN.xml 번호가 표시 순서와 다르다.
+async function readPresentationOrder(zip, slideFiles) {
+    try {
+        if (!zip.files['ppt/presentation.xml']) return { order: slideFiles, firstSlideNum: 1 };
+        const doc = parsePptxXml(await zip.files['ppt/presentation.xml'].async('string'));
+        const pres = doc.documentElement;
+        const firstSlideNum = parseInt(pres.getAttribute('firstSlideNum') || '1', 10) || 1;
+        const rels = await readPartRels(zip, 'ppt/presentation.xml');
+        const relMap = new Map(rels.map(r => [r.id, r.target]));
+        const order = [];
+        descendantsByLocalName(doc, 'sldId').forEach(el => {
+            const rid = el.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id')
+                || el.getAttribute('r:id');
+            const target = relMap.get(rid);
+            if (target && zip.files[target] && !order.includes(target)) order.push(target);
+        });
+        // sldIdLst에 없는 고아 슬라이드는 뒤에 붙인다
+        slideFiles.forEach(f => { if (!order.includes(f)) order.push(f); });
+        return { order, firstSlideNum };
+    } catch (e) {
+        console.warn('PPTX 슬라이드 순서 분석 실패, 파일명 순서 사용:', e);
+        return { order: slideFiles, firstSlideNum: 1 };
+    }
+}
+
+function shapePlaceholder(sp) {
+    const ph = descendantsByLocalName(sp, 'ph')[0];
+    if (!ph) return null;
+    return { type: ph.getAttribute('type') || 'body', idx: ph.getAttribute('idx') || '' };
+}
+
+// 도형 안의 슬라이드 번호 필드(<a:fld type="slidenum">)와 그 앞뒤 고정 텍스트(예: "Ⅲ- ")를 찾는다
+function findSlideNumberTemplates(doc) {
+    const templates = [];
+    descendantsByLocalName(doc, 'sp').forEach(sp => {
+        const ph = shapePlaceholder(sp);
+        descendantsByLocalName(sp, 'p').forEach(p => {
+            if (p.namespaceURI && !p.namespaceURI.includes('drawingml')) return;
+            let prefix = '';
+            let suffix = '';
+            let found = false;
+            Array.from(p.childNodes || []).forEach(node => {
+                if (node.nodeType !== 1) return;
+                if (node.localName === 'fld' && (node.getAttribute('type') || '').toLowerCase() === 'slidenum' && !found) {
+                    found = true;
+                    return;
+                }
+                if (node.localName === 'r' || node.localName === 'fld') {
+                    const t = descendantsByLocalName(node, 't').map(x => x.textContent || '').join('');
+                    if (found) suffix += t; else prefix += t;
+                }
+            });
+            if (found) templates.push({ prefix, suffix, ph });
+        });
+    });
+    return templates;
+}
+
+// 장 구분 헤더(예: 우상단 "Ⅱ. 환경분석")
+const CHAPTER_HEADER_REGEX = /^([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])\s*[.．]\s*([가-힣A-Za-z][^.。]{1,24})$/;
+
+function nonPlaceholderParagraphs(doc) {
+    const out = [];
+    descendantsByLocalName(doc, 'sp').forEach(sp => {
+        if (shapePlaceholder(sp)) return;
+        descendantsByLocalName(sp, 'p').forEach(p => {
+            const t = descendantsByLocalName(p, 't').map(x => x.textContent || '').join('').trim();
+            if (t) out.push(t);
+        });
+    });
+    return out;
+}
+
+function findChapterHeader(paragraphs) {
+    const hits = [];
+    paragraphs.forEach(p => {
+        const m = p.trim().match(CHAPTER_HEADER_REGEX);
+        if (m) hits.push({ roman: m[1], title: m[2].trim() });
+    });
+    // 표지·목차처럼 여러 장이 나열된 슬라이드는 장 헤더로 보지 않는다
+    const distinct = new Set(hits.map(h => h.roman));
+    return distinct.size === 1 ? hits[0] : null;
+}
+
+function buildLabelFromTemplate(template, displayNum) {
+    const raw = `${template.prefix}${displayNum}${template.suffix}`.replace(/\s+/g, '').replace(/[–—]/g, '-');
+    return CHAPTER_PAGE_LABEL_REGEX.test(raw) ? raw : null;
+}
+
 // ── PPTX 텍스트 추출 (DOMParser & 엔티티 디코딩 100% 전수 수집) ─────────────────
 export async function extractTextFromPPTX(file) {
     const arrayBuffer = await file.arrayBuffer();
@@ -197,6 +324,9 @@ export async function extractTextFromPPTX(file) {
         return numA - numB;
     });
 
+    // 페이지 번호 = 프레젠테이션 표시 순서(파워포인트 화면의 슬라이드 번호)
+    const { order: orderedSlides, firstSlideNum } = await readPresentationOrder(zip, slideFiles);
+
     const decodeXml = (str) => {
         if (!str) return '';
         return str
@@ -210,15 +340,43 @@ export async function extractTextFromPPTX(file) {
 
     const pageMap = {};
     const pageLabelMap = {}; // { [slideNum]: "Ⅱ-15" 같은 슬라이드 하단 표시 페이지 라벨 | null }
+    const slideChapterMap = {}; // { [slideNum]: { roman: 'Ⅱ', title: '환경분석' } } 우상단 장 구분 헤더
 
-    for (const fileName of slideFiles) {
+    // 레이아웃/마스터는 수십~수백 장이 공유하므로 1회만 해석
+    const partCache = new Map();
+    const loadLayoutLike = async (partPath) => {
+        if (partCache.has(partPath)) return partCache.get(partPath);
+        let info = null;
+        try {
+            if (zip.files[partPath]) {
+                const doc = parsePptxXml(await zip.files[partPath].async('string'));
+                const rels = await readPartRels(zip, partPath);
+                const showMasterSp = doc.documentElement.getAttribute('showMasterSp') !== '0';
+                info = {
+                    templates: findSlideNumberTemplates(doc),
+                    chapter: findChapterHeader(nonPlaceholderParagraphs(doc)),
+                    parent: (rels.find(r => /slideMaster$/.test(r.type)) || {}).target || null,
+                    showMasterSp
+                };
+            }
+        } catch (e) {
+            console.warn(`PPTX '${partPath}' 해석 실패:`, e);
+        }
+        partCache.set(partPath, info);
+        return info;
+    };
+
+    for (let pos = 0; pos < orderedSlides.length; pos++) {
+        const fileName = orderedSlides[pos];
+        const slideNum = pos + 1;
+        const displayNum = firstSlideNum + pos;
         const content = await zip.files[fileName].async('string');
         const slideParagraphs = [];
+        let slideDoc = null;
 
         try {
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(content, 'text/xml');
-            const paragraphs = xmlDoc.getElementsByTagNameNS('*', 'p');
+            slideDoc = parsePptxXml(content);
+            const paragraphs = slideDoc.getElementsByTagNameNS('*', 'p');
 
             for (let i = 0; i < paragraphs.length; i++) {
                 const p = paragraphs[i];
@@ -233,6 +391,7 @@ export async function extractTextFromPPTX(file) {
                 }
             }
         } catch (_) {
+            slideDoc = null;
             // DOMParser 실패 시 Regex 폴백
             const paragraphRegex = /<a:p[^>]*>([\s\S]*?)<\/a:p>/g;
             let pMatch;
@@ -249,20 +408,75 @@ export async function extractTextFromPPTX(file) {
             }
         }
 
-        const slideNum = parseInt(fileName.match(/\d+/)[0], 10);
+        // 하단 페이지 라벨: ① 슬라이드의 번호 필드 → ② 레이아웃 → ③ 마스터("Ⅲ- <#>") → ④ 슬라이드에 직접 입력된 "Ⅱ- 4"
+        let label = null;
+        let chapter = null;
+        if (slideDoc) {
+            try {
+                const slideTemplates = findSlideNumberTemplates(slideDoc);
+                const slideHasSldNumPh = descendantsByLocalName(slideDoc, 'ph').some(ph => ph.getAttribute('type') === 'sldNum');
+                const slideRels = await readPartRels(zip, fileName);
+                const layoutPath = (slideRels.find(r => /slideLayout$/.test(r.type)) || {}).target;
+                const layout = layoutPath ? await loadLayoutLike(layoutPath) : null;
+                const master = layout && layout.parent ? await loadLayoutLike(layout.parent) : null;
+
+                const pick = (templates, allowPh) => {
+                    for (const t of templates) {
+                        if (t.ph && !allowPh) continue;
+                        const l = buildLabelFromTemplate(t, displayNum);
+                        if (l) return l;
+                    }
+                    return null;
+                };
+                label = pick(slideTemplates, true);
+                if (!label && layout) label = pick(layout.templates, false) || (slideHasSldNumPh ? pick(layout.templates.filter(t => t.ph?.type === 'sldNum'), true) : null);
+                if (!label && master && layout.showMasterSp) label = pick(master.templates, false);
+                if (!label && master && slideHasSldNumPh) label = pick(master.templates.filter(t => t.ph?.type === 'sldNum'), true);
+
+                chapter = findChapterHeader(slideParagraphs)
+                    || (layout && layout.chapter)
+                    || (master && layout.showMasterSp ? master.chapter : null);
+            } catch (e) {
+                console.warn(`PPTX 슬라이드 ${slideNum} 페이지 라벨 분석 실패:`, e);
+            }
+        }
+        if (!label) {
+            const staticLabel = extractChapterPageLabel(slideParagraphs);
+            // 숫자 접두 라벨("3-1")은 표 안 과제번호와 구별되지 않으므로 실제 슬라이드 번호와 일치할 때만 인정
+            if (staticLabel && (/^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]/.test(staticLabel) || staticLabel.endsWith(`-${displayNum}`))) {
+                label = staticLabel;
+            }
+        }
+        if (!chapter && !slideDoc) chapter = findChapterHeader(slideParagraphs);
+
+        if (chapter) slideChapterMap[slideNum] = chapter;
         if (slideParagraphs.length > 0) {
             pageMap[slideNum] = slideParagraphs;
             textBlocks.push(`[슬라이드 ${slideNum}]\n` + slideParagraphs.join('\n'));
-            const label = extractChapterPageLabel(slideParagraphs);
-            if (label) pageLabelMap[slideNum] = label;
         }
+        if (label) pageLabelMap[slideNum] = label;
+    }
+
+    // 하단 번호 필드가 전혀 없는 파일: 장 구분 헤더(Ⅱ. 환경분석)가 일관되면 "Ⅱ-슬라이드번호"로 보완
+    if (Object.keys(pageLabelMap).length === 0) {
+        const counts = new Map();
+        Object.values(slideChapterMap).forEach(c => counts.set(c.roman, (counts.get(c.roman) || 0) + 1));
+        const total = orderedSlides.length;
+        counts.forEach((cnt, roman) => {
+            if (cnt >= Math.max(2, total * 0.5)) {
+                Object.entries(slideChapterMap).forEach(([n, c]) => {
+                    if (c.roman === roman) pageLabelMap[n] = `${roman}-${firstSlideNum + parseInt(n, 10) - 1}`;
+                });
+            }
+        });
     }
 
     return {
         text: textBlocks.join('\n\n').trim(),
-        pages: slideFiles.length,
+        pages: orderedSlides.length,
         pageMap,
-        pageLabelMap
+        pageLabelMap,
+        slideChapterMap
     };
 }
 
@@ -506,6 +720,7 @@ export async function extractStructuredFileContent(file) {
         pages: res.pages || Object.keys(pageMap).length || 1,
         pageMap,
         pageLabelMap: res.pageLabelMap || {},
+        slideChapterMap: res.slideChapterMap || {},
         fileName: file.name,
         fileSize: file.size,
         ext
