@@ -531,7 +531,7 @@ export async function runStage1Validation(fileContent, tables, masterData, optio
     } = options;
 
     const { metadata, glossary, requirements } = masterData;
-    const { text, pageMap } = fileContent;
+    const { text, pageMap, pageLabelMap = {} } = fileContent;
 
     const issues = [];
     let issueSeq = 1;
@@ -620,6 +620,15 @@ export async function runStage1Validation(fileContent, tables, masterData, optio
     // 1단계: 마스터에 등록된 요구사항 ID의 문서 내 실제 출현 여부를 100% 정밀 대조
     const matchedIdsInDoc = new Set();
     const idLocations = {}; // { [id]: number[] pages }
+    const idLabelLocations = {}; // { [id]: string[] } 슬라이드 하단 표시 라벨(예: Ⅱ-15), 없으면 페이지 숫자
+    const addLocation = (id, pageNum) => {
+        const p = parseInt(pageNum, 10) || 1;
+        if (!idLocations[id]) idLocations[id] = [];
+        if (idLocations[id].includes(p)) return;
+        idLocations[id].push(p);
+        if (!idLabelLocations[id]) idLabelLocations[id] = [];
+        idLabelLocations[id].push(pageLabelMap[p] || String(p));
+    };
 
     requirements.forEach(req => {
         const cleanId = (req.id || '').trim();
@@ -630,11 +639,7 @@ export async function runStage1Validation(fileContent, tables, masterData, optio
             const pageText = (Array.isArray(lines) ? lines.join(' ') : String(lines)).toUpperCase();
             if (pageText.includes(upperId)) {
                 matchedIdsInDoc.add(cleanId);
-                if (!idLocations[cleanId]) idLocations[cleanId] = [];
-                const p = parseInt(pageNum, 10) || 1;
-                if (!idLocations[cleanId].includes(p)) {
-                    idLocations[cleanId].push(p);
-                }
+                addLocation(cleanId, pageNum);
             }
         });
     });
@@ -649,11 +654,7 @@ export async function runStage1Validation(fileContent, tables, masterData, optio
             // 공통 표준 기술 약어(ISO-9001, UTF-8 등) 제외
             if (!['ISO-', 'UTF-', 'RFC-', 'IPV4-', 'IPV6-'].some(prefix => detectedId.startsWith(prefix))) {
                 matchedIdsInDoc.add(detectedId);
-                if (!idLocations[detectedId]) idLocations[detectedId] = [];
-                const p = parseInt(pageNum, 10) || 1;
-                if (!idLocations[detectedId].includes(p)) {
-                    idLocations[detectedId].push(p);
-                }
+                addLocation(detectedId, pageNum);
             }
         }
     });
@@ -672,6 +673,7 @@ export async function runStage1Validation(fileContent, tables, masterData, optio
         const cleanId = (req.id || '').trim();
         const isPresent = matchedIdsInDoc.has(cleanId) || matchedIdsInDoc.has(cleanId.toUpperCase());
         const pages = idLocations[cleanId] || idLocations[cleanId.toUpperCase()] || [];
+        const pageLabels = idLabelLocations[cleanId] || idLabelLocations[cleanId.toUpperCase()] || [];
 
         // 필수 키워드 검사
         let keywordsMatched = true;
@@ -694,6 +696,7 @@ export async function runStage1Validation(fileContent, tables, masterData, optio
             keywords: req.keywords || '',
             isPresent,
             pages,
+            pageLabels,
             status,
             missingKeywords
         });
@@ -1195,7 +1198,7 @@ export async function exportSSOTReportToExcel({
             r.name,
             r.keywords,
             r.isPresent ? '출현 (O)' : '누락 (X)',
-            r.pages.length > 0 ? `p.${r.pages.join(', ')}` : '-',
+            r.pages.length > 0 ? formatPageLabelRanges(r.pageLabels, r.pages) : '-',
             r.status
         ]);
         row.height = 24;
@@ -1310,6 +1313,7 @@ export function aggregateBatchSSOT(batchResults = [], ssotData = {}) {
             ...req,
             appearingFiles: [],
             pagesByFile: {},
+            pageLabelsByFile: {},
             anyKeywordMissing: false
         });
     });
@@ -1322,6 +1326,7 @@ export function aggregateBatchSSOT(batchResults = [], ssotData = {}) {
                 if (item) {
                     item.appearingFiles.push(res.fileName);
                     item.pagesByFile[res.fileName] = m.pages || [];
+                    item.pageLabelsByFile[res.fileName] = m.pageLabels || [];
                     if (m.status && m.status.includes('누락')) {
                         item.anyKeywordMissing = true;
                     }
@@ -1741,7 +1746,8 @@ export async function exportBatchSSOTReportToExcel({
     agg.projectRtmMatrix.forEach((r, idx) => {
         const fileLocs = r.appearingFiles.map(fn => {
             const pages = r.pagesByFile[fn] || [];
-            return pages.length > 0 ? `${fn}(p.${pages.join(',')})` : fn;
+            const labels = (r.pageLabelsByFile || {})[fn] || [];
+            return pages.length > 0 ? `${fn}(${formatPageLabelRanges(labels, pages)})` : fn;
         });
 
         const row = rtmSheet.addRow([
@@ -1995,15 +2001,11 @@ export const OFFICIAL_DOCUMENT_CHECKLIST_ITEMS = [
     { seq: 34, docName: '보안계획서 및 관련 문서', status: '미작성', fileName: '', note: '보안계획', keywords: ['보안계획', '정보보호', '보안서약서'] }
 ];
 
-/**
- * 페이지 배열을 '7~58' 또는 'p.12, 15~18' 형식으로 스마트 축약
- */
-export function formatPageRanges(pages = []) {
-    if (!pages || pages.length === 0) return '-';
-    const nums = Array.from(new Set(pages.map(p => parseInt(p, 10)).filter(n => !isNaN(n)))).sort((a, b) => a - b);
-    if (nums.length === 0) return '전 페이지';
+// 정렬된 숫자 배열을 ['7~9', '12'] 형태의 구간 목록으로 축약
+function compressNumericRanges(nums) {
+    if (nums.length === 0) return [];
     if (nums.length >= 10 && (nums[nums.length - 1] - nums[0] + 1) === nums.length) {
-        return `${nums[0]}~${nums[nums.length - 1]}`;
+        return [`${nums[0]}~${nums[nums.length - 1]}`];
     }
     const ranges = [];
     let start = nums[0];
@@ -2019,7 +2021,192 @@ export function formatPageRanges(pages = []) {
         }
     }
     ranges.push(start === prev ? `${start}` : `${start}~${prev}`);
-    return ranges.join(', ');
+    return ranges;
+}
+
+/**
+ * 페이지 배열을 '7~58' 또는 '12, 15~18' 형식으로 스마트 축약
+ */
+export function formatPageRanges(pages = []) {
+    if (!pages || pages.length === 0) return '-';
+    const nums = Array.from(new Set(pages.map(p => parseInt(p, 10)).filter(n => !isNaN(n)))).sort((a, b) => a - b);
+    if (nums.length === 0) return '전 페이지';
+    return compressNumericRanges(nums).join(', ');
+}
+
+/**
+ * 슬라이드 하단 표시 라벨("장번호-슬라이드번호", 예: Ⅱ-15)을 장별로 묶어 'Ⅱ-7~9, Ⅱ-12, Ⅲ-5' 형식으로 축약.
+ * 라벨이 하나도 없으면(PPTX 외 문서 등) 숫자 페이지로 폴백한다.
+ */
+export function formatPageLabelRanges(labels = [], plainPages = []) {
+    const labelList = (labels || []).filter(Boolean);
+    if (labelList.length === 0) return formatPageRanges(plainPages);
+
+    const groups = new Map(); // 장번호 -> Set<슬라이드번호> (등장 순서 유지)
+    const unlabeledNums = new Set();
+    labelList.forEach(label => {
+        const m = String(label).match(/^(.+?)-(\d+)$/);
+        if (m) {
+            if (!groups.has(m[1])) groups.set(m[1], new Set());
+            groups.get(m[1]).add(parseInt(m[2], 10));
+        } else {
+            const n = parseInt(label, 10);
+            if (!isNaN(n)) unlabeledNums.add(n);
+        }
+    });
+
+    const parts = [];
+    groups.forEach((numSet, prefix) => {
+        const nums = Array.from(numSet).sort((a, b) => a - b);
+        compressNumericRanges(nums).forEach(range => parts.push(`${prefix}-${range}`));
+    });
+    if (unlabeledNums.size > 0) {
+        parts.push(...compressNumericRanges(Array.from(unlabeledNums).sort((a, b) => a - b)));
+    }
+    return parts.length > 0 ? parts.join(', ') : formatPageRanges(plainPages);
+}
+
+const ROMAN_NUMERAL_VALUES = { 'Ⅰ': 1, 'Ⅱ': 2, 'Ⅲ': 3, 'Ⅳ': 4, 'Ⅴ': 5, 'Ⅵ': 6, 'Ⅶ': 7, 'Ⅷ': 8, 'Ⅸ': 9, 'Ⅹ': 10 };
+const ASCII_ROMAN_VALUES = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10 };
+const NUM_TO_ROMAN = Object.fromEntries(Object.entries(ROMAN_NUMERAL_VALUES).map(([k, v]) => [v, k]));
+
+// 파일명에서 장 번호 추출 (예: "..._Ⅱ.환경분석.pptx" → 2, "..._III.현황분석.pptx" → 3)
+function detectChapterFromFileName(fileName = '') {
+    const uni = fileName.match(/([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])\s*[.．]/);
+    if (uni) return ROMAN_NUMERAL_VALUES[uni[1]];
+    const ascii = fileName.match(/(?:^|[_\s\-(])(VIII|VII|VI|IV|IX|III|II|I|V|X)\s*[.．]/);
+    if (ascii) return ASCII_ROMAN_VALUES[ascii[1]];
+    return null;
+}
+
+// 비고(작성근거)의 목차 코드 파싱 (예: "Ⅱ.1 ~ Ⅱ.6" → Ⅱ장 1~6, "Ⅳ.6, Ⅳ.10" → Ⅳ장 6, 10)
+function parseTocRefs(note = '') {
+    const re = /([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])\.(\d+)/g;
+    const tokens = [];
+    let m;
+    while ((m = re.exec(note)) !== null) {
+        tokens.push({ chapter: ROMAN_NUMERAL_VALUES[m[1]], num: parseInt(m[2], 10), start: m.index, end: re.lastIndex });
+    }
+    const refs = [];
+    tokens.forEach((t, i) => {
+        const prev = tokens[i - 1];
+        if (prev && prev.chapter === t.chapter && note.slice(prev.end, t.start).includes('~')) {
+            for (let n = prev.num + 1; n <= t.num; n++) refs.push({ chapter: t.chapter, num: n });
+        } else {
+            refs.push({ chapter: t.chapter, num: t.num });
+        }
+    });
+    return refs;
+}
+
+// 슬라이드 하단 라벨(Ⅱ-15, 3-15)에서 가장 많이 쓰인 장 번호 추출
+function detectChapterFromPageLabels(pageLabelMap = {}) {
+    const counts = new Map();
+    Object.values(pageLabelMap).forEach(label => {
+        const prefix = String(label).split('-')[0];
+        const value = ROMAN_NUMERAL_VALUES[prefix] || (/^\d{1,2}$/.test(prefix) ? parseInt(prefix, 10) : null);
+        if (value) counts.set(value, (counts.get(value) || 0) + 1);
+    });
+    let best = null;
+    counts.forEach((cnt, value) => { if (!best || cnt > best.cnt) best = { value, cnt }; });
+    return best ? best.value : null;
+}
+
+// 앞쪽 슬라이드(목차/CONTENTS 슬라이드 우선)에서 목차 항목 추출.
+// 숫자 목차("3. 법·제도 분석", "Ⅱ.3 법·제도 분석")와 장 목차("Ⅱ. 환경분석")를 분리 보관해,
+// 매 슬라이드 상단의 장 구분 헤더가 같은 번호의 숫자 목차를 가리지 않게 한다.
+function extractTocEntries(pageMap = {}) {
+    const slideNums = Object.keys(pageMap).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b).slice(0, 12);
+    const isTocMarker = p => /목\s*차|CONTENTS|INDEX/i.test(p);
+    const tocSlides = slideNums.filter(n => (pageMap[n] || []).some(isTocMarker));
+    const scanSlides = tocSlides.length > 0 ? tocSlides : slideNums;
+
+    const numeric = new Map();
+    const roman = new Map();
+    const addNumeric = (num, rawTitle) => {
+        const title = rawTitle.trim();
+        if (title.length >= 2 && title.length <= 40 && !numeric.has(num)) numeric.set(num, title);
+    };
+
+    scanSlides.forEach(n => {
+        const ps = pageMap[n] || [];
+        ps.forEach((p, i) => {
+            let m = p.match(/^\s*0*([1-9][0-9]?)\.\s+(\D.*)$/);
+            if (m) { addNumeric(parseInt(m[1], 10), m[2]); return; }
+            m = p.match(/^\s*[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]\s*\.\s*([1-9][0-9]?)\.?\s+(\D.*)$/);
+            if (m) { addNumeric(parseInt(m[1], 10), m[2]); return; }
+            m = p.match(/^\s*([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])\s*[.．]\s*(\D.*)$/);
+            if (m) {
+                const num = ROMAN_NUMERAL_VALUES[m[1]];
+                const title = m[2].trim();
+                if (title.length >= 2 && title.length <= 40 && !roman.has(num)) roman.set(num, `${m[1]}. ${title}`);
+                return;
+            }
+            // 번호 토큰과 제목이 별도 문단으로 나뉜 목차 (예: "1" / "환경분석 개요")
+            if (/^0?[1-9]$/.test(p.trim())) {
+                const next = (ps[i + 1] || '').trim();
+                if (next && !/^\d+$/.test(next) && !isTocMarker(next) && !/CHAPTER/i.test(next)) {
+                    addNumeric(parseInt(p, 10), next);
+                }
+            }
+        });
+    });
+
+    const toList = map => Array.from(map.entries()).sort((a, b) => a[0] - b[0]).map(([num, title]) => ({ num, title }));
+    return { numericToc: toList(numeric), romanToc: toList(roman) };
+}
+
+// 검수 대상 PPTX별 장 번호와 목차 색인
+async function buildDeliverableTocIndex(batchResults = []) {
+    const index = [];
+    for (const res of batchResults) {
+        if (!res.file || getFileExtension(res.fileName || '') !== 'pptx') continue;
+        let content;
+        try {
+            content = await extractStructuredFileContent(res.file);
+        } catch (e) {
+            console.warn(`[산출물현황] '${res.fileName}' 목차 분석 실패:`, e);
+            continue;
+        }
+        const { numericToc, romanToc } = extractTocEntries(content.pageMap);
+        const chapter = detectChapterFromFileName(res.fileName)
+            ?? detectChapterFromPageLabels(content.pageLabelMap)
+            ?? (romanToc.length === 1 ? romanToc[0].num : null);
+        index.push({ fileName: res.fileName, chapter, numericToc, romanToc });
+    }
+    return index;
+}
+
+// 목차 코드로 산출물이 담긴 파일과 해당 목차 제목을 찾는다
+function resolveDocByTocRefs(refs, tocIndex) {
+    const fileNames = [];
+    const tocLines = [];
+    const byChapter = new Map();
+    refs.forEach(r => {
+        if (!byChapter.has(r.chapter)) byChapter.set(r.chapter, []);
+        byChapter.get(r.chapter).push(r.num);
+    });
+
+    byChapter.forEach((nums, chapter) => {
+        const roman = NUM_TO_ROMAN[chapter] || String(chapter);
+        const chapterFile = tocIndex.find(x => x.chapter === chapter);
+        if (chapterFile) {
+            if (!fileNames.includes(chapterFile.fileName)) fileNames.push(chapterFile.fileName);
+            nums.forEach(n => {
+                const t = chapterFile.numericToc.find(item => item.num === n);
+                if (t) tocLines.push(`${roman}.${n} ${t.title}`);
+            });
+            return;
+        }
+        // 전 장이 한 파일에 담긴 종합보고서: 장 단위 목차 제목으로 표기
+        const combined = tocIndex.find(x => x.romanToc.some(t => t.num === chapter));
+        if (combined) {
+            if (!fileNames.includes(combined.fileName)) fileNames.push(combined.fileName);
+            tocLines.push(combined.romanToc.find(t => t.num === chapter).title);
+        }
+    });
+
+    return { fileNames, tocLines };
 }
 
 /**
@@ -2109,6 +2296,7 @@ export async function exportOfficialRtmToExcel({
                 const reqId = (req.id || '').trim().toUpperCase();
                 const matchedFiles = [];
                 const pageCollector = [];
+                const labelCollector = [];
 
                 batchResults.forEach(res => {
                     const rtmMatrix = res.stage1?.rtmMatrix || [];
@@ -2118,13 +2306,16 @@ export async function exportOfficialRtmToExcel({
                         if (found.pages && found.pages.length > 0) {
                             pageCollector.push(...found.pages);
                         }
+                        if (found.pageLabels && found.pageLabels.length > 0) {
+                            labelCollector.push(...found.pageLabels);
+                        }
                     }
                 });
 
                 const isPresent = matchedFiles.length > 0;
                 let pageStr = '-';
                 if (isPresent) {
-                    pageStr = pageCollector.length > 0 ? formatPageRanges(pageCollector) : '전 페이지';
+                    pageStr = pageCollector.length > 0 ? formatPageLabelRanges(labelCollector, pageCollector) : '전 페이지';
                 }
 
                 return {
@@ -2192,13 +2383,14 @@ export async function exportOfficialRtmToExcel({
             { width: 8 },   // B: 구분
             { width: 38 },  // C: 서류
             { width: 14 },  // D: 현황
-            { width: 55 },  // E: 파일명
-            { width: 20 }   // F: 비고(작성근거)
+            { width: 50 },  // E: 파일명
+            { width: 45 },  // F: 주요 목차
+            { width: 20 }   // G: 비고(작성근거)
         ];
 
-        // 상단 작성자/일자 정보 (F5)
-        docSheet.mergeCells('E5:F5');
-        const docAuthorCell = docSheet.getCell('E5');
+        // 상단 작성자/일자 정보 (G5)
+        docSheet.mergeCells('F5:G5');
+        const docAuthorCell = docSheet.getCell('F5');
         docAuthorCell.value = `${companyName}\n${issueDate}`;
         docAuthorCell.font = { name: '맑은 고딕', size: 10, bold: true };
         docAuthorCell.alignment = { vertical: 'middle', horizontal: 'right', wrapText: true };
@@ -2213,7 +2405,8 @@ export async function exportOfficialRtmToExcel({
             { col: 3, title: '서류' },
             { col: 4, title: '현황' },
             { col: 5, title: '파일명' },
-            { col: 6, title: '비고(작성근거)' }
+            { col: 6, title: '주요 목차' },
+            { col: 7, title: '비고(작성근거)' }
         ];
 
         docHeaders.forEach(h => {
@@ -2225,38 +2418,46 @@ export async function exportOfficialRtmToExcel({
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
         });
 
-        // 실제 업로드된 검수 산출물과 RFP 요구서류 스마트 매칭
+        // 실제 업로드된 검수 산출물과 RFP 요구서류 매칭
+        // 1순위: 비고의 목차 코드(Ⅱ.3 등) ↔ 파일의 장 번호 + 목차 슬라이드 항목
+        // 2순위: 파일명 키워드 매칭 (목차 코드가 없거나 장 파일을 찾지 못한 경우)
+        const tocIndex = batchResults.length > 0 ? await buildDeliverableTocIndex(batchResults) : [];
+
         const docItemsToRender = OFFICIAL_DOCUMENT_CHECKLIST_ITEMS.map(item => {
-            let matchedFileName = '';
-            let isMatched = false;
+            let fileNames = [];
+            let tocLines = [];
 
-            if (batchResults && batchResults.length > 0) {
-                // 키워드 정밀 매칭
-                const targetKeywords = (item.keywords || []).map(k => k.toLowerCase().replace(/[\s·\-_]/g, ''));
-                const docNameKey = item.docName.toLowerCase().replace(/[\s·\-_]/g, '');
+            if (batchResults.length > 0) {
+                const refs = parseTocRefs(item.note);
+                if (refs.length > 0) {
+                    ({ fileNames, tocLines } = resolveDocByTocRefs(refs, tocIndex));
+                }
 
-                const matchedFile = batchResults.find(b => {
-                    const fName = (b.fileName || '').toLowerCase().replace(/[\s·\-_]/g, '');
-                    if (fName.includes(docNameKey)) return true;
-                    return targetKeywords.some(k => k.length >= 2 && fName.includes(k));
-                });
-
-                if (matchedFile) {
-                    matchedFileName = matchedFile.fileName;
-                    isMatched = true;
+                if (fileNames.length === 0) {
+                    const targetKeywords = (item.keywords || []).map(k => k.toLowerCase().replace(/[\s·\-_]/g, ''));
+                    const docNameKey = item.docName.toLowerCase().replace(/[\s·\-_]/g, '');
+                    const matchedFile = batchResults.find(b => {
+                        const fName = (b.fileName || '').toLowerCase().replace(/[\s·\-_]/g, '');
+                        if (fName.includes(docNameKey)) return true;
+                        return targetKeywords.some(k => k.length >= 2 && fName.includes(k));
+                    });
+                    if (matchedFile) fileNames = [matchedFile.fileName];
                 }
             }
 
+            const isMatched = fileNames.length > 0;
             return {
                 ...item,
                 status: isMatched ? '작성완료' : '미작성',
-                fileName: isMatched ? matchedFileName : '-'
+                fileName: isMatched ? fileNames.join('\n') : '-',
+                tocSummary: tocLines.length > 0 ? tocLines.join('\n') : '-'
             };
         });
 
         docItemsToRender.forEach((item, idx) => {
             const row = docSheet.getRow(8 + idx);
-            row.height = item.fileName && item.fileName.includes('\n') ? 36 : 24;
+            const lineCount = Math.max(item.fileName.split('\n').length, item.tocSummary.split('\n').length);
+            row.height = Math.max(24, lineCount * 15);
 
             // B열: 구분
             const bCell = row.getCell(2);
@@ -2286,12 +2487,19 @@ export async function exportOfficialRtmToExcel({
             eCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
             eCell.border = borderThin;
 
-            // F열: 비고
+            // F열: 주요 목차
             const fCell = row.getCell(6);
-            fCell.value = item.note || '';
+            fCell.value = item.tocSummary;
             fCell.font = { name: '맑은 고딕', size: 9.5 };
-            fCell.alignment = { vertical: 'middle', horizontal: 'left' };
+            fCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
             fCell.border = borderThin;
+
+            // G열: 비고
+            const gCell = row.getCell(7);
+            gCell.value = item.note || '';
+            gCell.font = { name: '맑은 고딕', size: 9.5 };
+            gCell.alignment = { vertical: 'middle', horizontal: 'left' };
+            gCell.border = borderThin;
         });
     }
 

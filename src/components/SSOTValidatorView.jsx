@@ -2899,9 +2899,9 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                         <div style={{ background: 'rgba(0,0,0,0.25)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>엑셀 시트 구성:</span>
                             <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <div>• <strong>시트 1 [요구사항추적표]:</strong> 요구사항번호, 요구사항명칭, 충족여부, 관련 파일, 해당 페이지(예: 7~58, 전 페이지)</div>
+                                <div>• <strong>시트 1 [요구사항추적표]:</strong> 요구사항번호, 요구사항명칭, 충족여부, 관련 파일, 해당 페이지(슬라이드 하단 표기 기준, 예: Ⅱ-7~58, 전 페이지)</div>
                                 {includeDocChecklist && (
-                                    <div style={{ color: '#93c5fd' }}>• <strong>시트 2 [RFP상 산출물]:</strong> 구분, 서류(환경분석서, 현황분석서 등 34종), 현황, 파일명, 비고(작성근거)</div>
+                                    <div style={{ color: '#93c5fd' }}>• <strong>시트 2 [RFP상 산출물]:</strong> 구분, 서류(환경분석서, 현황분석서 등 34종), 현황, 파일명, 주요 목차, 비고(작성근거)</div>
                                 )}
                             </div>
                         </div>

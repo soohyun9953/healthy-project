@@ -24,6 +24,20 @@ export const SUPPORTED_EXTENSIONS = {
 
 export const ALL_ACCEPT = '.txt,.md,.markdown,.csv,.json,.html,.xml,.pdf,.xlsx,.xls,.doc,.docx,.hwp,.hwpx,.ppt,.pptx';
 
+// PPT 슬라이드 하단에 표시되는 "장번호-슬라이드번호"(예: Ⅱ-15, 3-15) 페이지 라벨 패턴.
+// 공공 ISP/ISMP 표준 PPT 양식의 하단 페이지 번호 영역은 좁고 짧은 텍스트이므로,
+// 문단 전체가 이 형식과 정확히 일치할 때만 라벨로 인식해 오탐을 방지한다.
+const CHAPTER_PAGE_LABEL_REGEX = /^([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]{1,3}|[0-9]{1,2})\s*[-–—]\s*(\d{1,4})$/;
+
+function extractChapterPageLabel(paragraphs) {
+    for (const p of paragraphs) {
+        if (p.length <= 10 && CHAPTER_PAGE_LABEL_REGEX.test(p)) {
+            return p.replace(/\s+/g, '').replace(/[–—]/g, '-');
+        }
+    }
+    return null;
+}
+
 /** 확장자 → 파일 타입 분류 */
 export function classifyFile(ext) {
     for (const [type, exts] of Object.entries(SUPPORTED_EXTENSIONS)) {
@@ -195,6 +209,7 @@ export async function extractTextFromPPTX(file) {
     };
 
     const pageMap = {};
+    const pageLabelMap = {}; // { [slideNum]: "Ⅱ-15" 같은 슬라이드 하단 표시 페이지 라벨 | null }
 
     for (const fileName of slideFiles) {
         const content = await zip.files[fileName].async('string');
@@ -238,13 +253,16 @@ export async function extractTextFromPPTX(file) {
         if (slideParagraphs.length > 0) {
             pageMap[slideNum] = slideParagraphs;
             textBlocks.push(`[슬라이드 ${slideNum}]\n` + slideParagraphs.join('\n'));
+            const label = extractChapterPageLabel(slideParagraphs);
+            if (label) pageLabelMap[slideNum] = label;
         }
     }
-    
+
     return {
         text: textBlocks.join('\n\n').trim(),
         pages: slideFiles.length,
-        pageMap
+        pageMap,
+        pageLabelMap
     };
 }
 
@@ -487,6 +505,7 @@ export async function extractStructuredFileContent(file) {
         text: res.text || '',
         pages: res.pages || Object.keys(pageMap).length || 1,
         pageMap,
+        pageLabelMap: res.pageLabelMap || {},
         fileName: file.name,
         fileSize: file.size,
         ext
