@@ -43,6 +43,7 @@ import {
     exportSSOTReportToExcel,
     exportBatchSSOTReportToExcel,
     exportOfficialRtmToExcel,
+    analyzeRequirementEvidence,
     parseMatchingConfigFile,
     parseManualConfirmationFile,
     DEFAULT_RTM_MATCHING_CONFIG,
@@ -55,6 +56,21 @@ import { extractStructuredFileContent } from '../utils/fileExtractor';
 
 const RTM_MATCHING_CONFIG_KEY = 'healthy_rtm_matching_config_v1';
 const RTM_MANUAL_ENTRIES_KEY = 'healthy_rtm_manual_entries_v1';
+
+// 일괄 검수 요구사항 판정 배지 색상 (근거 판정: 충족·부분충족·확인필요·사업관리 확인필요·미충족 / 기존: 정상·키워드 누락·미출현)
+const statusBadgeColors = (r) => {
+    const map = {
+        '충족': ['rgba(16, 185, 129, 0.15)', '#10b981'],
+        '부분충족': ['rgba(249, 115, 22, 0.15)', '#f97316'],
+        '확인필요': ['rgba(245, 158, 11, 0.15)', '#f59e0b'],
+        '사업관리 문서 확인필요': ['rgba(168, 85, 247, 0.15)', '#a855f7'],
+        '미충족': ['rgba(239, 68, 68, 0.15)', '#ef4444']
+    };
+    if (map[r.overallStatus]) return { bg: map[r.overallStatus][0], fg: map[r.overallStatus][1] };
+    if (!r.isPresentOverall) return { bg: 'rgba(239, 68, 68, 0.15)', fg: '#ef4444' };
+    if (String(r.overallStatus).includes('누락')) return { bg: 'rgba(245, 158, 11, 0.15)', fg: '#f59e0b' };
+    return { bg: 'rgba(16, 185, 129, 0.15)', fg: '#10b981' };
+};
 
 const downloadTextFile = (text, fileName, type = 'text/plain;charset=utf-8') => {
     const blob = new Blob([text], { type });
@@ -105,13 +121,17 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         return null;
     }, [batchResults, selectedFileIdx]);
 
+    // 요구사항추적표와 같은 근거 판정(대응표·ID·절 제목·동의어) - 일괄 검수 요약·리포트에서 공용
+    const [batchEvidence, setBatchEvidence] = useState(null); // { key, results } | null
+    const [isAnalyzingEvidence, setIsAnalyzingEvidence] = useState(false);
+
     // 다중 산출물 일괄 검수 시 프로젝트 레벨 통합 RTM 및 산출물 간 정합성 집계
     const batchAggregation = useMemo(() => {
         if (batchResults.length > 0) {
-            return aggregateBatchSSOT(batchResults, ssotData);
+            return aggregateBatchSSOT(batchResults, ssotData, batchEvidence?.results || null);
         }
         return null;
-    }, [batchResults, ssotData]);
+    }, [batchResults, ssotData, batchEvidence]);
 
     // 결과 뷰 필터 및 검색
     const [activeResultTab, setActiveResultTab] = useState('all'); // 'all' | 'requirements' | 'glossary' | 'numbers' | 'ai' | 'rtm'
@@ -140,6 +160,31 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
     const [rtmManualEntries, setRtmManualEntries] = useState(() => {
         try { return JSON.parse(localStorage.getItem(RTM_MANUAL_ENTRIES_KEY) || '[]'); } catch { return []; }
     });
+
+    // 일괄 검수 결과·근거 설정이 바뀌면 요구사항 근거 판정을 다시 계산
+    useEffect(() => {
+        const doneResults = batchResults.filter(r => r.status === 'DONE');
+        if (doneResults.length === 0 || (ssotData.requirements || []).length === 0) {
+            setBatchEvidence(null);
+            return undefined;
+        }
+        let cancelled = false;
+        setIsAnalyzingEvidence(true);
+        analyzeRequirementEvidence({
+            ssotData,
+            batchResults: doneResults,
+            managementFiles: rtmManagementFiles,
+            matchingConfig: rtmMatchingConfig,
+            manualEntries: rtmManualEntries
+        })
+            .then(({ results }) => { if (!cancelled) setBatchEvidence({ results }); })
+            .catch(err => {
+                console.warn('요구사항 근거 판정 실패 (ID 출현 기준으로 표시):', err);
+                if (!cancelled) setBatchEvidence(null);
+            })
+            .finally(() => { if (!cancelled) setIsAnalyzingEvidence(false); });
+        return () => { cancelled = true; };
+    }, [batchResults, ssotData, rtmManagementFiles, rtmMatchingConfig, rtmManualEntries]);
 
     // ── 사업 RFP 자동 분석 및 마스터 정보 동기화 상태 ────────────────
     const [showRfpModal, setShowRfpModal] = useState(false);
@@ -739,7 +784,11 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         try {
             await exportBatchSSOTReportToExcel({
                 batchResults,
-                ssotData
+                ssotData,
+                evidenceResults: batchEvidence?.results || null,
+                managementFiles: rtmManagementFiles,
+                matchingConfig: rtmMatchingConfig,
+                manualEntries: rtmManualEntries
             });
         } catch (err) {
             console.error('다중 통합 엑셀 리포트 생성 오류:', err);
@@ -1819,7 +1868,11 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                     </span>
                                 </div>
                                 <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-                                    단위 파일 개별 누락을 제외한 <strong>프로젝트 전수 기준 정합성</strong> 집계
+                                    {isAnalyzingEvidence
+                                        ? '요구사항 근거 판정 중… (대응표·ID·절 제목·동의어)'
+                                        : batchAggregation.useEvidence
+                                            ? <>요구사항추적표와 같은 <strong>근거 판정 기준</strong>(대응표·ID·절 제목·동의어) 집계</>
+                                            : <>단위 파일 개별 누락을 제외한 <strong>프로젝트 전수 기준 정합성</strong> 집계</>}
                                 </span>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
@@ -1830,10 +1883,15 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                     </span>
                                 </div>
                                 <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', borderLeft: '3px solid #ef4444' }}>
-                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>전체 산출물 전수 누락</span>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>{batchAggregation.useEvidence ? '요구사항 미충족 (근거 없음)' : '전체 산출물 전수 누락'}</span>
                                     <span style={{ fontSize: '18px', fontWeight: 800, color: batchAggregation.missingReqCount > 0 ? '#ef4444' : '#10b981' }}>
                                         {batchAggregation.missingReqCount}건
                                     </span>
+                                    {batchAggregation.useEvidence && (
+                                        <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginTop: '2px' }}>
+                                            부분충족 {batchAggregation.partialReqCount} · 확인필요 {batchAggregation.checkReqCount} · 사업관리 확인필요 {batchAggregation.mgmtCheckReqCount}
+                                        </span>
+                                    )}
                                 </div>
                                 <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', borderLeft: '3px solid #f59e0b' }}>
                                     <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>산출물 간 용어 불일치</span>
@@ -2178,7 +2236,9 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                             </span>
                                         </div>
                                         <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                                            충족: <strong style={{ color: '#10b981' }}>{batchAggregation.coveredReqCount}건</strong> / 전수 누락: <strong style={{ color: '#ef4444' }}>{batchAggregation.missingReqCount}건</strong>
+                                            충족: <strong style={{ color: '#10b981' }}>{batchAggregation.coveredReqCount}건</strong>
+                                            {batchAggregation.useEvidence && <> / 부분충족: <strong style={{ color: '#f97316' }}>{batchAggregation.partialReqCount}건</strong> / 확인필요: <strong style={{ color: '#f59e0b' }}>{batchAggregation.checkReqCount + batchAggregation.mgmtCheckReqCount}건</strong></>}
+                                            {' '}/ {batchAggregation.useEvidence ? '미충족' : '전수 누락'}: <strong style={{ color: '#ef4444' }}>{batchAggregation.missingReqCount}건</strong>
                                         </span>
                                     </div>
                                     <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
@@ -2195,18 +2255,23 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                             </thead>
                                             <tbody>
                                                 {batchAggregation.projectRtmMatrix.map((r, idx) => (
-                                                    <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: !r.isPresentOverall ? 'rgba(239, 68, 68, 0.05)' : undefined }}>
+                                                    <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: r.overallStatus === '미충족' || (!batchAggregation.useEvidence && !r.isPresentOverall) ? 'rgba(239, 68, 68, 0.05)' : undefined }}>
                                                         <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--text-muted)' }}>{idx + 1}</td>
                                                         <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--accent-blue)' }}>{r.id}</td>
                                                         <td style={{ padding: '8px 10px', color: 'var(--text-primary)' }}>{r.name}</td>
                                                         <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, color: r.appearingFiles.length > 0 ? '#10b981' : '#ef4444' }}>
                                                             {r.appearingFiles.length}
                                                         </td>
-                                                        <td style={{ padding: '8px 10px', fontSize: '11.5px', color: 'var(--text-secondary)' }}>
-                                                            {r.appearingFiles.length > 0 ? r.appearingFiles.map(fn => {
-                                                                const p = r.pagesByFile[fn] || [];
-                                                                return p.length > 0 ? `${fn} (p.${p.join(',')})` : fn;
-                                                            }).join('; ') : '-'}
+                                                        <td style={{ padding: '8px 10px', fontSize: '11.5px', color: 'var(--text-secondary)', whiteSpace: 'pre-line' }}>
+                                                            {r.locations
+                                                                ? (r.locations.length ? r.locations.slice(0, 6).join('\n') + (r.locations.length > 6 ? `\n… 외 ${r.locations.length - 6}건` : '') : '-')
+                                                                : (r.appearingFiles.length > 0 ? r.appearingFiles.map(fn => {
+                                                                    const p = r.pagesByFile[fn] || [];
+                                                                    return p.length > 0 ? `${fn} (p.${p.join(',')})` : fn;
+                                                                }).join('; ') : '-')}
+                                                            {r.remarks && r.remarks.length > 0 && (
+                                                                <div style={{ marginTop: '4px', color: '#f59e0b' }}>{r.remarks.join('\n')}</div>
+                                                            )}
                                                         </td>
                                                         <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                                                             <span style={{
@@ -2214,8 +2279,8 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                                                 borderRadius: '8px',
                                                                 fontSize: '11px',
                                                                 fontWeight: 700,
-                                                                background: !r.isPresentOverall ? 'rgba(239, 68, 68, 0.15)' : r.overallStatus.includes('누락') ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                                                                color: !r.isPresentOverall ? '#ef4444' : r.overallStatus.includes('누락') ? '#f59e0b' : '#10b981'
+                                                                background: statusBadgeColors(r).bg,
+                                                                color: statusBadgeColors(r).fg
                                                             }}>
                                                                 {r.overallStatus}
                                                             </span>
