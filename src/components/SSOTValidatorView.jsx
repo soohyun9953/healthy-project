@@ -2846,7 +2846,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                                 검수 결과 자동 매핑 모드 (권장)
                                             </span>
                                             <span style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                                                현재 프로젝트 마스터 요구사항(총 {ssotData.requirements.length}건) 및 업로드된 산출물({targetFiles.length}개)의 검증 결과(충족/미충족, 관련 파일명, 해당 페이지: 슬라이드 하단 표기 기준 예 'Ⅱ-10~13')를 자동으로 취합하여 작성합니다. 산출물에 요구사항 ID가 없으면 요구사항명칭과 슬라이드 상단 절·항 제목(예: '3. 법·제도 분석')을 대조해 해당 구간을 찾습니다.
+                                                현재 프로젝트 마스터 요구사항(총 {ssotData.requirements.length}건) 및 업로드된 산출물({targetFiles.length}개)의 검증 결과(충족/미충족, 관련 파일명, 해당 페이지: 슬라이드 하단 표기 기준 예 'Ⅱ-10~13')를 자동으로 취합하여 작성합니다. 판정 순서: ① 요구사항명칭 ↔ 슬라이드 상단 절·항 제목(예: '3. 법·제도 분석', 산출물현황 시트와 같은 기준) ② 문서명이 들어간 별도 파일(제안요청서·사업계획서 등) ③ 본문에 요구사항 ID만 언급된 슬라이드(교차참조일 수 있어 '확인필요'로 표기).
                                             </span>
                                         </div>
                                     </label>

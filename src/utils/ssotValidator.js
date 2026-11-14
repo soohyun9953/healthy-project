@@ -2272,7 +2272,7 @@ const DEFAULT_CHAPTER_TOPICS = [
     { num: 4, keys: ['목표모델', '목표시스템'] },
     { num: 5, keys: ['이행계획', '통합이행'] }
 ];
-const normalizeForMatch = (s = '') => String(s).toLowerCase().replace(/[\s·ㆍ・\-_/(),.'"「」[\]]/g, '');
+const normalizeForMatch = (s = '') => String(s).toLowerCase().replace(/아키텍쳐/g, '아키텍처').replace(/[\s·ㆍ・•\-_/(),.'"「」[\]]/g, '');
 
 function majorityChapter(slideChapterMap = {}) {
     const counts = new Map();
@@ -2354,7 +2354,7 @@ async function buildDeliverableTocIndex(batchResults = []) {
 }
 
 // ── 요구사항명/서류명 ↔ 절·항 제목 내용 매칭 (요구사항 ID가 본문에 없는 실제 산출물 대응) ──
-const MATCH_STOPWORDS = new Set(['분석', '수립', '방안', '제시', '검토', '도출', '설계', '작성', '현황', '및', '등', '개요', '추진', '계획', '방향', '관리', '체계', '전략', '결과', '마련', '기반', '대상', '서', '세부', '상세', '분석서', '설계서', '정의서']);
+const MATCH_STOPWORDS = new Set(['분석', '수립', '방안', '제시', '검토', '도출', '설계', '작성', '현황', '및', '등', '개요', '추진', '계획', '방향', '관리', '체계', '전략', '결과', '마련', '기반', '대상', '서', '세부', '상세', '정의', '분석서', '설계서', '정의서']);
 const MATCH_GENERIC = new Set(['데이터', '시스템', '정보', '정보화', '업무', '공공의료', 'ai', '사업', '기술', '서비스', '공공', '의료', '보건의료', '목표', '정보시스템']);
 const STEM_SUFFIXES = ['분석서', '설계서', '정의서', '분석', '현황', '수립', '방안', '설계', '계획', '전략', '개요'];
 
@@ -2369,30 +2369,60 @@ function matchTokens(text = '') {
         });
 }
 
-function titleMatchesText(title = '', text = '') {
+function splitStem(token) {
+    const suf = STEM_SUFFIXES.find(sf => token.endsWith(sf) && token.length - sf.length >= 2);
+    return suf ? [token.slice(0, -suf.length), suf] : [token, ''];
+}
+
+// 절·항 제목이 요구사항명/서류명과 같은 주제인지 판정
+// partial=true(절 단위): 제목 핵심어의 절반 이상이 일치하고 그중 고유어가 있으면 일치 (예: '이행과제 로드맵' ↔ '…추진 로드맵 수립')
+function titleMatchesText(title = '', text = '', { partial = false } = {}) {
     const normTitle = normalizeForMatch(title);
     const normText = normalizeForMatch(text);
     if (normTitle.length < 2 || normText.length < 2) return false;
     if (normTitle.length >= 4 && (normText.includes(normTitle) || normTitle.includes(normText))) return true;
-    const distinctive = matchTokens(title).filter(t => t.length >= 2 && !MATCH_STOPWORDS.has(t));
-    if (distinctive.length === 0) return false;
-    // 범용어(데이터·업무 등)만으로 된 제목("데이터 현황분석")은 제목의 모든 단어가 그대로 들어 있어야 일치
-    if (distinctive.every(t => MATCH_GENERIC.has(t))) {
-        const rawTokens = String(title).split(/[\s,/()]+|및/).map(normalizeForMatch).filter(t => t.length >= 2);
-        return rawTokens.length > 0 && rawTokens.every(t => normText.includes(t));
-    }
+
     const textTokens = new Set(matchTokens(text));
-    // 범용어는 독립 단어로 쓰였을 때만, 고유어(법·제도 등)는 포함 여부로 판정
-    return distinctive.every(t => (MATCH_GENERIC.has(t) ? textTokens.has(t) : normText.includes(t)));
+    // 범용어(데이터·업무 등)는 독립 단어로 쓰였을 때만, 고유어(법·제도 등)는 포함 여부로 판정
+    const stemHit = (stem) => (MATCH_GENERIC.has(stem) ? textTokens.has(stem) : normText.includes(stem));
+    const rawTokens = String(title).split(/[\s,/()]+|및/).map(normalizeForMatch).filter(t => t.length >= 2);
+    const parts = rawTokens.map(splitStem).filter(([stem]) => stem.length >= 2 && !MATCH_STOPWORDS.has(stem));
+    if (parts.length === 0) return false;
+
+    // 범용어만으로 된 제목('데이터 현황분석', '업무현황 분석')은 꼬리말(현황·분석)까지 모두 들어 있어야 일치
+    if (parts.every(([stem]) => MATCH_GENERIC.has(stem))) {
+        return rawTokens.every(raw => {
+            if (normText.includes(raw)) return true;
+            const [stem, suf] = splitStem(raw);
+            return suf !== '' && stemHit(stem) && normText.includes(suf);
+        });
+    }
+
+    const hits = parts.filter(([stem]) => stemHit(stem));
+    if (hits.length === parts.length) return true;
+    if (!partial) return false;
+    const strong = hits.filter(([stem]) => !MATCH_GENERIC.has(stem));
+    return strong.length > 0 && hits.length * 2 >= parts.length && strong.reduce((n, [stem]) => n + stem.length, 0) >= 3;
 }
+
+// 장 주제어: 요구사항에 다른 장의 주제어(예: '현황')가 있으면 이 장의 절과는 부분 일치로 연결하지 않는다
+const CHAPTER_TOPIC_STEMS = ['환경', '현황', '목표모델', '이행'];
+const chapterTopicOf = (text = '') => {
+    const n = normalizeForMatch(text);
+    return CHAPTER_TOPIC_STEMS.find(t => n.includes(t)) || null;
+};
 
 // 요구사항/서류명에 해당하는 절·항 목록 (절이 일치하면 하위 항은 생략)
 function findSectionsForText(text, tocIndex = []) {
     const hits = [];
+    const normText = normalizeForMatch(text);
+    const textTopics = CHAPTER_TOPIC_STEMS.filter(t => normText.includes(t));
     tocIndex.forEach(doc => {
         const roman = NUM_TO_ROMAN[doc.chapter] || '';
+        const docTopic = chapterTopicOf(doc.chapterTitle) || chapterTopicOf(doc.fileName);
+        const allowPartial = textTopics.length === 0 || (docTopic && textTopics.includes(docTopic));
         doc.sections.forEach(sec => {
-            if (sec.title && titleMatchesText(sec.title, text)) {
+            if (sec.title && titleMatchesText(sec.title, text, { partial: allowPartial })) {
                 hits.push({ fileName: doc.fileName, code: `${roman}.${sec.num}`, title: sec.title, pages: sec.pages, labels: sec.labels });
                 return;
             }
@@ -2555,32 +2585,42 @@ export async function exportOfficialRtmToExcel({
                 const matchedFiles = [];
                 const pageCollector = [];
                 const labelCollector = [];
+                let basis = null; // 'section' | 'file' | 'id'
 
-                batchResults.forEach(res => {
-                    const rtmMatrix = res.stage1?.rtmMatrix || [];
-                    const found = rtmMatrix.find(m => (m.id || '').toUpperCase() === reqId);
-                    if (!found || !found.isPresent) return;
-                    // ID 나열 슬라이드(요구사항 매핑표 등)에서만 언급된 경우는 근거로 보지 않음
-                    const pages = found.evidencePages || found.pages || [];
-                    const labels = found.evidencePages ? (found.evidenceLabels || []) : (found.pageLabels || []);
-                    if (found.evidencePages && pages.length === 0 && (found.pages || []).length > 0) return;
-                    matchedFiles.push(res.fileName);
-                    pageCollector.push(...pages);
-                    labelCollector.push(...labels);
-                });
-
-                // 요구사항 ID가 본문에 없으면 요구사항명칭 ↔ 절·항 제목 내용 매칭 (예: '법·제도 분석' 절)
-                if (matchedFiles.length === 0 && tocIndex.length > 0) {
+                // 1순위: 요구사항명칭 ↔ 슬라이드 상단 절·항 제목 (산출물현황 시트와 같은 기준)
+                if (tocIndex.length > 0) {
                     findSectionsForText(req.name || '', tocIndex).forEach(hit => {
                         if (!matchedFiles.includes(hit.fileName)) matchedFiles.push(hit.fileName);
                         pageCollector.push(...hit.pages);
                         labelCollector.push(...hit.labels);
                     });
+                    if (matchedFiles.length > 0) basis = 'section';
                 }
 
-                // 별도 파일로 작성하는 산출물(제안요청서·사업계획서 등): 요구사항명칭의 문서명이 파일명에 있으면 그 파일 전체
-                if (matchedFiles.length === 0) {
+                // 2순위: 별도 파일로 작성하는 산출물(제안요청서·사업계획서 등) - 문서명이 파일명에 있으면 그 파일 전체
+                if (!basis) {
                     findFilesByDocumentName(req.name || '', batchResults).forEach(f => matchedFiles.push(f));
+                    if (matchedFiles.length > 0) basis = 'file';
+                }
+
+                // 3순위: 본문에 요구사항 ID만 언급된 슬라이드 (ID 나열 슬라이드 제외)
+                // 절 구조를 읽은 파일에서 제목과 무관한 곳에 ID만 있으면 교차참조일 가능성이 높아 '확인필요'로 표기
+                let idOnlyInStructuredDocs = true;
+                if (!basis) {
+                    batchResults.forEach(res => {
+                        const rtmMatrix = res.stage1?.rtmMatrix || [];
+                        const found = rtmMatrix.find(m => (m.id || '').toUpperCase() === reqId);
+                        if (!found || !found.isPresent) return;
+                        const pages = found.evidencePages || found.pages || [];
+                        const labels = found.evidencePages ? (found.evidenceLabels || []) : (found.pageLabels || []);
+                        if (found.evidencePages && pages.length === 0 && (found.pages || []).length > 0) return;
+                        matchedFiles.push(res.fileName);
+                        pageCollector.push(...pages);
+                        labelCollector.push(...labels);
+                        const doc = tocIndex.find(d => d.fileName === res.fileName);
+                        if (!doc || doc.sections.length === 0) idOnlyInStructuredDocs = false;
+                    });
+                    if (matchedFiles.length > 0) basis = 'id';
                 }
 
                 const isPresent = matchedFiles.length > 0;
@@ -2588,11 +2628,15 @@ export async function exportOfficialRtmToExcel({
                 if (isPresent) {
                     pageStr = pageCollector.length > 0 ? formatPageLabelRanges(labelCollector, pageCollector) : '전 페이지';
                 }
+                let status;
+                if (basis === 'id' && idOnlyInStructuredDocs) status = '확인필요';
+                else if (isPresent) status = '충족';
+                else status = batchResults.length > 0 ? '미충족' : '충족';
 
                 return {
                     id: req.id,
                     name: req.name,
-                    status: isPresent ? '충족' : (batchResults.length > 0 ? '미충족' : '충족'),
+                    status,
                     file: matchedFiles.length > 0 ? matchedFiles.join('\n') : (batchResults.length > 0 ? '미확인 산출물' : '산출물 확인 필요'),
                     pages: pageStr
                 };
@@ -2626,7 +2670,7 @@ export async function exportOfficialRtmToExcel({
         // E열: 충족여부
         const eCell = row.getCell(5);
         eCell.value = item.status || '충족';
-        eCell.font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: item.status === '미충족' ? 'FFDC2626' : 'FF000000' } };
+        eCell.font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: item.status === '미충족' ? 'FFDC2626' : (item.status === '확인필요' ? 'FFD97706' : 'FF000000') } };
         eCell.alignment = { vertical: 'middle', horizontal: 'center' };
         eCell.border = borderThin;
 
