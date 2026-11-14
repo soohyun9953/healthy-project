@@ -457,6 +457,24 @@ export async function extractTextFromPPTX(file) {
         if (label) pageLabelMap[slideNum] = label;
     }
 
+    // 하단 번호가 없는 일부 슬라이드(간지·부록 레이아웃 등): 파일 대부분이 "Ⅳ-슬라이드번호"로 일관되면 같은 장 번호로 보완
+    const labeledEntries = Object.entries(pageLabelMap);
+    if (labeledEntries.length > 0 && labeledEntries.length < orderedSlides.length) {
+        const prefixCounts = new Map();
+        let consistent = 0;
+        labeledEntries.forEach(([n, label]) => {
+            const [prefix, num] = label.split('-');
+            prefixCounts.set(prefix, (prefixCounts.get(prefix) || 0) + 1);
+            if (parseInt(num, 10) === firstSlideNum + parseInt(n, 10) - 1) consistent++;
+        });
+        const [topPrefix, topCount] = Array.from(prefixCounts.entries()).sort((a, b) => b[1] - a[1])[0];
+        if (prefixCounts.size === 1 && topCount >= 2 && consistent === labeledEntries.length) {
+            for (let pos = 1; pos <= orderedSlides.length; pos++) {
+                if (!pageLabelMap[pos]) pageLabelMap[pos] = `${topPrefix}-${firstSlideNum + pos - 1}`;
+            }
+        }
+    }
+
     // 하단 번호 필드가 전혀 없는 파일: 장 구분 헤더(Ⅱ. 환경분석)가 일관되면 "Ⅱ-슬라이드번호"로 보완
     if (Object.keys(pageLabelMap).length === 0) {
         const counts = new Map();
