@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "description": "요구사항추적표(RTM) 근거 매칭 설정. 화면의 '매칭 설정 파일'에서 이 형식의 JSON을 올리면 기본값에 덧붙여(synonyms) 또는 덮어써(requirements, policy, management) 적용됩니다.",
+  "policy": {
+    "sectionTitleMatchIsMet": true,
+    "idListingThreshold": 4
+  },
+  "synonyms": [
+    { "from": ["정보기술(IT) 현황", "정보기술 현황", "IT 현황"], "to": ["응용시스템 현황", "인프라 현황", "정보보호 현황", "데이터 현황"] },
+    { "from": ["데이터 표준화 방안", "표준관리 방안", "데이터 표준화", "표준관리"], "to": ["데이터 표준화 체계", "표준관리 프로세스", "표준 변경·이력관리", "표준 이력관리"] },
+    { "from": ["데이터 구조 설계 방안", "데이터 구조 설계"], "to": ["설계 원칙", "설계 기준", "주제영역", "핵심 엔터티", "데이터 모델링"] },
+    { "from": ["데이터 구조 개선 방안", "데이터 구조 검증", "구조 개선"], "to": ["식별자 기준", "관계 기준", "구조 품질 점검"] },
+    { "from": ["구조관리", "변경이력 관리"], "to": ["데이터 구조 관리방안", "변경·이력관리"] },
+    { "from": ["데이터 값 검증", "값 품질 개선"], "to": ["데이터 품질관리 체계", "데이터 값 품질 개선방안", "업무규칙 검증"] },
+    { "from": ["이관 데이터 검증", "이관 데이터 값 검증", "이관 데이터"], "to": ["데이터 이관", "데이터 정제", "이관 검증"] },
+    { "from": ["데이터 개방"], "to": ["데이터 개방방안", "공공데이터포털", "OpenAPI"] },
+    { "from": ["메타데이터 관리", "메타데이터"], "to": ["메타데이터·카탈로그", "메타데이터 카탈로그", "메타데이터 등록·관리 현황"] },
+    { "from": ["비전 및 전략", "비전·전략", "정보화 비전"], "to": ["정보화 비전 및 전략"] },
+    { "from": ["이행계획", "로드맵"], "to": ["이행과제", "단계별 추진계획"] },
+    { "from": ["기대효과"], "to": ["기대효과분석", "투자효과분석"] },
+    { "from": ["소요예산"], "to": ["소요예산 정의", "기능점수"] }
+  ],
+  "requirements": {
+    "CNR-001": { "deliverables": [3], "expectedSections": ["Ⅱ.1", "Ⅱ.2", "Ⅱ.3"] },
+    "CNR-002": { "deliverables": [4] },
+    "CNR-003": { "deliverables": [5, 6] },
+    "CNR-004": { "deliverables": [7, 8] },
+    "CNR-005": { "deliverables": [9] },
+    "CNR-006": { "deliverables": [10] },
+    "CNR-007": { "deliverables": [11, 12, 14], "expectedSections": ["Ⅳ.1"] },
+    "CNR-008": { "deliverables": [14, 15, 16] },
+    "CNR-009": { "deliverables": [13, 15] },
+    "CNR-010": { "deliverables": [17] },
+    "CNR-011": { "deliverables": [16] },
+    "CNR-012": { "deliverables": [18] },
+    "CNR-013": { "deliverables": [20] },
+    "CNR-014": { "deliverables": [19], "expectedSections": ["Ⅴ.2", "Ⅴ.3"] },
+    "CNR-015": {
+      "deliverables": [22],
+      "outputs": [
+        { "key": "세부 사업계획서", "fileKeywords": ["사업계획서"] },
+        { "key": "제안요청서(안)", "fileKeywords": ["제안요청서", "RFP"] }
+      ]
+    },
+    "CNR-016": { "deliverables": [21] },
+    "CNR-017": { "deliverables": [21] },
+    "DAR-001": {
+      "expectedSections": ["Ⅲ.5", "Ⅳ.6"],
+      "outputs": [
+        { "key": "현황", "label": "데이터 표준관리 현황 분석서", "chapters": ["Ⅲ"], "deliverable": 26 },
+        { "key": "방안", "label": "목표시스템 데이터 표준화 방안", "chapters": ["Ⅳ"], "deliverable": 25 }
+      ]
+    },
+    "DAR-002": {
+      "expectedSections": ["Ⅲ.5", "Ⅳ.6"],
+      "outputs": [
+        { "key": "현황", "label": "데이터 표준관리 현황 분석서", "chapters": ["Ⅲ"], "deliverable": 26 },
+        { "key": "방안", "label": "데이터 표준관리 방안", "chapters": ["Ⅳ"], "deliverable": 25 }
+      ]
+    },
+    "DAR-003": {
+      "expectedSections": ["Ⅲ.5", "Ⅳ.6"],
+      "outputs": [
+        { "key": "현황", "label": "데이터 구조현황 분석서", "chapters": ["Ⅲ"], "deliverable": 27 },
+        { "key": "방안", "label": "데이터 구조 설계 방안", "chapters": ["Ⅳ"], "deliverable": 28 }
+      ]
+    },
+    "DAR-004": {
+      "expectedSections": ["Ⅲ.5", "Ⅳ.6"],
+      "outputs": [
+        { "key": "현황", "label": "데이터 구조현황 분석서", "chapters": ["Ⅲ"], "deliverable": 27 },
+        { "key": "방안", "label": "데이터 구조 검증·개선 방안", "chapters": ["Ⅳ"], "deliverable": 28 }
+      ]
+    },
+    "DAR-005": {
+      "expectedSections": ["Ⅲ.5", "Ⅳ.6"],
+      "outputs": [
+        { "key": "현황", "label": "데이터 구조 관리현황 분석서", "chapters": ["Ⅲ"], "deliverable": 29 },
+        { "key": "방안", "label": "데이터 구조 관리방안", "chapters": ["Ⅳ"], "deliverable": 30 }
+      ]
+    },
+    "DAR-006": {
+      "expectedSections": ["Ⅲ.5", "Ⅳ.6"],
+      "outputs": [
+        { "key": "현황", "label": "데이터 값 관리현황 분석서", "chapters": ["Ⅲ"] },
+        { "key": "방안", "label": "데이터 값 검증 방안", "chapters": ["Ⅳ"], "deliverable": 31 }
+      ]
+    },
+    "DAR-007": {
+      "expectedSections": ["Ⅳ.6"],
+      "outputs": [
+        { "key": "방안", "label": "이관 데이터 값 검증 방안", "chapters": ["Ⅳ"], "deliverable": 31 }
+      ]
+    },
+    "DAR-008": {
+      "expectedSections": ["Ⅲ.5", "Ⅳ.6"],
+      "outputs": [
+        { "key": "현황", "label": "데이터 관리체계 현황 분석서", "chapters": ["Ⅲ"], "deliverable": 29 },
+        { "key": "방안", "label": "목표시스템 데이터(표준·구조·값·연계) 관리방안", "chapters": ["Ⅳ"], "deliverable": 31 }
+      ]
+    },
+    "DAR-009": {
+      "expectedSections": ["Ⅲ.5", "Ⅳ.6", "Ⅳ.11"],
+      "outputs": [
+        { "key": "현황", "label": "메타데이터 등록·관리현황", "chapters": ["Ⅲ"], "deliverable": 32 },
+        { "key": "방안", "label": "데이터 개방 및 메타데이터 관리방안", "chapters": ["Ⅳ"] }
+      ]
+    },
+    "DAR-010": { "expectedSections": ["Ⅲ.5", "Ⅳ.6"] },
+    "COR-001": { "deliverables": [33] },
+    "SER-001": { "deliverables": [34] }
+  },
+  "management": {
+    "prefixes": ["SER", "QUR", "COR", "PMR", "PSR"],
+    "fileKeywords": {
+      "SER": ["보안계획", "보안서약", "보안", "개인정보"],
+      "QUR": ["품질", "검토", "점검"],
+      "COR": ["기술적용", "표준", "저작권", "지식재산", "성과측정"],
+      "PMR": ["수행계획", "착수", "중간보고", "완료보고", "주간보고", "월간보고", "회의록", "일정", "조직"],
+      "PSR": ["수행계획", "보고회", "워크숍", "기술이전", "하자보수", "추가제안"]
+    }
+  }
+}
