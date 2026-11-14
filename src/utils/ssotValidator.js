@@ -1321,13 +1321,47 @@ export async function exportSSOTReportToExcel({
  * 6-2. 다중 파일 일괄 검수 종합 엑셀 리포트 내보내기 (ExcelJS 활용)
  */
 
+// 요구사항 근거 판정 결과(evaluateRequirements) → 일괄 검수 프로젝트 RTM 행
+function buildEvidenceRtmRows(evidenceResults = [], requirements = []) {
+    const keywordsById = new Map(requirements.map(r => [String(r.id).toUpperCase(), r.keywords || '']));
+    return evidenceResults.map(r => {
+        const pagesByFile = {};
+        const pageLabelsByFile = {};
+        r.evidences.forEach(e => {
+            if (!pagesByFile[e.fileName]) { pagesByFile[e.fileName] = []; pageLabelsByFile[e.fileName] = []; }
+            pagesByFile[e.fileName].push(...e.pages);
+            pageLabelsByFile[e.fileName].push(...e.labels);
+        });
+        return {
+            id: r.id,
+            name: r.name,
+            keywords: keywordsById.get(String(r.id).toUpperCase()) || '',
+            appearingFiles: r.files,
+            pagesByFile,
+            pageLabelsByFile,
+            isPresentOverall: r.files.length > 0,
+            overallStatus: r.status,
+            evidenceTypes: r.typeLabels,
+            locations: r.evidences.map(e => `[${EVIDENCE_TYPE_LABELS[e.type]}] ${evidenceLocationText(e)}`),
+            remarks: [
+                ...(r.missingOutputs.length ? [`미대응 산출정보: ${r.missingOutputs.join(', ')}`] : []),
+                ...r.warnings.map(w => `⚠ ${w}`),
+                ...r.notes
+            ],
+            missingOutputs: r.missingOutputs,
+            pageText: r.pageText
+        };
+    });
+}
+
 /**
  * 다중 산출물 일괄 검수 결과 프로젝트 레벨 통합 집계 엔진
+ * - evidenceResults(요구사항추적표와 같은 근거 판정 결과)가 주어지면 RTM·충족률·누락 결함을 그 판정으로 집계
  * - 개별 파일 단위 가짜 Missing ID 오탐 제거
  * - 전체 44개 마스터 요구사항 대비 프로젝트 종합 RTM 충족률 계산 (어느 파일에도 없는 것만 '전수 누락' 지적)
  * - 산출물 간 정합성(Cross-Document Consistency) 분석 (용어 표기 불일치, 유령 ID 확산)
  */
-export function aggregateBatchSSOT(batchResults = [], ssotData = {}) {
+export function aggregateBatchSSOT(batchResults = [], ssotData = {}, evidenceResults = null) {
     const { requirements = [], glossary = [] } = ssotData;
 
     // 1) 전체 산출물 대상 요구사항 매핑 현황 집계
@@ -1359,37 +1393,73 @@ export function aggregateBatchSSOT(batchResults = [], ssotData = {}) {
         });
     });
 
-    const projectRtmMatrix = Array.from(rtmMap.values()).map(r => {
-        const isPresentOverall = r.appearingFiles.length > 0;
-        let overallStatus = '미출현 (전체 파일 누락)';
-        if (isPresentOverall) {
-            overallStatus = r.anyKeywordMissing ? '키워드 일부 누락' : '정상 반영';
-        }
-        return {
-            ...r,
-            isPresentOverall,
-            overallStatus
-        };
-    });
+    const useEvidence = Array.isArray(evidenceResults) && evidenceResults.length > 0;
+    const projectRtmMatrix = useEvidence
+        ? buildEvidenceRtmRows(evidenceResults, requirements)
+        : Array.from(rtmMap.values()).map(r => {
+            const isPresentOverall = r.appearingFiles.length > 0;
+            let overallStatus = '미출현 (전체 파일 누락)';
+            if (isPresentOverall) {
+                overallStatus = r.anyKeywordMissing ? '키워드 일부 누락' : '정상 반영';
+            }
+            return { ...r, isPresentOverall, overallStatus };
+        });
 
-    const coveredReqs = projectRtmMatrix.filter(r => r.isPresentOverall);
-    const missingReqs = projectRtmMatrix.filter(r => !r.isPresentOverall);
+    const statusCount = (st) => projectRtmMatrix.filter(r => r.overallStatus === st).length;
+    const coveredReqs = useEvidence ? projectRtmMatrix.filter(r => r.overallStatus === RTM_STATUS.MET) : projectRtmMatrix.filter(r => r.isPresentOverall);
+    const missingReqs = useEvidence ? projectRtmMatrix.filter(r => r.overallStatus === RTM_STATUS.UNMET) : projectRtmMatrix.filter(r => !r.isPresentOverall);
     const projectRtmRate = requirements.length > 0 ? Math.round((coveredReqs.length / requirements.length) * 100) : 0;
 
-    // 2) 프로젝트 전체 전수 누락 결함 (개별 파일마다 44개씩 발생하던 중복 오탐 제거 -> 전수 미출현 건만 1회 표기)
-    const projectMissingIssues = missingReqs.map((req, idx) => ({
-        id: `PROJ-MIS-${req.id}`,
-        stage: '프로젝트 통합 RTM',
-        category: '요구사항 누락',
-        errorType: '전체 산출물 미반영 (Missing ID)',
-        severity: 'HIGH',
-        page: '-',
-        fileName: '전체 산출물 전수 누락',
-        matchedTerm: `[${req.id}] ${req.name}`,
-        originalText: `(프로젝트 전체 ${batchResults.length}개 산출물 어디에서도 [${req.id}] 미발견)`,
-        suggestedText: `요구사항 [${req.id}] ${req.name} 관련 산출물 본문 반영 필요`,
-        reason: `RFP 마스터 요구사항 [${req.id}]이(가) 등록된 ${batchResults.length}개 산출물 중 단 한 곳에도 작성되지 않았습니다.`
-    }));
+    // 2) 프로젝트 전체 누락 결함 (파일별 중복 오탐 없이 요구사항당 1회)
+    // 근거 판정 모드: 미충족 → HIGH, 부분충족 → MEDIUM(빠진 산출정보 명시). 확인필요·사업관리 문서 확인필요는 결함이 아니라 확인 대상
+    const projectMissingIssues = useEvidence
+        ? [
+            ...missingReqs.map(req => ({
+                id: `PROJ-MIS-${req.id}`,
+                stage: '프로젝트 통합 RTM',
+                category: '요구사항 누락',
+                errorType: '요구사항 미충족 (근거 없음)',
+                severity: 'HIGH',
+                page: '-',
+                fileName: '전체 산출물',
+                matchedTerm: `[${req.id}] ${req.name}`,
+                originalText: `(대응표·ID·절 제목·동의어 의미 매칭 어디에서도 [${req.id}] 근거 미발견)`,
+                suggestedText: `요구사항 [${req.id}] ${req.name} 관련 내용 작성 또는 근거 위치 수동 확정`,
+                reason: `RFP 마스터 요구사항 [${req.id}]의 작성 근거를 ${batchResults.length}개 산출물에서 찾지 못했습니다.`
+            })),
+            ...projectRtmMatrix.filter(r => r.overallStatus === RTM_STATUS.PARTIAL).map(req => ({
+                id: `PROJ-PART-${req.id}`,
+                stage: '프로젝트 통합 RTM',
+                category: '요구사항 불완전',
+                errorType: '산출정보 일부 미대응 (부분충족)',
+                severity: 'MEDIUM',
+                page: req.pageText || '-',
+                fileName: req.appearingFiles.join(', ') || '전체 산출물',
+                matchedTerm: `[${req.id}] ${req.name}`,
+                originalText: `미대응 산출정보: ${(req.missingOutputs || []).join(', ') || '-'}`,
+                suggestedText: `빠진 산출정보(${(req.missingOutputs || []).join(', ')}) 작성 또는 근거 위치 수동 확정`,
+                reason: `요구사항 [${req.id}]의 산출정보 중 일부만 산출물에서 확인되었습니다.`
+            }))
+        ]
+        : missingReqs.map(req => ({
+            id: `PROJ-MIS-${req.id}`,
+            stage: '프로젝트 통합 RTM',
+            category: '요구사항 누락',
+            errorType: '전체 산출물 미반영 (Missing ID)',
+            severity: 'HIGH',
+            page: '-',
+            fileName: '전체 산출물 전수 누락',
+            matchedTerm: `[${req.id}] ${req.name}`,
+            originalText: `(프로젝트 전체 ${batchResults.length}개 산출물 어디에서도 [${req.id}] 미발견)`,
+            suggestedText: `요구사항 [${req.id}] ${req.name} 관련 산출물 본문 반영 필요`,
+            reason: `RFP 마스터 요구사항 [${req.id}]이(가) 등록된 ${batchResults.length}개 산출물 중 단 한 곳에도 작성되지 않았습니다.`
+        }));
+
+    // 파일별 근거 요구사항 수 (요약 시트·화면의 '해당파일 RTM 반영')
+    const reqCountByFile = {};
+    if (useEvidence) {
+        projectRtmMatrix.forEach(r => r.appearingFiles.forEach(fn => { reqCountByFile[fn] = (reqCountByFile[fn] || 0) + 1; }));
+    }
 
     // 3) 산출물별 실제 결함 (개별 파일의 Missing ID 결함은 제외하고, 실제 용어 오표기/수치 오류/유령 ID만 수록)
     const fileActualIssues = [];
@@ -1469,7 +1539,12 @@ export function aggregateBatchSSOT(batchResults = [], ssotData = {}) {
     })).sort((a, b) => b.fileCount - a.fileCount);
 
     return {
+        useEvidence,
         projectRtmMatrix,
+        reqCountByFile,
+        partialReqCount: useEvidence ? statusCount(RTM_STATUS.PARTIAL) : 0,
+        checkReqCount: useEvidence ? statusCount(RTM_STATUS.CHECK) : 0,
+        mgmtCheckReqCount: useEvidence ? statusCount(RTM_STATUS.MGMT_CHECK) : 0,
         coveredReqCount: coveredReqs.length,
         missingReqCount: missingReqs.length,
         totalMasterReqCount: requirements.length,
@@ -1483,7 +1558,11 @@ export function aggregateBatchSSOT(batchResults = [], ssotData = {}) {
 
 export async function exportBatchSSOTReportToExcel({
     batchResults = [],
-    ssotData = {}
+    ssotData = {},
+    evidenceResults = null,   // 화면에서 이미 계산한 근거 판정 결과 (없으면 여기서 계산)
+    managementFiles = [],
+    matchingConfig = null,
+    manualEntries = []
 }) {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = '건강한 프로젝트 AI 산출물 검수기 (SSOT Batch)';
@@ -1491,8 +1570,17 @@ export async function exportBatchSSOTReportToExcel({
 
     const { metadata = {}, requirements = [] } = ssotData;
 
-    // ── 프로젝트 레벨 통합 집계 (개별 파일 가짜 Missing ID 오탐 제거 및 정합성 분석) ──
-    const agg = aggregateBatchSSOT(batchResults, ssotData);
+    // ── 프로젝트 레벨 통합 집계: 요구사항추적표와 같은 근거 판정(대응표·ID·절 제목·동의어) 사용 ──
+    let evidence = evidenceResults;
+    if (!evidence && requirements.length > 0 && batchResults.length > 0) {
+        try {
+            evidence = (await analyzeRequirementEvidence({ ssotData, batchResults, managementFiles, matchingConfig, manualEntries })).results;
+        } catch (e) {
+            console.warn('[일괄 리포트] 요구사항 근거 판정 실패, ID 출현 기준으로 집계:', e);
+            evidence = null;
+        }
+    }
+    const agg = aggregateBatchSSOT(batchResults, ssotData, evidence);
 
     const headerStyle = {
         font: { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FFFFFFFF' } },
@@ -1558,7 +1646,10 @@ export async function exportBatchSSOTReportToExcel({
     // 프로젝트 전체 RTM 및 산출물 간 정합성 핵심 지표 요약 배너 (Row 6)
     summarySheet.mergeCells('A6:H6');
     const kpiCell = summarySheet.getCell('A6');
-    kpiCell.value = `🎯 [프로젝트 전체 정합성 종합 진단] 총 요구사항 ${agg.totalMasterReqCount}건 중 충족 ${agg.coveredReqCount}건 (${agg.projectRtmRate}%) | 전수 누락: ${agg.missingReqCount}건 | 산출물 간 비정합 용어: ${agg.termConsistency.filter(t => t.isInconsistent).length}건 | 비표준 유령ID: ${agg.ghostIdSpread.length}건`;
+    const rtmBreakdown = agg.useEvidence
+        ? `충족 ${agg.coveredReqCount}건 (${agg.projectRtmRate}%) · 부분충족 ${agg.partialReqCount} · 확인필요 ${agg.checkReqCount} · 사업관리 문서 확인필요 ${agg.mgmtCheckReqCount} · 미충족 ${agg.missingReqCount}건`
+        : `충족 ${agg.coveredReqCount}건 (${agg.projectRtmRate}%) | 전수 누락: ${agg.missingReqCount}건`;
+    kpiCell.value = `🎯 [프로젝트 전체 정합성 종합 진단] 총 요구사항 ${agg.totalMasterReqCount}건 중 ${rtmBreakdown} | 산출물 간 비정합 용어: ${agg.termConsistency.filter(t => t.isInconsistent).length}건 | 비표준 유령ID: ${agg.ghostIdSpread.length}건`;
     kpiCell.font = { name: '맑은 고딕', size: 10.5, bold: true, color: { argb: 'FF1E3A8A' } };
     kpiCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
     kpiCell.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -1596,8 +1687,12 @@ export async function exportBatchSSOTReportToExcel({
         totalMediumAll += medCount;
         totalLowAll += lowCount;
 
-        const coveredInThisFile = (res.stage1?.rtmMatrix || []).filter(m => m.isPresent).length;
-        const rtmStr = `${coveredInThisFile}건 반영 (${res.stage1?.coveredReqCount || coveredInThisFile}/${agg.totalMasterReqCount})`;
+        const coveredInThisFile = agg.useEvidence
+            ? (agg.reqCountByFile[res.fileName] || 0)
+            : (res.stage1?.rtmMatrix || []).filter(m => m.isPresent).length;
+        const rtmStr = agg.useEvidence
+            ? `${coveredInThisFile}건 근거 (${coveredInThisFile}/${agg.totalMasterReqCount})`
+            : `${coveredInThisFile}건 반영 (${res.stage1?.coveredReqCount || coveredInThisFile}/${agg.totalMasterReqCount})`;
 
         row.getCell(1).value = idx + 1;
         row.getCell(2).value = res.fileName || `파일 #${idx + 1}`;
@@ -1751,6 +1846,54 @@ export async function exportBatchSSOTReportToExcel({
         views: [{ showGridLines: true }]
     });
 
+    if (agg.useEvidence) {
+        // 요구사항추적표와 같은 근거 판정
+        rtmSheet.columns = [
+            { header: '순번', width: 7 },
+            { header: '요구사항 ID', width: 13 },
+            { header: '요구사항명', width: 38 },
+            { header: '판정 근거 유형', width: 18 },
+            { header: '근거 파일 수', width: 11 },
+            { header: '근거 위치 (파일명 / 절 번호 / 장표 제목 / 페이지)', width: 80 },
+            { header: '종합 판정', width: 16 },
+            { header: '비고 (누락 산출정보·경고)', width: 46 }
+        ];
+        const evHead = rtmSheet.getRow(1);
+        evHead.height = 28;
+        for (let c = 1; c <= 8; c++) evHead.getCell(c).style = headerStyle;
+        const statusStyle = {
+            [RTM_STATUS.MET]: ['FFDCFCE7', 'FF16A34A'],
+            [RTM_STATUS.PARTIAL]: ['FFFFEDD5', 'FFB45309'],
+            [RTM_STATUS.CHECK]: ['FFFEF3C7', 'FFD97706'],
+            [RTM_STATUS.MGMT_CHECK]: ['FFEDE9FE', 'FF7C3AED'],
+            [RTM_STATUS.UNMET]: ['FFFEE2E2', 'FFDC2626']
+        };
+        agg.projectRtmMatrix.forEach((r, idx) => {
+            const row = rtmSheet.addRow([
+                idx + 1,
+                r.id,
+                r.name,
+                (r.evidenceTypes || []).join(', ') || '-',
+                r.appearingFiles.length,
+                r.locations.length ? r.locations.slice(0, 15).join('\n') + (r.locations.length > 15 ? `\n… 외 ${r.locations.length - 15}건` : '') : '-',
+                r.overallStatus,
+                r.remarks.join('\n')
+            ]);
+            const lines = Math.max(Math.min(r.locations.length, 16), r.remarks.length, 1);
+            row.height = Math.max(24, lines * 14);
+            const [fill, color] = statusStyle[r.overallStatus] || ['FFFFFFFF', 'FF000000'];
+            row.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+            row.getCell(7).font = { name: '맑은 고딕', color: { argb: color }, bold: true };
+            for (let col = 1; col <= 8; col++) {
+                row.getCell(col).border = borderStyle;
+                row.getCell(col).alignment = {
+                    vertical: 'middle',
+                    horizontal: [1, 2, 5, 7].includes(col) ? 'center' : 'left',
+                    wrapText: [3, 4, 6, 8].includes(col)
+                };
+            }
+        });
+    } else {
     rtmSheet.columns = [
         { header: '순번', width: 8 },
         { header: '요구사항 ID', width: 16 },
@@ -1808,6 +1951,7 @@ export async function exportBatchSSOTReportToExcel({
             }
         }
     });
+    }
 
     // ── 시트 4 (신설): 산출물 간 정합성 분석 (Cross-Document Consistency) ──
     const crossSheet = workbook.addWorksheet('산출물간 정합성 분석', {
