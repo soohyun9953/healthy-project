@@ -2664,7 +2664,7 @@ export async function processPptBatch(pptFile, options) {
                             if (layoutPh.xfrm) {
                                 let spPr = sp.getElementsByTagNameNS('*', 'spPr')[0];
                                 if (!spPr) {
-                                    spPr = xmlDoc.createElementNS(nsP, 'p:spPr');
+                                    spPr = xmlDoc.createElementNS('http://schemas.openxmlformats.org/presentationml/2006/main', 'p:spPr');
                                     sp.appendChild(spPr);
                                 }
                                 const sXfrm = spPr.getElementsByTagNameNS('*', 'xfrm')[0];
@@ -3132,6 +3132,108 @@ export async function getPptSlideCount(pptFile) {
     return slideFiles.length;
 }
 
+// ── PPTX 병합 보조: 경로 계산 · 관계(rels) 재매핑 · 마스터 서식 세트 수집 ───────────────
+function pptxDirOf(path) {
+    const i = path.lastIndexOf('/');
+    return i >= 0 ? path.slice(0, i) : '';
+}
+
+function pptxResolvePath(fromDir, target) {
+    if (target.startsWith('/')) return target.slice(1);
+    const parts = fromDir ? fromDir.split('/') : [];
+    target.split('/').forEach(seg => {
+        if (seg === '..') parts.pop();
+        else if (seg && seg !== '.') parts.push(seg);
+    });
+    return parts.join('/');
+}
+
+function pptxRelativePath(fromDir, toPath) {
+    const from = fromDir ? fromDir.split('/') : [];
+    const to = toPath.split('/');
+    let i = 0;
+    while (i < from.length && i < to.length - 1 && from[i] === to[i]) i++;
+    return [...Array(from.length - i).fill('..'), ...to.slice(i)].join('/');
+}
+
+// rels의 각 Target을 (원본 위치 기준) 절대 경로로 풀어 fullPathMap으로 바꾼 뒤 (새 위치 기준) 상대 경로로 다시 쓴다
+function remapRelsTargets(relsXml, srcOwnerPath, destOwnerPath, fullPathMap) {
+    const srcDir = pptxDirOf(srcOwnerPath);
+    const destDir = pptxDirOf(destOwnerPath);
+    return relsXml.replace(/<Relationship\b[^>]*\/>/gi, (tag) => {
+        if (/TargetMode="External"/i.test(tag)) return tag;
+        return tag.replace(/Target="([^"]+)"/i, (m, target) => {
+            const full = pptxResolvePath(srcDir, target);
+            const mapped = fullPathMap[full];
+            if (!mapped) return m;
+            return `Target="${pptxRelativePath(destDir, mapped)}"`;
+        });
+    });
+}
+
+function parseRelsTargets(relsXml, ownerPath) {
+    const dir = pptxDirOf(ownerPath);
+    const rels = [];
+    for (const m of (relsXml || '').matchAll(/<Relationship\b[^>]*\/>/gi)) {
+        const tag = m[0];
+        if (/TargetMode="External"/i.test(tag)) continue;
+        const id = (tag.match(/\bId="([^"]+)"/) || [])[1];
+        const type = (tag.match(/\bType="([^"]+)"/) || [])[1] || '';
+        const target = (tag.match(/\bTarget="([^"]+)"/) || [])[1];
+        if (id && target) rels.push({ id, type, full: pptxResolvePath(dir, target) });
+    }
+    return rels;
+}
+
+function fnv1aHash(bytes, seed = 0x811c9dc5) {
+    let h = seed >>> 0;
+    for (let i = 0; i < bytes.length; i++) {
+        h ^= bytes[i];
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h;
+}
+
+const relsPathOf = (partPath) => `${pptxDirOf(partPath)}/_rels/${partPath.split('/').pop()}.rels`;
+
+// 파일 안의 슬라이드 마스터별 서식 세트(마스터 + 레이아웃 + 테마 + 이미지)와 내용 지문
+async function collectMasterSets(zip) {
+    const masterPaths = Object.keys(zip.files)
+        .filter(f => /^ppt\/slideMasters\/slideMaster\d+\.xml$/i.test(f))
+        .sort((a, b) => parseInt(a.match(/(\d+)\.xml$/)[1], 10) - parseInt(b.match(/(\d+)\.xml$/)[1], 10));
+    const encoder = new TextEncoder();
+    const sets = [];
+    for (const masterPath of masterPaths) {
+        const masterXml = await zip.file(masterPath).async('text');
+        const masterRelsXml = await zip.file(relsPathOf(masterPath))?.async('text') || '';
+        const masterRels = parseRelsTargets(masterRelsXml, masterPath);
+        const ridToPath = new Map(masterRels.map(r => [r.id, r.full]));
+        const layoutPaths = [];
+        for (const m of masterXml.matchAll(/<p:sldLayoutId\b[^>]*\br:id="([^"]+)"/gi)) {
+            const lp = ridToPath.get(m[1]);
+            if (lp && zip.file(lp)) layoutPaths.push(lp);
+        }
+
+        let hash = fnv1aHash(encoder.encode(masterXml + masterRelsXml));
+        const hashPart = async (path) => {
+            const f = zip.file(path);
+            if (!f) return;
+            hash = fnv1aHash(await f.async('uint8array'), hash);
+        };
+        const partsToHash = new Set(masterRels.filter(r => !/slideLayout$/.test(r.type)).map(r => r.full));
+        for (const lp of layoutPaths) {
+            await hashPart(lp);
+            const lRelsXml = await zip.file(relsPathOf(lp))?.async('text') || '';
+            hash = fnv1aHash(encoder.encode(lRelsXml), hash);
+            parseRelsTargets(lRelsXml, lp).filter(r => !/slideMaster$/.test(r.type)).forEach(r => partsToHash.add(r.full));
+        }
+        for (const part of Array.from(partsToHash).sort()) await hashPart(part);
+
+        sets.push({ masterPath, layoutPaths, signature: `${layoutPaths.length}:${hash.toString(16)}` });
+    }
+    return sets;
+}
+
 /**
  * 여러 개의 PPTX Blob/File을 순서대로 하나의 단일 PPTX 파일로 병합(Merge)합니다.
  * 이미지(media), 차트(charts), 스마트아트 다이어그램(diagrams), 드로잉(drawings), OLE 임베딩(embeddings) 등
@@ -3182,7 +3284,9 @@ export async function mergeMultiplePptx(pptFilesArray) {
     // 베이스의 슬라이드 파일들 목록 및 총 개수 파악
     const baseSlideFiles = Object.keys(baseZip.files)
         .filter(f => f.match(/^ppt\/slides\/slide\d+\.xml$/i));
-    let currentSlideCount = baseSlideFiles.length;
+    // 새 슬라이드 파일 번호는 기존 최대 번호 다음부터 (삭제 이력으로 번호가 비어 있으면 개수 기준 번호가 기존 슬라이드를 덮어씀)
+    let currentSlideCount = baseSlideFiles.reduce((max, f) => Math.max(max, parseInt(f.match(/slide(\d+)\.xml$/i)[1], 10)), 0);
+    let totalSlideCount = baseSlideFiles.length;
 
     // 최대 rId 번호 추출
     let maxRidNum = 100;
@@ -3203,6 +3307,37 @@ export async function mergeMultiplePptx(pptFilesArray) {
     let newSldIdEntries = '';
     let newPresRelsEntries = '';
     let newCtOverrides = '';
+    let newMasterIdEntries = '';
+
+    // 슬라이드 마스터·레이아웃 ID는 프레젠테이션 전체에서 고유해야 함 (2147483648 이상)
+    let maxMasterLayoutId = 2147483647;
+    const bumpIds = (xml) => {
+        for (const m of xml.matchAll(/<p:(?:sldMasterId|sldLayoutId)\b[^>]*\bid="(\d+)"/gi)) {
+            const n = parseInt(m[1], 10);
+            if (n > maxMasterLayoutId) maxMasterLayoutId = n;
+        }
+    };
+    bumpIds(presXml);
+    for (const mp of Object.keys(baseZip.files).filter(f => /^ppt\/slideMasters\/slideMaster\d+\.xml$/i.test(f))) {
+        bumpIds(await baseZip.file(mp).async('text'));
+    }
+    const nextPartNumber = (dir, prefix) => {
+        let max = 0;
+        const re = new RegExp(`^ppt/${dir}/${prefix}(\\d+)\\.xml$`, 'i');
+        Object.keys(baseZip.files).forEach(f => {
+            const m = f.match(re);
+            if (m) max = Math.max(max, parseInt(m[1], 10));
+        });
+        return max + 1;
+    };
+
+    // 서식(마스터+레이아웃+테마)이 완전히 같은 세트는 하나만 두고 재사용 (지문 → 병합본의 마스터/레이아웃 경로)
+    const masterSetBySignature = new Map();
+    for (const set of await collectMasterSets(baseZip)) {
+        if (!masterSetBySignature.has(set.signature)) {
+            masterSetBySignature.set(set.signature, { masterPath: set.masterPath, layoutPaths: set.layoutPaths });
+        }
+    }
 
     // 2. 2번째 파일부터 순회하며 슬라이드 및 모든 종속 리소스 복사
     for (let fileIdx = 1; fileIdx < pptFilesArray.length; fileIdx++) {
@@ -3223,6 +3358,7 @@ export async function mergeMultiplePptx(pptFilesArray) {
         // 충돌 방지를 위해 리소스 파일명에 f{fileIdx}_ 접두어를 붙임
         const resourcePrefix = `f${fileIdx}_`;
         const pathRenameMap = {};
+        const fullPathMap = {}; // 원본 절대경로 → 병합본 절대경로
 
         const srcFileKeys = Object.keys(srcZip.files);
         const resourceCategories = ['ppt/media/', 'ppt/charts/', 'ppt/diagrams/', 'ppt/drawings/', 'ppt/embeddings/', 'ppt/tags/', 'ppt/theme/'];
@@ -3262,6 +3398,7 @@ export async function mergeMultiplePptx(pptFilesArray) {
                         }
                     }
 
+                    fullPathMap[srcKey] = targetKey;
                     const simpleCategoryName = cat.replace('ppt/', '');
                     pathRenameMap[`../${simpleCategoryName}${relativeInsideCat}`] = `../${simpleCategoryName}${resourcePrefix}${relativeInsideCat}`;
                     pathRenameMap[`${simpleCategoryName}${relativeInsideCat}`] = `${simpleCategoryName}${resourcePrefix}${relativeInsideCat}`;
@@ -3286,18 +3423,72 @@ export async function mergeMultiplePptx(pptFilesArray) {
             }
         }
 
-        // 소스 파일의 슬라이드 파일들 번호 순 정렬
-        const srcSlideFiles = Object.keys(srcZip.files)
-            .filter(f => f.match(/^ppt\/slides\/slide\d+\.xml$/i))
-            .sort((a, b) => {
-                const numA = parseInt(a.match(/slide(\d+)\.xml/i)[1], 10);
-                const numB = parseInt(b.match(/slide(\d+)\.xml/i)[1], 10);
-                return numA - numB;
+        // 원본 서식 유지: 소스 파일의 슬라이드 마스터·레이아웃을 함께 가져온다.
+        // (레이아웃을 가져오지 않으면 슬라이드가 베이스의 같은 번호 레이아웃에 붙어 상단 경로·제목 개체 틀이
+        //  마스터 본문 서식(글머리표·큰 글씨)으로 깨지고, 하단 'Ⅲ- <#>'·장 구분도 베이스 것으로 바뀐다)
+        const layoutPathMap = {}; // 원본 레이아웃 절대경로 → 병합본 레이아웃 절대경로
+        for (const set of await collectMasterSets(srcZip)) {
+            const reuse = masterSetBySignature.get(set.signature);
+            if (reuse && reuse.layoutPaths.length === set.layoutPaths.length) {
+                set.layoutPaths.forEach((lp, i) => { layoutPathMap[lp] = reuse.layoutPaths[i]; });
+                continue;
+            }
+
+            const newMasterPath = `ppt/slideMasters/slideMaster${nextPartNumber('slideMasters', 'slideMaster')}.xml`;
+            const masterMap = { ...fullPathMap, [set.masterPath]: newMasterPath };
+            const newLayoutPaths = [];
+            let layoutNum = nextPartNumber('slideLayouts', 'slideLayout');
+            set.layoutPaths.forEach(lp => {
+                const np = `ppt/slideLayouts/slideLayout${layoutNum++}.xml`;
+                masterMap[lp] = np;
+                layoutPathMap[lp] = np;
+                newLayoutPaths.push(np);
             });
+
+            for (let i = 0; i < set.layoutPaths.length; i++) {
+                const lp = set.layoutPaths[i];
+                const np = newLayoutPaths[i];
+                baseZip.file(np, await srcZip.file(lp).async('uint8array'));
+                const lRels = await srcZip.file(relsPathOf(lp))?.async('text');
+                if (lRels) baseZip.file(relsPathOf(np), remapRelsTargets(lRels, lp, np, masterMap));
+                newCtOverrides += `<Override PartName="/${np}" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>`;
+            }
+
+            let masterXml = await srcZip.file(set.masterPath).async('text');
+            masterXml = masterXml.replace(/(<p:sldLayoutId\b[^>]*\bid=")(\d+)(")/gi, (m, a, _id, b) => `${a}${++maxMasterLayoutId}${b}`);
+            baseZip.file(newMasterPath, masterXml);
+            const mRels = await srcZip.file(relsPathOf(set.masterPath))?.async('text');
+            if (mRels) baseZip.file(relsPathOf(newMasterPath), remapRelsTargets(mRels, set.masterPath, newMasterPath, masterMap));
+            newCtOverrides += `<Override PartName="/${newMasterPath}" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>`;
+
+            maxRidNum++;
+            const masterRid = `rId${maxRidNum}`;
+            newMasterIdEntries += `<p:sldMasterId id="${++maxMasterLayoutId}" r:id="${masterRid}"/>`;
+            newPresRelsEntries += `<Relationship Id="${masterRid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="${newMasterPath.replace('ppt/', '')}"/>`;
+
+            masterSetBySignature.set(set.signature, { masterPath: newMasterPath, layoutPaths: newLayoutPaths });
+        }
+
+        // 소스 파일의 슬라이드를 화면 표시 순서(presentation.xml sldIdLst)대로 가져온다
+        const srcPresXml = await srcZip.file('ppt/presentation.xml')?.async('text') || '';
+        const srcPresRels = parseRelsTargets(await srcZip.file('ppt/_rels/presentation.xml.rels')?.async('text') || '', 'ppt/presentation.xml');
+        const srcRidToPath = new Map(srcPresRels.map(r => [r.id, r.full]));
+        const srcSlideFiles = [];
+        for (const m of srcPresXml.matchAll(/<p:sldId\b[^>]*\br:id="([^"]+)"/gi)) {
+            const path = srcRidToPath.get(m[1]);
+            if (path && srcZip.file(path) && !srcSlideFiles.includes(path)) srcSlideFiles.push(path);
+        }
+        if (srcSlideFiles.length === 0) {
+            Object.keys(srcZip.files)
+                .filter(f => f.match(/^ppt\/slides\/slide\d+\.xml$/i))
+                .sort((a, b) => parseInt(a.match(/slide(\d+)\.xml/i)[1], 10) - parseInt(b.match(/slide(\d+)\.xml/i)[1], 10))
+                .forEach(f => srcSlideFiles.push(f));
+        }
 
         // 슬라이드 복제 및 관계 매핑
         for (const srcSlidePath of srcSlideFiles) {
             currentSlideCount++;
+            totalSlideCount++;
             maxRidNum++;
             maxSldIdNum++;
 
@@ -3319,11 +3510,12 @@ export async function mergeMultiplePptx(pptFilesArray) {
                     relsXml = relsXml.replaceAll(oldTarget, newTarget);
                 }
 
-                // 2) 레이아웃 참조가 베이스에 없으면 기본 레이아웃으로 보정
+                // 2) 레이아웃 참조를 함께 가져온 원본 레이아웃으로 연결 (없으면 베이스 기본 레이아웃)
                 relsXml = relsXml.replace(/Target="([^"]*slideLayout\d*\.xml)"/gi, (match, target) => {
-                    if (existingLayouts.has(target)) {
-                        return `Target="${target}"`;
-                    }
+                    const srcLayoutFull = pptxResolvePath('ppt/slides', target);
+                    const mapped = layoutPathMap[srcLayoutFull];
+                    if (mapped) return `Target="${pptxRelativePath('ppt/slides', mapped)}"`;
+                    if (existingLayouts.has(target)) return `Target="${target}"`;
                     return `Target="${defaultLayoutTarget}"`;
                 });
 
@@ -3350,6 +3542,13 @@ export async function mergeMultiplePptx(pptFilesArray) {
     } else {
         presXml = presXml.replace('</p:presentation>', `<p:sldIdLst>${newSldIdEntries}</p:sldIdLst></p:presentation>`);
     }
+    if (newMasterIdEntries) {
+        if (presXml.includes('</p:sldMasterIdLst>')) {
+            presXml = presXml.replace('</p:sldMasterIdLst>', `${newMasterIdEntries}</p:sldMasterIdLst>`);
+        } else {
+            presXml = presXml.replace(/(<p:presentation\b[^>]*>)/, `$1<p:sldMasterIdLst>${newMasterIdEntries}</p:sldMasterIdLst>`);
+        }
+    }
     baseZip.file('ppt/presentation.xml', presXml);
 
     // 2) ppt/_rels/presentation.xml.rels
@@ -3363,7 +3562,7 @@ export async function mergeMultiplePptx(pptFilesArray) {
     // 4) docProps/app.xml
     const appXml = await baseZip.file('docProps/app.xml')?.async('text');
     if (appXml) {
-        const updatedAppXml = appXml.replace(/<Slides>\d+<\/Slides>/, `<Slides>${currentSlideCount}</Slides>`);
+        const updatedAppXml = appXml.replace(/<Slides>\d+<\/Slides>/, `<Slides>${totalSlideCount}</Slides>`);
         baseZip.file('docProps/app.xml', updatedAppXml);
     }
 
