@@ -630,6 +630,7 @@ export async function runStage1Validation(fileContent, tables, masterData, optio
         idLabelLocations[id].push(pageLabelMap[p] || String(p));
     };
 
+    const masterIdsByPage = {}; // { [page]: Set<요구사항ID> }
     requirements.forEach(req => {
         const cleanId = (req.id || '').trim();
         if (!cleanId) return;
@@ -640,9 +641,18 @@ export async function runStage1Validation(fileContent, tables, masterData, optio
             if (pageText.includes(upperId)) {
                 matchedIdsInDoc.add(cleanId);
                 addLocation(cleanId, pageNum);
+                const p = parseInt(pageNum, 10) || 1;
+                if (!masterIdsByPage[p]) masterIdsByPage[p] = new Set();
+                masterIdsByPage[p].add(cleanId);
             }
         });
     });
+    // 요구사항 ID를 여러 개(4개 이상) 나열한 슬라이드(요구사항 매핑표·추적표 등)는 ID가 언급만 된 것이므로
+    // 요구사항추적표의 '작성 근거 페이지'로 보지 않는다
+    const ID_LISTING_THRESHOLD = 4;
+    const idListingPages = new Set(
+        Object.entries(masterIdsByPage).filter(([, ids]) => ids.size >= ID_LISTING_THRESHOLD).map(([p]) => parseInt(p, 10))
+    );
 
     // 2단계: 본문 정규식 전수 검색 (미등록 유령 Ghost ID 탐색용)
     const idRegex = /\b([A-Z]{2,6}[-_]\d{2,4}(?:[-_]\d{1,3})?)\b/g;
@@ -697,6 +707,8 @@ export async function runStage1Validation(fileContent, tables, masterData, optio
             isPresent,
             pages,
             pageLabels,
+            evidencePages: pages.filter(p => !idListingPages.has(p)),
+            evidenceLabels: pageLabels.filter((_, i) => !idListingPages.has(pages[i])),
             status,
             missingKeywords
         });
@@ -2394,6 +2406,21 @@ function findSectionsForText(text, tocIndex = []) {
     return hits;
 }
 
+// 요구사항명칭 속 문서명(예: '사업계획서', '제안요청서')이 파일명에 들어 있는 검수 파일
+function findFilesByDocumentName(text = '', batchResults = []) {
+    const docTokens = String(text)
+        .split(/[\s,/()]+|및/)
+        .map(normalizeForMatch)
+        .filter(t => t.length >= 4 && /(서|표)$/.test(t) && !MATCH_GENERIC.has(t));
+    if (docTokens.length === 0) return [];
+    return batchResults
+        .map(b => b.fileName || '')
+        .filter(name => {
+            const n = normalizeForMatch(name);
+            return docTokens.some(t => n.includes(t));
+        });
+}
+
 const formatTocLine = (code, title, node) => {
     const range = node && node.pages && node.pages.length > 0 ? ` (${formatPageLabelRanges(node.labels, node.pages)})` : '';
     return `${code} ${title}${range}`;
@@ -2532,15 +2559,14 @@ export async function exportOfficialRtmToExcel({
                 batchResults.forEach(res => {
                     const rtmMatrix = res.stage1?.rtmMatrix || [];
                     const found = rtmMatrix.find(m => (m.id || '').toUpperCase() === reqId);
-                    if (found && found.isPresent) {
-                        matchedFiles.push(res.fileName);
-                        if (found.pages && found.pages.length > 0) {
-                            pageCollector.push(...found.pages);
-                        }
-                        if (found.pageLabels && found.pageLabels.length > 0) {
-                            labelCollector.push(...found.pageLabels);
-                        }
-                    }
+                    if (!found || !found.isPresent) return;
+                    // ID 나열 슬라이드(요구사항 매핑표 등)에서만 언급된 경우는 근거로 보지 않음
+                    const pages = found.evidencePages || found.pages || [];
+                    const labels = found.evidencePages ? (found.evidenceLabels || []) : (found.pageLabels || []);
+                    if (found.evidencePages && pages.length === 0 && (found.pages || []).length > 0) return;
+                    matchedFiles.push(res.fileName);
+                    pageCollector.push(...pages);
+                    labelCollector.push(...labels);
                 });
 
                 // 요구사항 ID가 본문에 없으면 요구사항명칭 ↔ 절·항 제목 내용 매칭 (예: '법·제도 분석' 절)
@@ -2550,6 +2576,11 @@ export async function exportOfficialRtmToExcel({
                         pageCollector.push(...hit.pages);
                         labelCollector.push(...hit.labels);
                     });
+                }
+
+                // 별도 파일로 작성하는 산출물(제안요청서·사업계획서 등): 요구사항명칭의 문서명이 파일명에 있으면 그 파일 전체
+                if (matchedFiles.length === 0) {
+                    findFilesByDocumentName(req.name || '', batchResults).forEach(f => matchedFiles.push(f));
                 }
 
                 const isPresent = matchedFiles.length > 0;
