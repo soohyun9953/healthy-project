@@ -43,11 +43,30 @@ import {
     exportSSOTReportToExcel,
     exportBatchSSOTReportToExcel,
     exportOfficialRtmToExcel,
+    parseMatchingConfigFile,
+    parseManualConfirmationFile,
+    DEFAULT_RTM_MATCHING_CONFIG,
+    MANUAL_CONFIRMATION_TEMPLATE_CSV,
     OFFICIAL_RTM_TEMPLATE_ITEMS,
     parseRfpContent,
     applyRfpToMasterData
 } from '../utils/ssotValidator';
 import { extractStructuredFileContent } from '../utils/fileExtractor';
+
+const RTM_MATCHING_CONFIG_KEY = 'healthy_rtm_matching_config_v1';
+const RTM_MANUAL_ENTRIES_KEY = 'healthy_rtm_manual_entries_v1';
+
+const downloadTextFile = (text, fileName, type = 'text/plain;charset=utf-8') => {
+    const blob = new Blob([text], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+};
 
 export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel }) {
     // ── 마스터 데이터 상태 (LocalStorage 영속화) ──────────────────────
@@ -113,6 +132,14 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
     const [rtmMode, setRtmMode] = useState('auto'); // 'auto' | 'template'
     const [includeDocChecklist, setIncludeDocChecklist] = useState(false); // 산출물현황표 시트 포함 여부 (기본 미포함)
     const [isGeneratingRtm, setIsGeneratingRtm] = useState(false);
+    // 요구사항추적표 근거 설정: 사업관리 근거 문서 / 매칭 설정(동의어 사전) / 수동 확정 목록
+    const [rtmManagementFiles, setRtmManagementFiles] = useState([]);
+    const [rtmMatchingConfig, setRtmMatchingConfig] = useState(() => {
+        try { return JSON.parse(localStorage.getItem(RTM_MATCHING_CONFIG_KEY) || 'null'); } catch { return null; }
+    });
+    const [rtmManualEntries, setRtmManualEntries] = useState(() => {
+        try { return JSON.parse(localStorage.getItem(RTM_MANUAL_ENTRIES_KEY) || '[]'); } catch { return []; }
+    });
 
     // ── 사업 RFP 자동 분석 및 마스터 정보 동기화 상태 ────────────────
     const [showRfpModal, setShowRfpModal] = useState(false);
@@ -730,7 +757,10 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                 companyName: rtmCompanyName || '㈜한국아이티컨설팅',
                 issueDate: rtmIssueDate || '2025.12.17.',
                 mode: rtmMode,
-                includeDocChecklist
+                includeDocChecklist,
+                managementFiles: rtmManagementFiles,
+                matchingConfig: rtmMatchingConfig,
+                manualEntries: rtmManualEntries
             });
             setShowOfficialRtmModal(false);
         } catch (err) {
@@ -739,6 +769,52 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         } finally {
             setIsGeneratingRtm(false);
         }
+    };
+
+    const handleRtmMatchingConfigUpload = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const parsed = await parseMatchingConfigFile(file);
+            setRtmMatchingConfig(parsed);
+            try { localStorage.setItem(RTM_MATCHING_CONFIG_KEY, JSON.stringify(parsed)); } catch { /* 저장 실패 무시 */ }
+        } catch (err) {
+            alert(`매칭 설정 파일을 읽지 못했습니다: ${err.message}`);
+        }
+    };
+    const clearRtmMatchingConfig = () => {
+        setRtmMatchingConfig(null);
+        try { localStorage.removeItem(RTM_MATCHING_CONFIG_KEY); } catch { /* 무시 */ }
+    };
+    const handleRtmManualUpload = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const entries = await parseManualConfirmationFile(file);
+            if (entries.length === 0) {
+                alert('수동 확정 항목을 찾지 못했습니다. 요구사항ID 열이 있는지, \'확정(Y)\' 열을 쓴 경우 Y로 표시했는지 확인해 주세요.');
+                return;
+            }
+            setRtmManualEntries(entries);
+            try { localStorage.setItem(RTM_MANUAL_ENTRIES_KEY, JSON.stringify(entries)); } catch { /* 무시 */ }
+        } catch (err) {
+            alert(`수동 확정 목록을 읽지 못했습니다: ${err.message}`);
+        }
+    };
+    const clearRtmManualEntries = () => {
+        setRtmManualEntries([]);
+        try { localStorage.removeItem(RTM_MANUAL_ENTRIES_KEY); } catch { /* 무시 */ }
+    };
+    const handleRtmManagementFiles = (e) => {
+        const files = Array.from(e.target.files || []).filter(f => !f.name.startsWith('~$'));
+        e.target.value = '';
+        if (files.length === 0) return;
+        setRtmManagementFiles(prev => {
+            const names = new Set(prev.map(f => f.name));
+            return [...prev, ...files.filter(f => !names.has(f.name))];
+        });
     };
 
     // ── 결과 필터링 ─────────────────────────────────────────────
@@ -2755,7 +2831,9 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                 }}>
                     <div className="glass-panel animate-scale-in" style={{
                         width: '100%',
-                        maxWidth: '650px',
+                        maxWidth: '720px',
+                        maxHeight: 'calc(100vh - 40px)',
+                        overflowY: 'auto',
                         background: '#0f172a',
                         border: '1px solid rgba(59, 130, 246, 0.4)',
                         borderRadius: '16px',
@@ -2881,6 +2959,76 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 </div>
                             </div>
 
+                            {/* 근거 설정 (자동 연동 모드) */}
+                            {rtmMode === 'auto' && (
+                                <div data-testid="rtm-evidence-settings" style={{ paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>근거 설정 (선택)</span>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <span style={{ fontSize: '12.5px', color: 'var(--text-primary)', fontWeight: 600 }}>① 사업관리 근거 문서</span>
+                                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>수행계획서·보안계획서·착수/중간/완료보고 자료·회의록 등. 보안·품질·사업관리·지원(SER·QUR·COR·PMR·PSR) 요구사항은 이 문서를 먼저 검색하고, 없으면 '사업관리 문서 확인필요'로 표시합니다.</span>
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <label className="btn-outline" style={{ padding: '5px 12px', fontSize: '12px', cursor: 'pointer' }}>
+                                                파일 선택
+                                                <input data-testid="rtm-mgmt-files" type="file" multiple onChange={handleRtmManagementFiles} style={{ display: 'none' }} />
+                                            </label>
+                                            <label className="btn-outline" style={{ padding: '5px 12px', fontSize: '12px', cursor: 'pointer' }}>
+                                                폴더 선택
+                                                <input type="file" webkitdirectory="" directory="" multiple onChange={handleRtmManagementFiles} style={{ display: 'none' }} />
+                                            </label>
+                                            <span style={{ fontSize: '12px', color: rtmManagementFiles.length ? '#60a5fa' : 'var(--text-muted)' }}>
+                                                {rtmManagementFiles.length ? `${rtmManagementFiles.length}개 문서 지정됨` : '지정된 문서 없음'}
+                                            </span>
+                                            {rtmManagementFiles.length > 0 && (
+                                                <button type="button" onClick={() => setRtmManagementFiles([])} className="btn-outline" style={{ padding: '4px 10px', fontSize: '11.5px' }}>비우기</button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <span style={{ fontSize: '12.5px', color: 'var(--text-primary)', fontWeight: 600 }}>② 매칭 설정 (동의어 사전·산출정보)</span>
+                                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>JSON(기본 설정과 같은 형식) 또는 CSV("요구사항 용어, 산출물 용어1|용어2")를 올리면 기본 사전에 더해 적용됩니다. 브라우저에 저장되어 다음 점검에도 유지됩니다.</span>
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <label className="btn-outline" style={{ padding: '5px 12px', fontSize: '12px', cursor: 'pointer' }}>
+                                                설정 파일 올리기
+                                                <input data-testid="rtm-matching-config" type="file" accept=".json,.csv,.tsv,.txt" onChange={handleRtmMatchingConfigUpload} style={{ display: 'none' }} />
+                                            </label>
+                                            <button type="button" className="btn-outline" style={{ padding: '5px 12px', fontSize: '12px' }}
+                                                onClick={() => downloadTextFile(JSON.stringify(DEFAULT_RTM_MATCHING_CONFIG, null, 2), 'rtm_matching_config_기본.json', 'application/json;charset=utf-8')}>
+                                                기본 설정 내려받기
+                                            </button>
+                                            <span style={{ fontSize: '12px', color: rtmMatchingConfig ? '#60a5fa' : 'var(--text-muted)' }}>
+                                                {rtmMatchingConfig ? `사용자 설정 적용 중 (동의어 ${(rtmMatchingConfig.synonyms || []).length}건 추가)` : '기본 설정 사용 중'}
+                                            </span>
+                                            {rtmMatchingConfig && (
+                                                <button type="button" onClick={clearRtmMatchingConfig} className="btn-outline" style={{ padding: '4px 10px', fontSize: '11.5px' }}>기본값으로</button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <span style={{ fontSize: '12.5px', color: 'var(--text-primary)', fontWeight: 600 }}>③ 수동 확정 목록</span>
+                                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>PM이 확인한 '요구사항 → 근거 위치'. 생성된 엑셀의 '근거 상세' 시트에서 확정(Y) 열에 Y를 표시해 그대로 올려도 됩니다. 결과에 '수동 확정'으로 표시됩니다.</span>
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <label className="btn-outline" style={{ padding: '5px 12px', fontSize: '12px', cursor: 'pointer' }}>
+                                                목록 올리기
+                                                <input data-testid="rtm-manual-entries" type="file" accept=".csv,.json,.xlsx,.tsv,.txt" onChange={handleRtmManualUpload} style={{ display: 'none' }} />
+                                            </label>
+                                            <button type="button" className="btn-outline" style={{ padding: '5px 12px', fontSize: '12px' }}
+                                                onClick={() => downloadTextFile(MANUAL_CONFIRMATION_TEMPLATE_CSV, '수동확정_양식.csv', 'text/csv;charset=utf-8')}>
+                                                양식 내려받기
+                                            </button>
+                                            <span style={{ fontSize: '12px', color: rtmManualEntries.length ? '#60a5fa' : 'var(--text-muted)' }}>
+                                                {rtmManualEntries.length ? `${new Set(rtmManualEntries.map(e => e.reqId)).size}개 요구사항 수동 확정 적용 중` : '적용된 목록 없음'}
+                                            </span>
+                                            {rtmManualEntries.length > 0 && (
+                                                <button type="button" onClick={clearRtmManualEntries} className="btn-outline" style={{ padding: '4px 10px', fontSize: '11.5px' }}>비우기</button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* 산출물현황표 시트 포함 여부 옵션 (기본 미포함) */}
                             <div style={{ paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
@@ -2899,9 +3047,12 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                         <div style={{ background: 'rgba(0,0,0,0.25)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>엑셀 시트 구성:</span>
                             <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <div>• <strong>시트 1 [요구사항추적표]:</strong> 요구사항번호, 요구사항명칭, 충족여부, 관련 파일, 해당 페이지(슬라이드 하단 표기 기준, 예: Ⅱ-7~58, 전 페이지)</div>
+                                <div>• <strong>시트 1 [요구사항추적표]:</strong> 요구사항번호, 요구사항명칭, 충족여부(충족·부분충족·확인필요·미충족), 관련 파일, 해당 페이지(예: Ⅱ-7~58), 판정 근거 유형(수동 확정·대응표·ID 명시·ID 언급·절 제목 일치·의미 매칭), 근거 위치(파일명 / 절 번호 / 장표 제목 / 페이지), 비고(누락 산출정보·경고)</div>
+                                {rtmMode === 'auto' && (
+                                    <div>• <strong>근거 상세 시트:</strong> 근거 1건당 1행. 확정(Y) 열에 Y를 표시해 다시 올리면 수동 확정 목록으로 반영</div>
+                                )}
                                 {includeDocChecklist && (
-                                    <div style={{ color: '#93c5fd' }}>• <strong>시트 2 [RFP상 산출물]:</strong> 구분, 서류(환경분석서, 현황분석서 등 34종), 현황, 파일명, 주요 목차(절 제목·페이지 구간), 비고(작성근거)</div>
+                                    <div style={{ color: '#93c5fd' }}>• <strong>시트 2 [RFP상 산출물]:</strong> 구분, 서류(34종), 현황, 파일명, 주요 목차(절 제목·페이지 구간), 비고(작성근거), 추적표 연계(요구사항 판정에서 자동 도출)</div>
                                 )}
                             </div>
                         </div>

@@ -269,6 +269,35 @@ function findSlideNumberTemplates(doc) {
     return templates;
 }
 
+// 장표 구조 정보: 제목 개체 틀, 거버닝 메시지(제목 외 개체 틀 중 가장 긴 문장), 개체 틀 문구(상단 경로 등), 표의 행·열
+function extractSlideMeta(doc) {
+    const meta = { title: '', governing: '', headings: [], tables: [] };
+    const textOf = (el) => descendantsByLocalName(el, 'p')
+        .map(p => descendantsByLocalName(p, 't').map(t => t.textContent || '').join('').trim())
+        .filter(Boolean)
+        .join(' ');
+    descendantsByLocalName(doc, 'sp').forEach(sp => {
+        const ph = shapePlaceholder(sp);
+        if (!ph) return;
+        if (['sldNum', 'dt', 'ftr', 'hdr'].includes(ph.type)) return;
+        const text = textOf(sp).replace(/\s+/g, ' ').trim();
+        if (!text) return;
+        if (ph.type === 'title' || ph.type === 'ctrTitle') {
+            meta.title = meta.title ? `${meta.title} ${text}` : text;
+            return;
+        }
+        meta.headings.push(text);
+        if (text.length >= 15 && text.length > meta.governing.length) meta.governing = text;
+    });
+    descendantsByLocalName(doc, 'tbl').forEach(tbl => {
+        descendantsByLocalName(tbl, 'tr').forEach(tr => {
+            const cells = descendantsByLocalName(tr, 'tc').map(tc => textOf(tc).replace(/\s+/g, ' ').trim());
+            if (cells.some(Boolean)) meta.tables.push(cells);
+        });
+    });
+    return meta;
+}
+
 // 장 구분 헤더(예: 우상단 "Ⅱ. 환경분석")
 const CHAPTER_HEADER_REGEX = /^([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])\s*[.．]\s*([가-힣A-Za-z][^.。]{1,24})$/;
 
@@ -341,6 +370,7 @@ export async function extractTextFromPPTX(file) {
     const pageMap = {};
     const pageLabelMap = {}; // { [slideNum]: "Ⅱ-15" 같은 슬라이드 하단 표시 페이지 라벨 | null }
     const slideChapterMap = {}; // { [slideNum]: { roman: 'Ⅱ', title: '환경분석' } } 우상단 장 구분 헤더
+    const slideMetaMap = {}; // { [slideNum]: { title, governing, headings, tables } } 장표 제목·거버닝·표 구조
 
     // 레이아웃/마스터는 수십~수백 장이 공유하므로 1회만 해석
     const partCache = new Map();
@@ -450,6 +480,13 @@ export async function extractTextFromPPTX(file) {
         if (!chapter && !slideDoc) chapter = findChapterHeader(slideParagraphs);
 
         if (chapter) slideChapterMap[slideNum] = chapter;
+        if (slideDoc) {
+            try {
+                slideMetaMap[slideNum] = extractSlideMeta(slideDoc);
+            } catch (e) {
+                console.warn(`PPTX 슬라이드 ${slideNum} 구조 분석 실패:`, e);
+            }
+        }
         if (slideParagraphs.length > 0) {
             pageMap[slideNum] = slideParagraphs;
             textBlocks.push(`[슬라이드 ${slideNum}]\n` + slideParagraphs.join('\n'));
@@ -494,7 +531,8 @@ export async function extractTextFromPPTX(file) {
         pages: orderedSlides.length,
         pageMap,
         pageLabelMap,
-        slideChapterMap
+        slideChapterMap,
+        slideMetaMap
     };
 }
 
@@ -739,6 +777,7 @@ export async function extractStructuredFileContent(file) {
         pageMap,
         pageLabelMap: res.pageLabelMap || {},
         slideChapterMap: res.slideChapterMap || {},
+        slideMetaMap: res.slideMetaMap || {},
         fileName: file.name,
         fileSize: file.size,
         ext
