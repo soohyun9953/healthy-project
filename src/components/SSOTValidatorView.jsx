@@ -2846,7 +2846,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                                 검수 결과 자동 매핑 모드 (권장)
                                             </span>
                                             <span style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                                                현재 프로젝트 마스터 요구사항(총 {ssotData.requirements.length}건) 및 업로드된 산출물({targetFiles.length}개)의 검증 결과(충족/미충족, 관련 파일명, 출현 페이지 구간: 예 '7~58')를 자동으로 취합하여 작성합니다.
+                                                현재 프로젝트 마스터 요구사항(총 {ssotData.requirements.length}건) 및 업로드된 산출물({targetFiles.length}개)의 검증 결과(충족/미충족, 관련 파일명, 해당 페이지: 슬라이드 하단 표기 기준 예 'Ⅱ-10~13')를 자동으로 취합하여 작성합니다. 산출물에 요구사항 ID가 없으면 요구사항명칭과 슬라이드 상단 절·항 제목(예: '3. 법·제도 분석')을 대조해 해당 구간을 찾습니다.
                                             </span>
                                         </div>
                                     </label>
@@ -2901,7 +2901,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                             <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <div>• <strong>시트 1 [요구사항추적표]:</strong> 요구사항번호, 요구사항명칭, 충족여부, 관련 파일, 해당 페이지(슬라이드 하단 표기 기준, 예: Ⅱ-7~58, 전 페이지)</div>
                                 {includeDocChecklist && (
-                                    <div style={{ color: '#93c5fd' }}>• <strong>시트 2 [RFP상 산출물]:</strong> 구분, 서류(환경분석서, 현황분석서 등 34종), 현황, 파일명, 주요 목차, 비고(작성근거)</div>
+                                    <div style={{ color: '#93c5fd' }}>• <strong>시트 2 [RFP상 산출물]:</strong> 구분, 서류(환경분석서, 현황분석서 등 34종), 현황, 파일명, 주요 목차(절 제목·페이지 구간), 비고(작성근거)</div>
                                 )}
                             </div>
                         </div>

@@ -2156,26 +2156,248 @@ function extractTocEntries(pageMap = {}) {
     return { numericToc: toList(numeric), romanToc: toList(roman) };
 }
 
-// 검수 대상 PPTX별 장 번호와 목차 색인
+// 목차 슬라이드의 번호 없는 제목 목록 (예: "환경분석 개요" / "내·외부 환경분석" / "법·제도 분석" …, 번호 도형은 별도)
+function extractUnnumberedTocTitles(pageMap = {}, chapterTitle = '') {
+    const slideNums = Object.keys(pageMap).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b).slice(0, 12);
+    const tocSlide = slideNums.find(n => (pageMap[n] || []).some(p => /^\s*(목\s*차|CONTENTS)\s*$/i.test(p)));
+    if (!tocSlide) return [];
+    const skip = p => /^\s*(목\s*차|CONTENTS|INDEX|CHAPTER|내\s*용)\s*$/i.test(p)
+        || /^[\dⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ\s.]+$/.test(p)
+        || (chapterTitle && p.replace(/\s/g, '') === chapterTitle.replace(/\s/g, ''));
+    const titles = (pageMap[tocSlide] || []).map(p => p.trim()).filter(p => p.length >= 3 && p.length <= 40 && !skip(p));
+    return titles.length >= 2 && titles.length <= 15 ? titles.map((title, i) => ({ num: i + 1, title })) : [];
+}
+
+// 슬라이드별 상단 경로("1. 환경분석 개요", "1.1 분석목적 및 대상")로 절/항과 해당 슬라이드 구간을 구한다
+const SECTION_HEADING_REGEX = /^0?([1-9]\d?)\.\s*([^\d\s.][^\n]{1,38})$/;
+const SUBSECTION_HEADING_REGEX = /^0?([1-9]\d?)\.(\d{1,2})\.?\s+(\S[^\n]{1,38})$/;
+
+function buildSectionIndex(pageMap = {}, pageLabelMap = {}) {
+    const slideNums = Object.keys(pageMap).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
+    const secCount = new Map();
+    const subCount = new Map();
+    const perSlide = slideNums.map(n => {
+        const secs = new Set();
+        const subs = new Set();
+        (pageMap[n] || []).forEach(raw => {
+            const p = raw.trim();
+            let m = p.match(SUBSECTION_HEADING_REGEX);
+            if (m) { subs.add(`${parseInt(m[1], 10)}.${parseInt(m[2], 10)}|${m[3].trim()}`); return; }
+            m = p.match(SECTION_HEADING_REGEX);
+            if (m) secs.add(`${parseInt(m[1], 10)}|${m[2].trim()}`);
+        });
+        secs.forEach(k => secCount.set(k, (secCount.get(k) || 0) + 1));
+        subs.forEach(k => subCount.set(k, (subCount.get(k) || 0) + 1));
+        return { n, secs, subs };
+    });
+
+    // 본문 번호 목록과 구분: 여러 슬라이드에 반복되는 경로 문구만 절/항 제목으로 채택
+    const minCount = slideNums.length >= 6 ? 2 : 1;
+    const bestTitle = (countMap) => {
+        const best = new Map();
+        countMap.forEach((cnt, key) => {
+            if (cnt < minCount) return;
+            const [num, title] = key.split('|');
+            const cur = best.get(num);
+            if (!cur || cnt > cur.cnt) best.set(num, { title, cnt, key });
+        });
+        return best;
+    };
+    const secBest = bestTitle(secCount);
+    const subBest = bestTitle(subCount);
+    const secKeys = new Set(Array.from(secBest.values()).map(v => v.key));
+    const subKeys = new Set(Array.from(subBest.values()).map(v => v.key));
+
+    const sections = new Map();
+    const ensureSection = (num) => {
+        if (!sections.has(num)) sections.set(num, { num, title: secBest.get(String(num))?.title || '', pages: [], subsections: new Map() });
+        return sections.get(num);
+    };
+
+    let curSec = null;
+    let curSub = null;
+    perSlide.forEach(({ n, secs, subs }) => {
+        const secHits = Array.from(secs).filter(k => secKeys.has(k));
+        const subHits = Array.from(subs).filter(k => subKeys.has(k));
+        // 여러 절이 한꺼번에 나열된 슬라이드 = 목차/간지 → 구간에 넣지 않는다
+        if (secHits.length >= 3 || subHits.length >= 4) { curSec = null; curSub = null; return; }
+        const byCount = (map) => (a, b) => (map.get(b) || 0) - (map.get(a) || 0);
+        if (secHits.length > 0) {
+            const num = parseInt(secHits.sort(byCount(secCount))[0].split('|')[0], 10);
+            if (num !== curSec) curSub = null;
+            curSec = num;
+        }
+        if (subHits.length > 0) {
+            const key = subHits.sort(byCount(subCount))[0];
+            const [secNum, subNum] = key.split('|')[0].split('.').map(x => parseInt(x, 10));
+            curSec = secNum;
+            curSub = subNum;
+        }
+        if (curSec == null) return;
+        const sec = ensureSection(curSec);
+        sec.pages.push(n);
+        if (curSub != null) {
+            const subTitle = subBest.get(`${curSec}.${curSub}`)?.title || '';
+            if (!sec.subsections.has(curSub)) sec.subsections.set(curSub, { num: curSub, title: subTitle, pages: [] });
+            sec.subsections.get(curSub).pages.push(n);
+        }
+    });
+
+    const withLabels = node => ({ ...node, labels: node.pages.map(p => pageLabelMap[p] || String(p)) });
+    return Array.from(sections.values())
+        .sort((a, b) => a.num - b.num)
+        .map(sec => ({
+            ...withLabels(sec),
+            subsections: Array.from(sec.subsections.values()).sort((a, b) => a.num - b.num).map(withLabels)
+        }));
+}
+
+// 장 제목 ↔ 장 번호 기본값 (공공 ISP 표준 목차). 파일명이 "1장. 환경분석"처럼 내부 장 번호와 달라도 주제어로 판별
+const DEFAULT_CHAPTER_TOPICS = [
+    { num: 1, keys: ['사업개요', '사업의개요'] },
+    { num: 2, keys: ['환경분석'] },
+    { num: 3, keys: ['현황분석'] },
+    { num: 4, keys: ['목표모델', '목표시스템'] },
+    { num: 5, keys: ['이행계획', '통합이행'] }
+];
+const normalizeForMatch = (s = '') => String(s).toLowerCase().replace(/[\s·ㆍ・\-_/(),.'"「」[\]]/g, '');
+
+function majorityChapter(slideChapterMap = {}) {
+    const counts = new Map();
+    Object.values(slideChapterMap).forEach(c => {
+        const num = ROMAN_NUMERAL_VALUES[c.roman];
+        if (!num) return;
+        const cur = counts.get(num) || { cnt: 0, title: c.title };
+        cur.cnt += 1;
+        counts.set(num, cur);
+    });
+    let best = null;
+    counts.forEach((v, num) => { if (!best || v.cnt > best.cnt) best = { num, ...v }; });
+    return best;
+}
+
+function detectChapterFromFileTopic(fileName = '', knownTitles = new Map()) {
+    const fName = normalizeForMatch(fileName);
+    for (const [num, title] of knownTitles) {
+        const t = normalizeForMatch(title);
+        if (t.length >= 3 && fName.includes(t)) return num;
+    }
+    const hit = DEFAULT_CHAPTER_TOPICS.find(c => c.keys.some(k => fName.includes(k)));
+    return hit ? hit.num : null;
+}
+
+// 검수 대상 PPTX별 장 번호, 절/항 구간, 목차 색인
 async function buildDeliverableTocIndex(batchResults = []) {
-    const index = [];
+    const parsed = [];
     for (const res of batchResults) {
         if (!res.file || getFileExtension(res.fileName || '') !== 'pptx') continue;
-        let content;
         try {
-            content = await extractStructuredFileContent(res.file);
+            parsed.push({ res, content: await extractStructuredFileContent(res.file) });
         } catch (e) {
             console.warn(`[산출물현황] '${res.fileName}' 목차 분석 실패:`, e);
-            continue;
         }
-        const { numericToc, romanToc } = extractTocEntries(content.pageMap);
-        const chapter = detectChapterFromFileName(res.fileName)
-            ?? detectChapterFromPageLabels(content.pageLabelMap)
-            ?? (romanToc.length === 1 ? romanToc[0].num : null);
-        index.push({ fileName: res.fileName, chapter, numericToc, romanToc });
     }
-    return index;
+
+    // 모든 파일의 장 구분 헤더·표지 목차에서 장 번호 ↔ 장 제목 사전 구성 (예: 3 → '현황분석')
+    const knownTitles = new Map();
+    parsed.forEach(({ content }) => {
+        Object.values(content.slideChapterMap || {}).forEach(c => {
+            const num = ROMAN_NUMERAL_VALUES[c.roman];
+            if (num && !knownTitles.has(num)) knownTitles.set(num, c.title);
+        });
+        extractTocEntries(content.pageMap).romanToc.forEach(t => {
+            if (!knownTitles.has(t.num)) knownTitles.set(t.num, t.title.replace(/^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]\.\s*/, ''));
+        });
+    });
+
+    return parsed.map(({ res, content }) => {
+        const { numericToc, romanToc } = extractTocEntries(content.pageMap);
+        const headerChapter = majorityChapter(content.slideChapterMap);
+        const chapter = detectChapterFromPageLabels(content.pageLabelMap)
+            ?? headerChapter?.num
+            ?? detectChapterFromFileName(res.fileName)
+            ?? detectChapterFromFileTopic(res.fileName, knownTitles)
+            ?? (romanToc.length === 1 ? romanToc[0].num : null);
+        const chapterTitle = (headerChapter && headerChapter.num === chapter ? headerChapter.title : null) || knownTitles.get(chapter) || '';
+
+        // 절 제목 보완: 상단 경로 > 번호 목차 > 번호 없는 목차 슬라이드
+        const sections = buildSectionIndex(content.pageMap, content.pageLabelMap);
+        const tocFallback = numericToc.length > 0 ? numericToc : extractUnnumberedTocTitles(content.pageMap, chapterTitle);
+        tocFallback.forEach(t => {
+            const sec = sections.find(s => s.num === t.num);
+            if (sec && !sec.title) sec.title = t.title;
+        });
+        const mergedToc = new Map(tocFallback.map(t => [t.num, t.title]));
+        sections.forEach(s => { if (s.title) mergedToc.set(s.num, s.title); });
+
+        return {
+            fileName: res.fileName,
+            chapter,
+            chapterTitle,
+            sections,
+            numericToc: Array.from(mergedToc.entries()).sort((a, b) => a[0] - b[0]).map(([num, title]) => ({ num, title })),
+            romanToc
+        };
+    });
 }
+
+// ── 요구사항명/서류명 ↔ 절·항 제목 내용 매칭 (요구사항 ID가 본문에 없는 실제 산출물 대응) ──
+const MATCH_STOPWORDS = new Set(['분석', '수립', '방안', '제시', '검토', '도출', '설계', '작성', '현황', '및', '등', '개요', '추진', '계획', '방향', '관리', '체계', '전략', '결과', '마련', '기반', '대상', '서', '세부', '상세', '분석서', '설계서', '정의서']);
+const MATCH_GENERIC = new Set(['데이터', '시스템', '정보', '정보화', '업무', '공공의료', 'ai', '사업', '기술', '서비스', '공공', '의료', '보건의료', '목표', '정보시스템']);
+const STEM_SUFFIXES = ['분석서', '설계서', '정의서', '분석', '현황', '수립', '방안', '설계', '계획', '전략', '개요'];
+
+function matchTokens(text = '') {
+    return String(text)
+        .split(/[\s,/()]+|및/)
+        .map(normalizeForMatch)
+        .filter(Boolean)
+        .map(t => {
+            const suf = STEM_SUFFIXES.find(sf => t.endsWith(sf) && t.length - sf.length >= 2);
+            return suf ? t.slice(0, -suf.length) : t;
+        });
+}
+
+function titleMatchesText(title = '', text = '') {
+    const normTitle = normalizeForMatch(title);
+    const normText = normalizeForMatch(text);
+    if (normTitle.length < 2 || normText.length < 2) return false;
+    if (normTitle.length >= 4 && (normText.includes(normTitle) || normTitle.includes(normText))) return true;
+    const distinctive = matchTokens(title).filter(t => t.length >= 2 && !MATCH_STOPWORDS.has(t));
+    if (distinctive.length === 0) return false;
+    // 범용어(데이터·업무 등)만으로 된 제목("데이터 현황분석")은 제목의 모든 단어가 그대로 들어 있어야 일치
+    if (distinctive.every(t => MATCH_GENERIC.has(t))) {
+        const rawTokens = String(title).split(/[\s,/()]+|및/).map(normalizeForMatch).filter(t => t.length >= 2);
+        return rawTokens.length > 0 && rawTokens.every(t => normText.includes(t));
+    }
+    const textTokens = new Set(matchTokens(text));
+    // 범용어는 독립 단어로 쓰였을 때만, 고유어(법·제도 등)는 포함 여부로 판정
+    return distinctive.every(t => (MATCH_GENERIC.has(t) ? textTokens.has(t) : normText.includes(t)));
+}
+
+// 요구사항/서류명에 해당하는 절·항 목록 (절이 일치하면 하위 항은 생략)
+function findSectionsForText(text, tocIndex = []) {
+    const hits = [];
+    tocIndex.forEach(doc => {
+        const roman = NUM_TO_ROMAN[doc.chapter] || '';
+        doc.sections.forEach(sec => {
+            if (sec.title && titleMatchesText(sec.title, text)) {
+                hits.push({ fileName: doc.fileName, code: `${roman}.${sec.num}`, title: sec.title, pages: sec.pages, labels: sec.labels });
+                return;
+            }
+            sec.subsections.forEach(sub => {
+                if (sub.title && titleMatchesText(sub.title, text)) {
+                    hits.push({ fileName: doc.fileName, code: `${roman}.${sec.num}.${sub.num}`, title: sub.title, pages: sub.pages, labels: sub.labels });
+                }
+            });
+        });
+    });
+    return hits;
+}
+
+const formatTocLine = (code, title, node) => {
+    const range = node && node.pages && node.pages.length > 0 ? ` (${formatPageLabelRanges(node.labels, node.pages)})` : '';
+    return `${code} ${title}${range}`;
+};
 
 // 목차 코드로 산출물이 담긴 파일과 해당 목차 제목을 찾는다
 function resolveDocByTocRefs(refs, tocIndex) {
@@ -2191,11 +2413,18 @@ function resolveDocByTocRefs(refs, tocIndex) {
         const roman = NUM_TO_ROMAN[chapter] || String(chapter);
         const chapterFile = tocIndex.find(x => x.chapter === chapter);
         if (chapterFile) {
-            if (!fileNames.includes(chapterFile.fileName)) fileNames.push(chapterFile.fileName);
+            const lines = [];
             nums.forEach(n => {
+                const sec = (chapterFile.sections || []).find(item => item.num === n);
                 const t = chapterFile.numericToc.find(item => item.num === n);
-                if (t) tocLines.push(`${roman}.${n} ${t.title}`);
+                const title = (sec && sec.title) || (t && t.title);
+                if (title) lines.push(formatTocLine(`${roman}.${n}`, title, sec));
             });
+            // 절 구조를 읽어낸 파일인데 해당 절이 하나도 없으면 이 파일에 작성되지 않은 것으로 본다
+            const structureKnown = (chapterFile.sections || []).length > 0 || chapterFile.numericToc.length > 0;
+            if (lines.length === 0 && structureKnown) return;
+            if (!fileNames.includes(chapterFile.fileName)) fileNames.push(chapterFile.fileName);
+            tocLines.push(...lines);
             return;
         }
         // 전 장이 한 파일에 담긴 종합보고서: 장 단위 목차 제목으로 표기
@@ -2284,6 +2513,8 @@ export async function exportOfficialRtmToExcel({
 
     // 데이터 행 생성
     let itemsToRender = [];
+    // 검수 PPTX의 장·절 구간 색인 (요구사항 내용 매칭과 산출물현황 시트에 공용)
+    const tocIndex = batchResults.length > 0 ? await buildDeliverableTocIndex(batchResults) : [];
 
     if (mode === 'template') {
         itemsToRender = OFFICIAL_RTM_TEMPLATE_ITEMS;
@@ -2312,6 +2543,15 @@ export async function exportOfficialRtmToExcel({
                     }
                 });
 
+                // 요구사항 ID가 본문에 없으면 요구사항명칭 ↔ 절·항 제목 내용 매칭 (예: '법·제도 분석' 절)
+                if (matchedFiles.length === 0 && tocIndex.length > 0) {
+                    findSectionsForText(req.name || '', tocIndex).forEach(hit => {
+                        if (!matchedFiles.includes(hit.fileName)) matchedFiles.push(hit.fileName);
+                        pageCollector.push(...hit.pages);
+                        labelCollector.push(...hit.labels);
+                    });
+                }
+
                 const isPresent = matchedFiles.length > 0;
                 let pageStr = '-';
                 if (isPresent) {
@@ -2334,7 +2574,9 @@ export async function exportOfficialRtmToExcel({
     let startRow = 8;
     itemsToRender.forEach((item, idx) => {
         const row = rtmSheet.getRow(startRow + idx);
-        row.height = item.file && item.file.includes('\n') ? 36 : 24;
+        const fileLines = item.file ? item.file.split('\n').length : 1;
+        const pageLines = Math.ceil(String(item.pages || '').length / 18) || 1;
+        row.height = Math.max(24, Math.max(fileLines, pageLines) * 15);
 
         // C열: 요구사항번호
         const cCell = row.getCell(3);
@@ -2368,7 +2610,7 @@ export async function exportOfficialRtmToExcel({
         const gCell = row.getCell(7);
         gCell.value = item.pages || '-';
         gCell.font = { name: '맑은 고딕', size: 9.5 };
-        gCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        gCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
         gCell.border = borderThin;
     });
 
@@ -2420,8 +2662,8 @@ export async function exportOfficialRtmToExcel({
 
         // 실제 업로드된 검수 산출물과 RFP 요구서류 매칭
         // 1순위: 비고의 목차 코드(Ⅱ.3 등) ↔ 파일의 장 번호 + 목차 슬라이드 항목
-        // 2순위: 파일명 키워드 매칭 (목차 코드가 없거나 장 파일을 찾지 못한 경우)
-        const tocIndex = batchResults.length > 0 ? await buildDeliverableTocIndex(batchResults) : [];
+        // 2순위: 서류명 ↔ 슬라이드 상단 경로(절·항 제목) 내용 매칭
+        // 3순위: 파일명 키워드 매칭 (목차 코드가 없거나 장 파일을 찾지 못한 경우)
 
         const docItemsToRender = OFFICIAL_DOCUMENT_CHECKLIST_ITEMS.map(item => {
             let fileNames = [];
@@ -2431,6 +2673,14 @@ export async function exportOfficialRtmToExcel({
                 const refs = parseTocRefs(item.note);
                 if (refs.length > 0) {
                     ({ fileNames, tocLines } = resolveDocByTocRefs(refs, tocIndex));
+                }
+
+                // 목차 코드로 못 찾으면 서류명 ↔ 절·항 제목 내용 매칭
+                if (fileNames.length === 0) {
+                    findSectionsForText(item.docName.replace(/\(.*?\)/g, ''), tocIndex).forEach(hit => {
+                        if (!fileNames.includes(hit.fileName)) fileNames.push(hit.fileName);
+                        tocLines.push(formatTocLine(hit.code, hit.title, hit));
+                    });
                 }
 
                 if (fileNames.length === 0) {
