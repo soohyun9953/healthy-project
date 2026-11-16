@@ -135,36 +135,6 @@ export default function BatchAutomationView({ apiKey, llmProvider, omniRouteMode
         }
     };
 
-    // 체험용 가상 샘플 파일 4종 등록
-    const handleAddSampleFiles = () => {
-        const sample1 = new File([
-            `Ⅰ. 사업 개요 및 추진 배경
-본 사업은 지역의료원과 권역책임의료기관 간 환자 전원 및 진료정보 고속도로 연계를 목표로 한다.
-현재 지방의료원에서는 환자 전원 시 진료의뢰서를 수기 복사하여 전달하고 있으며, 백만원 단위 표기 오류가 발생함.
-요구사항 고유번호 CNR-001, SFR-001 등이 반영되어야 하나 일부 문서에서 누락됨.`
-        ], '01_사업추진계획서_최종본.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-
-        const sample2 = new File([
-            `Ⅱ. 현황 분석 및 문제점
-원내 EMR 시스템은 14년째 노후화 운영 중이며, 건강정보 고속도로 연계 규격이 미비함.
-지역의료원 통합 인프라 전환 시 소요 예산은 총 45억원이나 세부 항목 합계는 42억원으로 3억원 오차가 발생함.
-요구사항 ID USR-001, GHOST-999 표기 오류 확인 필요.`
-        ], '02_현황분석_보고서_장표.pptx', { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
-
-        const sample3 = new File([
-            `Ⅲ. 목표모델 및 시스템 요건
-클라우드 전환 및 마이데이터 연계 체계 구축.
-지역의료원 명칭을 지방의료원으로 통일해야 하며, 총 구축비 산정 기준을 준수해야 함.`
-        ], '03_목표시스템_기능정의서.hwpx', { type: 'application/hwp+zip' });
-
-        const sample4 = new File([
-            `Ⅳ. 이행계획 및 소요예산
-단위시스템별 하드웨어 도입비 15억원, 소프트웨어 구입비 12억원, 개발비 20억원으로 계 47억원.`
-        ], '04_소요예산산출내역서.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-
-        handleFilesAdded([sample1, sample2, sample3, sample4]);
-    };
-
     // ── 4. 큐 제어 핸들러 ──────────────────────────────────────────
     const handleStartQueue = () => {
         if (!runnerRef.current) return;
@@ -394,25 +364,6 @@ export default function BatchAutomationView({ apiKey, llmProvider, omniRouteMode
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <button
-                        onClick={handleAddSampleFiles}
-                        style={{
-                            padding: '8px 14px',
-                            borderRadius: '9px',
-                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            color: 'var(--text-primary)',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                        }}
-                    >
-                        <RefreshCw size={13} /> 체험용 샘플 4종 추가
-                    </button>
-
                     <button
                         onClick={() => setShowRagModal(true)}
                         style={{

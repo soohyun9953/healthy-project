@@ -170,7 +170,7 @@ const tab_guides = {
     title: '다중 파일 일괄 자동화 (Batch)',
     desc: '10~30개 산출물(.pptx, .docx, .hwpx, .xlsx, .pdf)을 드래그 앤 드롭으로 일괄 등록하여 동시성 제어 큐로 검수하고, 브라우저 내장 IndexedDB RAG 가이드라인 대조와 함께 엑셀 통합 대시보드 및 Word Redline 교정본을 1클릭 ZIP 패키지로 다운로드합니다.',
     steps: [
-      '검수 대상 파일들을 큐 드롭존에 업로드 (또는 체험용 샘플 4종 클릭)',
+      '검수 대상 파일들을 큐 드롭존에 업로드 (다중 드래그 앤 드롭 지원)',
       '동시 검수 수(1~4개), AI 문맥 검수 및 브라우저 RAG 가이드라인 주입 옵션 설정',
       '[배치 검수 시작] 클릭 시 실시간 프로그레스 바 및 429 지수 백오프 자동 재시도 동작',
       '검수 완료 후 [산출물 일괄검수 패키지 (ZIP)] 클릭으로 통합 엑셀 대시보드와 개별 Word 교정본 일괄 저장'
@@ -525,7 +525,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.25.5</span>
+                <span>AI 산출물 검수 v2.25.6</span>
               </div>
             )}
           </div>
@@ -646,7 +646,7 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginRight: '8px' }}>
               <span className="mobile-hide-text" style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Last Update</span>
-              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.11.14 v2.25.5</span>
+              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.11.14 v2.25.6</span>
             </div>
             
             {/* Theme Mode Toggle Button */}
