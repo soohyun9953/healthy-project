@@ -489,8 +489,8 @@ function App() {
     { id: 'typo', label: 'AI 교정교열', icon: CheckCircle2, color: 'var(--accent-purple)', useGemini: true },
     { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6', useGemini: true },
     { id: 'g2b', label: '나라장터 정보조회', icon: Building2, color: 'var(--accent-blue)', useGemini: false },
-    { id: 'pptx-master', label: 'PPT 표준양식 검수·교정', icon: SlidersHorizontal, color: '#f97316', useGemini: false },
     { id: 'ssot', label: '최종산출물 점검(RFP기준)', icon: FileCheck2, color: '#10b981', useGemini: true },
+    { id: 'pptx-master', label: 'PPT 표준양식 검수·교정', icon: SlidersHorizontal, color: '#f97316', useGemini: false },
     { id: 'uniform-doc', label: '표준 산출물 일괄 생성', icon: Layers, color: '#6366f1', useGemini: true },
     { id: 'interview-cascade', label: '인터뷰→산출물 연쇄생성', icon: MessagesSquare, color: '#8b5cf6', useGemini: true },
     { id: 'batch-automation', label: '다중 파일 일괄 자동화 (Batch)', icon: Workflow, color: '#ec4899', useGemini: true },
@@ -525,7 +525,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.25.2</span>
+                <span>AI 산출물 검수 v2.25.3</span>
               </div>
             )}
           </div>
@@ -646,7 +646,7 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginRight: '8px' }}>
               <span className="mobile-hide-text" style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Last Update</span>
-              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.11.14 v2.25.2</span>
+              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.11.14 v2.25.3</span>
             </div>
             
             {/* Theme Mode Toggle Button */}
