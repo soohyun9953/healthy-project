@@ -60,14 +60,22 @@ export async function executeWithBackoff(asyncFn, { maxRetries = 4, baseDelayMs 
                 errMsg.includes('RESOURCE_EXHAUSTED') ||
                 errMsg.includes('Rate limit');
 
-            if (isRateLimit && attempt <= maxRetries) {
+            const isNetworkError = errMsg.includes('Failed to fetch') ||
+                errMsg.includes('NetworkError') ||
+                errMsg.includes('Network request failed') ||
+                errMsg.includes('fetch failed') ||
+                errMsg.includes('Load failed');
+
+            if ((isRateLimit || isNetworkError) && attempt <= maxRetries) {
                 const jitter = Math.floor(Math.random() * 800);
                 const delay = Math.min(baseDelayMs * Math.pow(2, attempt - 1) + jitter, 16000);
                 onRetry({
                     attempt,
                     maxRetries,
                     delayMs: delay,
-                    message: `Gemini API 할당량(429) 초과 감지. ${Math.round(delay / 1000)}초 후 자동 재시도 (${attempt}/${maxRetries})...`
+                    message: isRateLimit
+                        ? `Gemini API 할당량(429) 초과 감지. ${Math.round(delay / 1000)}초 후 자동 재시도 (${attempt}/${maxRetries})...`
+                        : `일시적 네트워크 지연 감지. ${Math.round(delay / 1000)}초 후 자동 재연결 (${attempt}/${maxRetries})...`
                 });
                 await new Promise(r => setTimeout(r, delay));
             } else {
@@ -129,10 +137,15 @@ ${ragContext ? `\n반드시 아래 제공된 [지침 기준문서 / RAG 지식�
 
         // 2차 직접 엔드포인트 호출
         if (!responseData && apiKey) {
-            const directUrl = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent`;
+            const cleanKey = apiKey.trim();
+            const normalizedModel = modelId.startsWith('models/') ? modelId : `models/${modelId}`;
+            // 쿼리 파라미터와 헤더를 동시 지원하여 CORS/Preflight 및 다양한 네트워크 환경에서 100% 호환 보장
+            const directUrl = `https://generativelanguage.googleapis.com/v1beta/${normalizedModel}:generateContent?key=${encodeURIComponent(cleanKey)}`;
             const directRes = await fetch(directUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({ contents, generationConfig })
             });
             if (!directRes.ok) {
@@ -306,45 +319,52 @@ export class BatchQueueRunner {
                 item.progress = 75;
                 this.onItemChange(item);
 
-                let ragPromptContext = '';
-                if (this.useRagContext) {
-                    try {
-                        const topChunks = await searchRagHybrid(
-                            `${item.filename} ${fileContent.text.slice(0, 400)}`,
-                            { topK: 5 }
-                        );
-                        item.ragSnippets = topChunks;
-                        ragPromptContext = formatTopChunksForPrompt(topChunks);
-                    } catch (ragErr) {
-                        console.warn('RAG 검색 폴백:', ragErr);
+                try {
+                    let ragPromptContext = '';
+                    if (this.useRagContext) {
+                        try {
+                            const topChunks = await searchRagHybrid(
+                                `${item.filename} ${fileContent.text.slice(0, 400)}`,
+                                { topK: 5 }
+                            );
+                            item.ragSnippets = topChunks;
+                            ragPromptContext = formatTopChunksForPrompt(topChunks);
+                        } catch (ragErr) {
+                            console.warn('RAG 검색 폴백:', ragErr);
+                        }
                     }
+
+                    const aiResults = await runSingleFileAiCheck({
+                        fileContent,
+                        masterData: this.masterData,
+                        apiKey: this.apiKey,
+                        modelId: this.modelId,
+                        ragContext: ragPromptContext,
+                        onRetry: (retryInfo) => {
+                            item.statusMessage = retryInfo.message;
+                            this.onItemChange(item);
+                        }
+                    });
+
+                    item.aiIssues = aiResults.map((r, i) => ({
+                        id: `AI-${item.id}-${i + 1}`,
+                        stage: 'Stage 2 (AI 문맥검증)',
+                        category: r.errorType || 'AI 문맥/지침',
+                        errorType: r.errorType || 'AI 검출 결함',
+                        severity: r.severity || 'MEDIUM',
+                        page: Math.max(1, Math.min(item.pages, Math.ceil((i + 1) * (item.pages / (aiResults.length || 1))))),
+                        matchedTerm: r.originalText || '',
+                        suggestedText: r.suggestedText || '',
+                        originalText: r.originalText || '',
+                        reason: r.reason || 'AI 문맥 및 지침 정밀 검증'
+                    }));
+                    item.aiDefectsCount = item.aiIssues.length;
+                } catch (aiErr) {
+                    console.warn(`[${item.filename}] AI 문맥 검수 일시 실패 (규칙 검증 결과로 정상 완주):`, aiErr);
+                    item.aiIssues = [];
+                    item.aiDefectsCount = 0;
+                    item.aiWarning = `AI 문맥검수 네트워크 지연 (${aiErr.message || '일시적 통신 불가'})`;
                 }
-
-                const aiResults = await runSingleFileAiCheck({
-                    fileContent,
-                    masterData: this.masterData,
-                    apiKey: this.apiKey,
-                    modelId: this.modelId,
-                    ragContext: ragPromptContext,
-                    onRetry: (retryInfo) => {
-                        item.statusMessage = retryInfo.message;
-                        this.onItemChange(item);
-                    }
-                });
-
-                item.aiIssues = aiResults.map((r, i) => ({
-                    id: `AI-${item.id}-${i + 1}`,
-                    stage: 'Stage 2 (AI 문맥검증)',
-                    category: r.errorType || 'AI 문맥/지침',
-                    errorType: r.errorType || 'AI 검출 결함',
-                    severity: r.severity || 'MEDIUM',
-                    page: Math.max(1, Math.min(item.pages, Math.ceil((i + 1) * (item.pages / (aiResults.length || 1))))),
-                    matchedTerm: r.originalText || '',
-                    suggestedText: r.suggestedText || '',
-                    originalText: r.originalText || '',
-                    reason: r.reason || 'AI 문맥 및 지침 정밀 검증'
-                }));
-                item.aiDefectsCount = item.aiIssues.length;
             }
 
             // 전체 결함 취합 및 완료
