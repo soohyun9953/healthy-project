@@ -931,7 +931,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                                프로젝트 표준 용어 & 요구사항 ID/수치 정합성 검증기 (SSOT)
+                                최종산출물 점검 (RFP기준) & 프로젝트 표준 정합성 검증기
                             </h2>
                             <span style={{
                                 padding: '2px 8px',
@@ -942,11 +942,11 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 color: '#10b981',
                                 border: '1px solid rgba(16, 185, 129, 0.3)'
                             }}>
-                                SSOT Validator
+                                최종산출물 점검(RFP기준)
                             </span>
                         </div>
                         <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                            단일 진실 원천(Single Source of Truth) 기반으로 제안서·보고서 내 금지용어, 요구사항 ID 누락(RTM), 표 산술 덧셈 및 AI 문맥 모순을 전수 검증합니다.
+                            제안요청서(RFP) 및 단일 진실 원천(SSOT) 기준으로 산출물 내 요구사항 ID 누락(RTM), 금지용어·표기 불일치, 표 산술 덧셈 및 AI 문맥 모순을 전수 점검합니다.
                         </p>
                     </div>
                 </div>

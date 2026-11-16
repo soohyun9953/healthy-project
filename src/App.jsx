@@ -134,15 +134,15 @@ class ErrorBoundary extends React.Component {
 // ── 탭별 상세 가이드 데이터 ─────────────────────────
 const tab_guides = {
   ssot: {
-    title: '정합성·용어 검증 (SSOT)',
-    desc: '프로젝트 마스터 정보(사업명/발주처/기간/예산), 표준 용어사전, 요구사항 마스터를 기준으로 산출물(HWPX, DOCX, PPTX, XLSX, PDF)의 금지어·오표기, 요구사항 ID 누락/유령ID, 수치 불일치 및 AI 심층 정합성을 검증합니다.',
+    title: '최종산출물 점검(RFP기준)',
+    desc: '제안요청서(RFP) 및 프로젝트 마스터 정보(사업명/발주처/기간/예산), 표준 용어사전, 요구사항 마스터를 기준으로 산출물(HWPX, DOCX, PPTX, XLSX, PDF)의 요구사항 ID 누락/유령ID, 금지어·오표기, 수치 불일치 및 AI 심층 정합성을 전수 점검합니다.',
     steps: [
-      '표준 용어사전 및 요구사항 마스터 확인 (사전 프리셋 로드 또는 엑셀 일괄 업로드)',
+      '표준 용어사전 및 요구사항 마스터 확인 (공식 프리셋 로드 또는 엑셀 일괄 업로드)',
       '검수 대상 산출물 파일 드롭존에 업로드 (다중 파일 일괄 업로드 지원)',
       '[1단계 Rule 검증] 및 [2단계 Gemini AI 심층 정합성 검증] 실행',
       '적발된 결함 내역 확인, 인라인 수정안 검토 및 다중 통합 엑셀 리포트(.xlsx) 다운로드'
     ],
-    tips: '금지동의어에 등록된 비표준 단어는 문서 내 정확한 위치와 대체 표준용어가 즉시 표시됩니다.'
+    tips: '다중 산출물 일괄 업로드 시 단위 파일별 결함뿐만 아니라 프로젝트 전체 기준 요구사항 추적표(RTM) 및 산출물 간 정합성을 자동 교차 분석합니다.'
   },
   'uniform-doc': {
     title: '표준 산출물 일괄 생성 (디자인 토큰)',
@@ -404,7 +404,7 @@ function App() {
   useEffect(() => {
     const tabLabels = {
       ppt: 'PPT 생성(표준산출물)',
-      'ssot': '정합성·용어 검증 (SSOT)',
+      'ssot': '최종산출물 점검(RFP기준)',
       'uniform-doc': '표준 산출물 일괄 생성',
       'interview-cascade': '인터뷰→산출물 연쇄생성',
       'batch-automation': '다중 파일 일괄 자동화 (Batch)',
@@ -490,7 +490,7 @@ function App() {
     { id: 'meeting', label: 'AI 회의록 생성', icon: Mic2, color: '#8b5cf6', useGemini: true },
     { id: 'g2b', label: '나라장터 정보조회', icon: Building2, color: 'var(--accent-blue)', useGemini: false },
     { id: 'pptx-master', label: 'PPT 표준양식 검수·교정', icon: SlidersHorizontal, color: '#f97316', useGemini: false },
-    { id: 'ssot', label: '정합성·용어 검증 (SSOT)', icon: FileCheck2, color: '#10b981', useGemini: true },
+    { id: 'ssot', label: '최종산출물 점검(RFP기준)', icon: FileCheck2, color: '#10b981', useGemini: true },
     { id: 'uniform-doc', label: '표준 산출물 일괄 생성', icon: Layers, color: '#6366f1', useGemini: true },
     { id: 'interview-cascade', label: '인터뷰→산출물 연쇄생성', icon: MessagesSquare, color: '#8b5cf6', useGemini: true },
     { id: 'batch-automation', label: '다중 파일 일괄 자동화 (Batch)', icon: Workflow, color: '#ec4899', useGemini: true },
@@ -525,7 +525,7 @@ function App() {
             {!isSidebarCollapsed && (
               <div className="logo-text">
                 <h1>건강한 프로젝트</h1>
-                <span>AI 산출물 검수 v2.25.1</span>
+                <span>AI 산출물 검수 v2.25.2</span>
               </div>
             )}
           </div>
@@ -646,7 +646,7 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginRight: '8px' }}>
               <span className="mobile-hide-text" style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Last Update</span>
-              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.11.14 v2.25.1</span>
+              <span style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: 700, fontFamily: 'monospace' }}>2026.11.14 v2.25.2</span>
             </div>
             
             {/* Theme Mode Toggle Button */}
