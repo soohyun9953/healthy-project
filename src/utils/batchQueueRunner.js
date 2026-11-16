@@ -286,9 +286,16 @@ export class BatchQueueRunner {
             item.progress = 50;
             this.onItemChange(item);
 
-            const ruleIssues = await runStage1Validation(fileContent, tables, this.masterData);
+            const stage1Result = await runStage1Validation(fileContent, tables, this.masterData, {
+                inspectionScope: 'unit'
+            });
+            const ruleIssues = Array.isArray(stage1Result)
+                ? stage1Result
+                : (stage1Result?.issues || []);
             item.ruleIssues = ruleIssues;
             item.ruleDefectsCount = ruleIssues.length;
+            item.rtmMatrix = stage1Result?.rtmMatrix || [];
+            item.rtmMappingRate = stage1Result?.rtmMappingRate ?? 100;
 
             if (this.isCancelled) return;
 
@@ -341,7 +348,9 @@ export class BatchQueueRunner {
             }
 
             // 전체 결함 취합 및 완료
-            item.allIssues = [...item.ruleIssues, ...item.aiIssues];
+            const ruleList = Array.isArray(item.ruleIssues) ? item.ruleIssues : (item.ruleIssues?.issues || []);
+            const aiList = Array.isArray(item.aiIssues) ? item.aiIssues : [];
+            item.allIssues = [...ruleList, ...aiList];
             item.totalDefectsCount = item.allIssues.length;
             item.status = BATCH_ITEM_STATUS.COMPLETED;
             item.statusMessage = `완료 (결함 ${item.totalDefectsCount}건 식별)`;
