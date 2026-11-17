@@ -12,6 +12,7 @@ import {
     XCircle,
     Search,
     ChevronDown,
+    ChevronRight,
     ChevronUp,
     FileSpreadsheet,
     FileText,
@@ -141,6 +142,8 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
     // 텍스트 일괄 붙여넣기 모달
     const [showBulkReqModal, setShowBulkReqModal] = useState(false);
     const [bulkReqText, setBulkReqText] = useState('');
+    const [expandedReqs, setExpandedReqs] = useState(new Set());
+    const [expandAllReqs, setExpandAllReqs] = useState(false);
 
     // ── 공공 표준 요구사항추적표(RTM) 모달 상태 ───────────────────
     const [showOfficialRtmModal, setShowOfficialRtmModal] = useState(false);
@@ -307,17 +310,43 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         e.target.value = '';
     };
 
-    // 요구사항 행 조작
+    // 요구사항 행 조작 및 아코디언 토글
+    const handleToggleExpandReq = (reqId) => {
+        setExpandedReqs(prev => {
+            const next = new Set(prev);
+            if (next.has(reqId)) next.delete(reqId);
+            else next.add(reqId);
+            return next;
+        });
+    };
+
+    const handleToggleExpandAllReqs = () => {
+        if (expandAllReqs) {
+            setExpandedReqs(new Set());
+            setExpandAllReqs(false);
+        } else {
+            const allIds = new Set((ssotData.requirements || []).map(r => r.id));
+            setExpandedReqs(allIds);
+            setExpandAllReqs(true);
+        }
+    };
+
     const handleAddRequirement = () => {
+        const newId = `SFR-${String((ssotData.requirements || []).length + 1).padStart(3, '0')}`;
         const newReq = {
-            id: `SFR-${String(ssotData.requirements.length + 1).padStart(3, '0')}`,
+            id: newId,
+            category: '기능 요구사항',
             name: '',
+            description: '',
+            subItems: ['1. 세부 과업 실행 요건 1'],
+            deliverables: '',
             keywords: ''
         };
         setSsotData(prev => ({
             ...prev,
             requirements: [newReq, ...prev.requirements]
         }));
+        setExpandedReqs(prev => new Set(prev).add(newId));
     };
 
     const handleUpdateRequirement = (index, field, value) => {
@@ -335,8 +364,41 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         });
     };
 
+    // 하위 세부 과업 항목(subItems) 조작
+    const handleAddSubItem = (reqIdx) => {
+        setSsotData(prev => {
+            const list = [...prev.requirements];
+            const cur = list[reqIdx];
+            const curSub = Array.isArray(cur.subItems) ? [...cur.subItems] : [];
+            curSub.push(`${curSub.length + 1}. 세부 과업 실행 항목`);
+            list[reqIdx] = { ...cur, subItems: curSub };
+            return { ...prev, requirements: list };
+        });
+    };
+
+    const handleUpdateSubItem = (reqIdx, subIdx, val) => {
+        setSsotData(prev => {
+            const list = [...prev.requirements];
+            const cur = list[reqIdx];
+            const curSub = Array.isArray(cur.subItems) ? [...cur.subItems] : [];
+            curSub[subIdx] = val;
+            list[reqIdx] = { ...cur, subItems: curSub };
+            return { ...prev, requirements: list };
+        });
+    };
+
+    const handleDeleteSubItem = (reqIdx, subIdx) => {
+        setSsotData(prev => {
+            const list = [...prev.requirements];
+            const cur = list[reqIdx];
+            const curSub = (cur.subItems || []).filter((_, i) => i !== subIdx);
+            list[reqIdx] = { ...cur, subItems: curSub };
+            return { ...prev, requirements: list };
+        });
+    };
+
     // ── 공공의료 AI ISP 44종 표준 요구사항 즉시 적용 ──
-    // ── 더미 요구사항명(요구사항 CNR-xxx) 자동 감지 및 공식 명칭으로 원클릭 치환 ──
+    // ── 더미 요구사항명 자동 감지 및 공식 정식 명칭 + 세부과업 일괄 복원 ──
     const handleAutoHealRequirements = () => {
         let healedCount = 0;
         setSsotData(prev => {
@@ -344,49 +406,55 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                 const cleanId = (r.id || '').trim().toUpperCase();
                 const cleanName = (r.name || '').trim();
                 const isDummy = !cleanName || cleanName === `요구사항 ${cleanId}` || cleanName === cleanId || /^요구사항\s*[A-Z]{2,6}[-_]\d{2,4}$/i.test(cleanName);
-                if (isDummy) {
-                    const catalogItem = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS.find(c => c.id === cleanId);
-                    if (catalogItem) {
-                        healedCount++;
-                        return {
-                            ...r,
-                            name: catalogItem.name,
-                            keywords: r.keywords || catalogItem.keywords
-                        };
-                    }
+                const catalogItem = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS.find(c => c.id === cleanId);
+                if (catalogItem && (isDummy || !r.description || !r.subItems || r.subItems.length === 0)) {
+                    healedCount++;
+                    return {
+                        ...r,
+                        category: r.category || catalogItem.category,
+                        name: isDummy ? catalogItem.name : r.name,
+                        description: r.description || catalogItem.description,
+                        subItems: (r.subItems && r.subItems.length > 0) ? r.subItems : catalogItem.subItems,
+                        deliverables: r.deliverables || catalogItem.deliverables,
+                        keywords: r.keywords || catalogItem.keywords
+                    };
                 }
                 return r;
             });
             return { ...prev, requirements: nextReqs };
         });
-        alert(`✅ 총 ${healedCount}건의 요구사항이 공공의료 AI ISP 공식 정식 명칭으로 자동 복원되었습니다!`);
+        alert(`✅ 총 ${healedCount}건의 요구사항이 공공의료 AI ISP 공식 정식 명칭 및 세부 과업으로 자동 복원되었습니다!`);
     };
 
     const handleApplyPublicHealthcarePreset = () => {
-        if (window.confirm('공공의료 AI ISP 공식 44개 마스터 요구사항 전체 목록으로 교체하시겠습니까? (기존 목록은 대체됩니다)')) {
+        if (window.confirm('공공의료 AI ISP 공식 44개 마스터 요구사항 전체 목록으로 교체하시겠습니까? (세부 과업 및 하위 항목 포함)')) {
             setSsotData(prev => ({
                 ...prev,
                 requirements: [...PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS]
             }));
-            alert('✅ 공공의료 AI ISP 공식 44개 마스터 요구사항이 성공적으로 반영되었습니다!');
+            alert('✅ 공공의료 AI ISP 공식 44개 마스터 요구사항(세부과업 및 하위항목 포함)이 성공적으로 반영되었습니다!');
         }
     };
 
-    // 요구사항 엑셀 다운로드
+    // 요구사항 엑셀 다운로드 (세부 과업 및 하위 항목 연동)
     const handleExportRequirementsExcel = () => {
-        const rows = ssotData.requirements.map((r, idx) => ({
+        const rows = (ssotData.requirements || []).map((r, idx) => ({
             '순번': idx + 1,
             '요구사항 ID': r.id || '',
+            '분류': r.category || '컨설팅 요구사항',
             '요구사항명': r.name || '',
+            '세부 과업 내용': r.description || '',
+            '하위 세부 항목 (줄바꿈 구분)': Array.isArray(r.subItems) ? r.subItems.join('\n') : (r.subItems || ''),
+            '관련 산출물': r.deliverables || '',
             '필수 키워드 (쉼표 구분)': r.keywords || ''
         }));
         const worksheet = XLSX.utils.json_to_sheet(rows);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, '요구사항마스터');
-        XLSX.writeFile(workbook, `요구사항_마스터_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        XLSX.writeFile(workbook, `요구사항_마스터(세부과업포함)_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
-    // 요구사항 엑셀 가져오기
+    // 요구사항 엑셀 가져오기 (세부 과업 및 하위 항목 연동)
     const handleImportRequirementsExcel = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -401,19 +469,34 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
 
                 const imported = jsonData.map(r => {
                     const id = (r['요구사항 ID'] || r['요구사항ID'] || r['ID'] || r['고유번호'] || '').trim().toUpperCase();
+                    let category = (r['분류'] || r['구분'] || r['카테고리'] || '').trim();
                     let name = (r['요구사항명'] || r['요구사항 명'] || r['과업명'] || r['명칭'] || '').trim();
+                    let description = (r['세부 과업 내용'] || r['세부과업내용'] || r['세부내용'] || r['상세설명'] || '').trim();
+                    let deliverables = (r['관련 산출물'] || r['관련산출물'] || r['산출물'] || '').trim();
                     let keywords = (r['필수 키워드 (쉼표 구분)'] || r['필수 키워드'] || r['키워드'] || '').trim();
+                    let subRaw = r['하위 세부 항목 (줄바꿈 구분)'] || r['하위 세부 항목'] || r['세부항목'] || '';
+                    let subItems = typeof subRaw === 'string'
+                        ? subRaw.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+                        : (Array.isArray(subRaw) ? subRaw : []);
 
                     const std = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS.find(s => s.id === id);
                     if ((!name || name.startsWith('요구사항 ')) && std) {
                         name = std.name;
-                        if (!keywords) keywords = std.keywords;
                     }
+                    if (!category && std?.category) category = std.category;
+                    if (!description && std?.description) description = std.description;
+                    if (subItems.length === 0 && std?.subItems) subItems = [...std.subItems];
+                    if (!deliverables && std?.deliverables) deliverables = std.deliverables;
+                    if (!keywords && std?.keywords) keywords = std.keywords;
 
                     return {
                         id,
+                        category: category || '컨설팅 요구사항',
                         name: name || `요구사항 ${id}`,
-                        keywords
+                        description: description || '',
+                        subItems: subItems,
+                        deliverables: deliverables || '',
+                        keywords: keywords || ''
                     };
                 }).filter(r => /^[A-Z]{2,6}[-_]\d{2,4}$/.test(r.id));
 
@@ -422,7 +505,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                         ...prev,
                         requirements: imported
                     }));
-                    alert(`성공적으로 ${imported.length}건의 요구사항을 마스터에 등록했습니다.`);
+                    alert(`성공적으로 ${imported.length}건의 요구사항(세부과업 포함)을 마스터에 등록했습니다.`);
                 } else {
                     alert('유효한 요구사항 데이터를 찾을 수 없습니다. 엑셀 열(요구사항 ID, 요구사항명)을 확인해주세요.');
                 }
@@ -1335,6 +1418,23 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                         <Sparkles size={13} /> 공공의료 AI ISP 44종 표준 적용
                                     </button>
                                     <button
+                                        onClick={handleToggleExpandAllReqs}
+                                        className="btn-outline"
+                                        style={{
+                                            padding: '6px 10px',
+                                            fontSize: '12px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '5px',
+                                            background: expandAllReqs ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                                            color: expandAllReqs ? '#93c5fd' : 'var(--text-secondary)'
+                                        }}
+                                        title="전체 요구사항의 세부 과업 및 하위 항목을 한눈에 펼치거나 접습니다"
+                                    >
+                                        {expandAllReqs ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                        {expandAllReqs ? '세부과업 전체 접기' : '세부과업 전체 펼치기'}
+                                    </button>
+                                    <button
                                         onClick={handleExportRequirementsExcel}
                                         className="btn-outline"
                                         style={{ padding: '6px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}
@@ -1372,57 +1472,237 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 </div>
                             </div>
 
-                            <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--panel-border)', borderRadius: '6px' }}>
+                            <div style={{ maxHeight: '420px', overflowY: 'auto', border: '1px solid var(--panel-border)', borderRadius: '6px' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                                     <thead>
                                         <tr style={{ background: 'rgba(255,255,255,0.06)', borderBottom: '1px solid var(--panel-border)', textAlign: 'left' }}>
-                                            <th style={{ padding: '8px 10px', width: '130px' }}>요구사항 ID</th>
-                                            <th style={{ padding: '8px 10px' }}>요구사항명</th>
-                                            <th style={{ padding: '8px 10px', width: '280px' }}>필수 키워드 (쉼표 구분)</th>
-                                            <th style={{ padding: '8px 10px', width: '50px', textAlign: 'center' }}>삭제</th>
+                                            <th style={{ padding: '8px 10px', width: '38px', textAlign: 'center' }}>
+                                                <button
+                                                    onClick={handleToggleExpandAllReqs}
+                                                    style={{ background: 'none', border: 'none', color: expandAllReqs ? 'var(--accent-blue)' : 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                                                    title={expandAllReqs ? '전체 세부과업 접기' : '전체 세부과업 펼치기'}
+                                                >
+                                                    {expandAllReqs ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                                </button>
+                                            </th>
+                                            <th style={{ padding: '8px 10px', width: '105px' }}>고유 ID</th>
+                                            <th style={{ padding: '8px 10px', width: '130px' }}>분류</th>
+                                            <th style={{ padding: '8px 10px' }}>요구사항명 (과업명)</th>
+                                            <th style={{ padding: '8px 10px', width: '190px' }}>필수 키워드</th>
+                                            <th style={{ padding: '8px 10px', width: '105px', textAlign: 'center' }}>세부 과업</th>
+                                            <th style={{ padding: '8px 10px', width: '45px', textAlign: 'center' }}>삭제</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {ssotData.requirements.map((req, idx) => (
-                                            <tr key={req.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                                <td style={{ padding: '6px 8px' }}>
-                                                    <input
-                                                        type="text"
-                                                        value={req.id}
-                                                        onChange={(e) => handleUpdateRequirement(idx, 'id', e.target.value)}
-                                                        placeholder="예: SFR-001"
-                                                        style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'var(--accent-blue)', fontWeight: 700, fontSize: '12px' }}
-                                                    />
-                                                </td>
-                                                <td style={{ padding: '6px 8px' }}>
-                                                    <input
-                                                        type="text"
-                                                        value={req.name}
-                                                        onChange={(e) => handleUpdateRequirement(idx, 'name', e.target.value)}
-                                                        placeholder="요구사항 상세 명칭"
-                                                        style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'var(--text-primary)', fontSize: '12px' }}
-                                                    />
-                                                </td>
-                                                <td style={{ padding: '6px 8px' }}>
-                                                    <input
-                                                        type="text"
-                                                        value={req.keywords}
-                                                        onChange={(e) => handleUpdateRequirement(idx, 'keywords', e.target.value)}
-                                                        placeholder="예: 데이터, 연계, 표준"
-                                                        style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'var(--text-secondary)', fontSize: '12px' }}
-                                                    />
-                                                </td>
-                                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                                    <button
-                                                        onClick={() => handleDeleteRequirement(idx)}
-                                                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
-                                                        title="삭제"
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {ssotData.requirements.map((req, idx) => {
+                                            const isExpanded = expandedReqs.has(req.id);
+                                            const subCount = Array.isArray(req.subItems) ? req.subItems.length : 0;
+                                            return (
+                                                <React.Fragment key={req.id || idx}>
+                                                    <tr style={{
+                                                        borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.05)',
+                                                        background: isExpanded ? 'rgba(59, 130, 246, 0.06)' : 'transparent',
+                                                        transition: 'background 0.2s ease'
+                                                    }}>
+                                                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                                            <button
+                                                                onClick={() => handleToggleExpandReq(req.id)}
+                                                                style={{
+                                                                    background: 'none',
+                                                                    border: 'none',
+                                                                    color: isExpanded ? 'var(--accent-blue)' : 'var(--text-muted)',
+                                                                    cursor: 'pointer',
+                                                                    padding: '2px',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center'
+                                                                }}
+                                                                title={isExpanded ? '세부내용 접기' : '세부내용 펼치기'}
+                                                            >
+                                                                {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                                                            </button>
+                                                        </td>
+                                                        <td style={{ padding: '6px 8px' }}>
+                                                            <input
+                                                                type="text"
+                                                                value={req.id}
+                                                                onChange={(e) => handleUpdateRequirement(idx, 'id', e.target.value)}
+                                                                placeholder="예: SFR-001"
+                                                                style={{ width: '100%', padding: '4px 6px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'var(--accent-blue)', fontWeight: 700, fontSize: '11.5px' }}
+                                                            />
+                                                        </td>
+                                                        <td style={{ padding: '6px 8px' }}>
+                                                            <select
+                                                                value={req.category || '컨설팅 요구사항'}
+                                                                onChange={(e) => handleUpdateRequirement(idx, 'category', e.target.value)}
+                                                                style={{
+                                                                    width: '100%', padding: '4px 6px', borderRadius: '4px',
+                                                                    background: 'rgba(0,0,0,0.4)', border: '1px solid var(--panel-border)',
+                                                                    color: 'var(--text-secondary)', fontSize: '11.5px'
+                                                                }}
+                                                            >
+                                                                <option value="컨설팅 요구사항">컨설팅 요구사항</option>
+                                                                <option value="기능 요구사항">기능 요구사항</option>
+                                                                <option value="데이터 요구사항">데이터 요구사항</option>
+                                                                <option value="보안 요구사항">보안 요구사항</option>
+                                                                <option value="품질 요구사항">품질 요구사항</option>
+                                                                <option value="프로젝트관리 요구사항">프로젝트관리 요구사항</option>
+                                                                <option value="프로젝트지원 요구사항">프로젝트지원 요구사항</option>
+                                                                <option value="일반 요구사항">일반 요구사항</option>
+                                                            </select>
+                                                        </td>
+                                                        <td style={{ padding: '6px 8px' }}>
+                                                            <input
+                                                                type="text"
+                                                                value={req.name}
+                                                                onChange={(e) => handleUpdateRequirement(idx, 'name', e.target.value)}
+                                                                placeholder="요구사항 상세 명칭"
+                                                                style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'var(--text-primary)', fontSize: '12px' }}
+                                                            />
+                                                        </td>
+                                                        <td style={{ padding: '6px 8px' }}>
+                                                            <input
+                                                                type="text"
+                                                                value={req.keywords}
+                                                                onChange={(e) => handleUpdateRequirement(idx, 'keywords', e.target.value)}
+                                                                placeholder="예: 데이터, 연계, 표준"
+                                                                style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'var(--text-secondary)', fontSize: '11.5px' }}
+                                                            />
+                                                        </td>
+                                                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                                            <button
+                                                                onClick={() => handleToggleExpandReq(req.id)}
+                                                                style={{
+                                                                    padding: '2px 8px',
+                                                                    borderRadius: '12px',
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 600,
+                                                                    background: isExpanded ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                                                                    color: isExpanded ? '#60a5fa' : 'var(--text-muted)',
+                                                                    border: `1px solid ${isExpanded ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+                                                                    cursor: 'pointer',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px'
+                                                                }}
+                                                                title="1단계 세부 내용 및 하위 요건 목록 확인/편집"
+                                                            >
+                                                                <span>과업</span>
+                                                                <span style={{ fontWeight: 700, color: subCount > 0 ? '#38bdf8' : 'var(--text-muted)' }}>{subCount}건</span>
+                                                            </button>
+                                                        </td>
+                                                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                                            <button
+                                                                onClick={() => handleDeleteRequirement(idx)}
+                                                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                                                                title="삭제"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+
+                                                    {/* 아코디언 세부 내용 및 하위 요건 관리 패널 */}
+                                                    {isExpanded && (
+                                                        <tr style={{ background: 'rgba(15, 23, 42, 0.75)', borderBottom: '1px solid rgba(59, 130, 246, 0.25)' }}>
+                                                            <td colSpan={7} style={{ padding: '12px 16px 16px 36px' }}>
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                                    {/* 1. 관련 산출물 및 카테고리 정보 */}
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                                                        <div style={{ flex: 1, minWidth: '260px' }}>
+                                                                            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '3px' }}>
+                                                                                📦 관련 검수 산출물 (연계 증빙 산출물 명칭)
+                                                                            </label>
+                                                                            <input
+                                                                                type="text"
+                                                                                value={req.deliverables || ''}
+                                                                                onChange={(e) => handleUpdateRequirement(idx, 'deliverables', e.target.value)}
+                                                                                placeholder="예: Ⅱ.3. 법제도 분석, Ⅲ.2. 업무 현황분석"
+                                                                                style={{ width: '100%', padding: '5px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'var(--text-primary)', fontSize: '12px' }}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* 2. 1단계 세부 과업 설명 (description) */}
+                                                                    <div>
+                                                                        <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#93c5fd', marginBottom: '3px' }}>
+                                                                            🎯 1단계 세부 과업 설명 (RFP 세부 요구사항 정의서 내용)
+                                                                        </label>
+                                                                        <textarea
+                                                                            rows={2}
+                                                                            value={req.description || ''}
+                                                                            onChange={(e) => handleUpdateRequirement(idx, 'description', e.target.value)}
+                                                                            placeholder="제안요청서 세부 요구사항 정의서에 명시된 상세 과업 목표 및 수행 범위를 기술하십시오."
+                                                                            style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'var(--text-primary)', fontSize: '12px', resize: 'vertical' }}
+                                                                        />
+                                                                    </div>
+
+                                                                    {/* 3. 하위 세부 요건/과업 항목 목록 (subItems) */}
+                                                                    <div>
+                                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                                            <label style={{ fontSize: '11px', fontWeight: 600, color: '#38bdf8' }}>
+                                                                                📌 하위 세부 실행 요건 목록 ({subCount}건)
+                                                                            </label>
+                                                                            <button
+                                                                                onClick={() => handleAddSubItem(idx)}
+                                                                                style={{
+                                                                                    background: 'rgba(56, 189, 248, 0.15)',
+                                                                                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                                                                                    color: '#38bdf8',
+                                                                                    borderRadius: '4px',
+                                                                                    padding: '2px 8px',
+                                                                                    fontSize: '11px',
+                                                                                    fontWeight: 600,
+                                                                                    cursor: 'pointer',
+                                                                                    display: 'flex',
+                                                                                    alignItems: 'center',
+                                                                                    gap: '4px'
+                                                                                }}
+                                                                            >
+                                                                                <Plus size={11} /> 세부항목 추가
+                                                                            </button>
+                                                                        </div>
+
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                                            {(!req.subItems || req.subItems.length === 0) ? (
+                                                                                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', padding: '6px 8px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
+                                                                                    등록된 하위 세부 항목이 없습니다. [+ 세부항목 추가] 버튼으로 구체적 실행 요건을 등록하십시오.
+                                                                                </div>
+                                                                            ) : (
+                                                                                req.subItems.map((sub, sIdx) => (
+                                                                                    <div key={sIdx} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                                        <span style={{
+                                                                                            minWidth: '22px', height: '22px', borderRadius: '4px',
+                                                                                            background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8',
+                                                                                            fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                                                        }}>
+                                                                                            {sIdx + 1}
+                                                                                        </span>
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            value={sub}
+                                                                                            onChange={(e) => handleUpdateSubItem(idx, sIdx, e.target.value)}
+                                                                                            placeholder={`세부 실행 요건 #${sIdx + 1}`}
+                                                                                            style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-primary)', fontSize: '11.5px' }}
+                                                                                        />
+                                                                                        <button
+                                                                                            onClick={() => handleDeleteSubItem(idx, sIdx)}
+                                                                                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '3px' }}
+                                                                                            title="하위 항목 삭제"
+                                                                                        >
+                                                                                            <Trash2 size={12} />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                ))
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
@@ -2767,20 +3047,40 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                                 산출물 RTM 매핑 기준
                                             </span>
                                         </div>
-                                        <div style={{ maxHeight: '160px', overflowY: 'auto', fontSize: '11.5px' }}>
+                                        <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '11.5px' }}>
                                             {extractedRfpData.requirements.length === 0 ? (
                                                 <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '16px' }}>추출된 요구사항 번호가 없습니다.</div>
                                             ) : (
-                                                extractedRfpData.requirements.slice(0, 15).map((r, i) => (
-                                                    <div key={r.id || i} style={{ display: 'flex', gap: '8px', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                                                        <span style={{ fontWeight: 700, color: 'var(--accent-blue)', minWidth: '70px' }}>{r.id}</span>
-                                                        <span style={{ color: 'var(--text-primary)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
-                                                    </div>
-                                                ))
+                                                extractedRfpData.requirements.slice(0, 20).map((r, i) => {
+                                                    const subCount = Array.isArray(r.subItems) ? r.subItems.length : 0;
+                                                    return (
+                                                        <div key={r.id || i} style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                <span style={{ fontWeight: 700, color: 'var(--accent-blue)', minWidth: '65px' }}>{r.id}</span>
+                                                                {r.category && (
+                                                                    <span style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '4px', background: 'rgba(255,255,255,0.07)', color: 'var(--text-secondary)' }}>
+                                                                        {r.category}
+                                                                    </span>
+                                                                )}
+                                                                <span style={{ color: 'var(--text-primary)', fontWeight: 600, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                                                                {subCount > 0 && (
+                                                                    <span style={{ fontSize: '10px', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.12)', padding: '1px 5px', borderRadius: '10px' }}>
+                                                                        하위 {subCount}건
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {r.description && (
+                                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', paddingLeft: '73px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    ↳ {r.description}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })
                                             )}
-                                            {extractedRfpData.requirements.length > 15 && (
-                                                <div style={{ textAlign: 'center', padding: '4px 0', color: 'var(--text-muted)' }}>
-                                                    ... 외 {extractedRfpData.requirements.length - 15}건 생략
+                                            {extractedRfpData.requirements.length > 20 && (
+                                                <div style={{ textAlign: 'center', padding: '6px 0', color: 'var(--text-muted)', fontSize: '11px' }}>
+                                                    ... 외 {extractedRfpData.requirements.length - 20}건 생략
                                                 </div>
                                             )}
                                         </div>

@@ -118,225 +118,577 @@ export const DEFAULT_GLOSSARY = [
 // ── 공공보건의료 AI ISP 공식 44개 마스터 요구사항 표준 프리셋 ────────────
 export const PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS = [
     {
-        id: 'CNR-001',
-        name: '공공의료 정보화 환경 및 법·제도 분석',
-        keywords: '공공의료, 정보화, 환경, 법·제도'
+        "id": "CNR-001",
+        "category": "컨설팅 요구사항",
+        "name": "공공의료 정보화 환경 및 법·제도 분석",
+        "description": "국내외 공공보건의료 정보화 정책 및 법·제도, 규제 요건을 종합 분석하여 정보화 추진 방향성 및 규제 준수 체계 수립",
+        "subItems": [
+            "국내외 공공보건의료 정보화 관련 법령·제도적 제약사항 및 규제 프레임워크 분석",
+            "의료법, 개인정보보호법, 보건의료 마이데이터 정책 요건 및 공공 데이터 거버넌스 검토",
+            "보건복지부, 국립중앙의료원 등 유관기관 정보화 추진 지침 및 표준 준수 방향성 정립"
+        ],
+        "deliverables": "Ⅱ.1. 환경분석 개요, Ⅱ.3. 법제도 분석",
+        "keywords": "공공의료, 정보화, 환경, 법·제도, 규제, 가이드라인"
     },
     {
-        id: 'CNR-002',
-        name: '보건의료 AI 활용 동향 및 적용 가능성 분석',
-        keywords: '보건의료, AI, 활용, 동향'
+        "id": "CNR-002",
+        "category": "컨설팅 요구사항",
+        "name": "보건의료 AI 활용 동향 및 적용 가능성 분석",
+        "description": "글로벌 및 국내 보건의료 분야 최신 AI/빅데이터 기술 활용 동향 및 공공의료 현장 적용 타당성 분석",
+        "subItems": [
+            "글로벌 보건의료 AI 적용 우수사례 및 최신 기술 트렌드(생성형 AI, CDSS 등) 조사",
+            "공공병원 진료지원, 판독, 응급의료, 감염병 등 영역별 AI 적용 가능성 및 실효성 분석",
+            "AI 알고리즘 도입에 따른 의료 윤리, 보안성, 설명가능성(XAI) 확보 방안 검토"
+        ],
+        "deliverables": "Ⅱ.5. 보건의료 AI 활용 동향 및 적용 가능성 분석",
+        "keywords": "보건의료, AI, 활용, 동향, CDSS, 진료지원"
     },
     {
-        id: 'CNR-003',
-        name: '공공의료 정보시스템 업무/정보기술(IT) 현황 분석',
-        keywords: '시스템, 구성, 기술, 환경, 분석'
+        "id": "CNR-003",
+        "category": "컨설팅 요구사항",
+        "name": "공공의료 정보시스템 업무/정보기술(IT) 현황 분석",
+        "description": "전국 공공병원 및 지방의료원의 업무 프로세스, EMR/HIS 응용시스템, IT 인프라 현황 종합 실사 및 분석",
+        "subItems": [
+            "공공의료기관별 진료, 원무, 행정 업무 프로세스 및 운영 체계 실태 분석",
+            "공공병원별 상이한 EMR/OCS/PACS 등 응용시스템 구조, 연계 규격 및 노후도 진단",
+            "서버, 스토리지, 네트워크, 보안 인프라 현황 및 클라우드 전환 적합성 평가"
+        ],
+        "deliverables": "Ⅲ.2. 업무 현황분석, Ⅲ.3. 응용시스템 현황분석, Ⅲ.4. 인프라 현황분석",
+        "keywords": "시스템, 구성, 기술, 환경, 분석, EMR, 인프라"
     },
     {
-        id: 'CNR-004',
-        name: '선진사례 벤치마킹 및 차이 분석',
-        keywords: '선진사례, 벤치마킹, 차이, 분석'
+        "id": "CNR-004",
+        "category": "컨설팅 요구사항",
+        "name": "선진사례 벤치마킹 및 차이 분석",
+        "description": "국내외 스마트병원 및 선진 공공보건의료 정보화 사례 분석을 통한 Gap 분석 및 핵심 성공 요인 도출",
+        "subItems": [
+            "국내외 대형 종합병원 및 선진 공공의료 네트워크 지능화 사례 벤치마킹",
+            "현재 공공병원 정보화 수준과 선진 모델 간의 기능적·기술적·거버넌스 차이(Gap) 분석",
+            "공공의료 지능형 플랫폼 구축을 위한 시사점 및 핵심 성공 요인(CSF) 도출"
+        ],
+        "deliverables": "Ⅲ.7. 선진사례 벤치마킹 및 차이 분석",
+        "keywords": "선진사례, 벤치마킹, 차이, 분석, Gap, 시사점"
     },
     {
-        id: 'CNR-005',
-        name: '과업 분야별 업무 개선방향 및 개선과제 도출',
-        keywords: '과업, 분야별, 업무, 개선방향'
+        "id": "CNR-005",
+        "category": "컨설팅 요구사항",
+        "name": "과업 분야별 업무 개선방향 및 개선과제 도출",
+        "description": "현황 분석 및 Gap 분석 결과를 토대로 과업 분야별 병목/이슈 식별 및 구체적 업무 개선과제 Pool 정립",
+        "subItems": [
+            "진료정보교류, 전원 환자 관리, 만성질환 모니터링 등 핵심 업무 병목/이슈 분석",
+            "현업 실무진 인터뷰 및 설문조사를 통한 개선 니즈 수렴 및 개선방향 수립",
+            "단기·중장기 분야별 To-Be 개선과제(Task) 목록 도출 및 우선순위 평가"
+        ],
+        "deliverables": "Ⅲ.8. 분야별 이슈 및 개선과제 도출",
+        "keywords": "과업, 분야별, 업무, 개선방향, 개선과제, 이슈"
     },
     {
-        id: 'CNR-006',
-        name: '공공의료 AI 정보화 비전 및 전략 수립',
-        keywords: '공공의료, AI, 정보화, 비전'
+        "id": "CNR-006",
+        "category": "컨설팅 요구사항",
+        "name": "공공의료 AI 정보화 비전 및 전략 수립",
+        "description": "국가 공공의료 체계 강화를 위한 지능형 공공보건의료 미래 비전, 전략방향 및 추진목표 체계 수립",
+        "subItems": [
+            "공공의료 디지털 혁신을 위한 미래 비전 및 핵심 슬로건 정립",
+            "비전 달성을 위한 3~4대 핵심 전략방향 및 세부 전략과제 도출",
+            "단계별 정량적/정성적 성과지표(KPI) 및 전략적 지향점 설정"
+        ],
+        "deliverables": "Ⅳ.2. 정보화 비전 및 전략수립",
+        "keywords": "공공의료, AI, 정보화, 비전, 전략, 추진목표"
     },
     {
-        id: 'CNR-007',
-        name: 'AI 기반 공공의료 정보시스템 목표모델(To-Be) 설계',
-        keywords: 'AI, 기반, 공공의료, 정보시스템'
+        "id": "CNR-007",
+        "category": "컨설팅 요구사항",
+        "name": "AI 기반 공공의료 정보시스템 목표모델(To-Be) 설계",
+        "description": "공공병원 및 책임의료기관 간 협진과 지능형 진료지원을 아우르는 통합 목표 시스템 모델(To-Be) 설계",
+        "subItems": [
+            "지능형 환자 관리 및 협진 지원 To-Be 목표 업무 프로세스(BPR) 정의",
+            "공공의료 AI 플랫폼 목표 응용 아키텍처(Application Architecture) 설계",
+            "외부 유관기관(복지부, 심평원, 질병청 등) 연계 및 확장 모델 수립"
+        ],
+        "deliverables": "Ⅳ.1. 목표모델 개요, Ⅳ.4. 목표 업무 아키텍처, Ⅳ.5. 목표 응용시스템 아키텍처",
+        "keywords": "AI, 기반, 공공의료, 정보시스템, 목표모델, To-Be"
     },
     {
-        id: 'CNR-008',
-        name: '차세대 정보시스템/데이터 플랫폼 구축 전략 및 기술 아키텍쳐 설계',
-        keywords: '차세대, 정보시스템/데이터, 플랫폼, 구축'
+        "id": "CNR-008",
+        "category": "컨설팅 요구사항",
+        "name": "차세대 정보시스템/데이터 플랫폼 구축 전략 및 기술 아키텍쳐 설계",
+        "description": "대용량 의료 빅데이터 처리와 AI 서빙을 지원하는 차세대 클라우드 기반 데이터 플랫폼 및 기술 아키텍처 설계",
+        "subItems": [
+            "민간·공공 하이브리드 클라우드 인프라 아키텍처(TA) 설계",
+            "대용량 의료데이터 수집·적재를 위한 데이터 레이크 및 DW/CDW 아키텍처 수립",
+            "마이크로서비스(MSA), 컨테이너(K8s) 기반 시스템 유연성 및 무중단 운영 체계 설계"
+        ],
+        "deliverables": "Ⅳ.6. 목표 데이터 아키텍처 설계, Ⅳ.7. 목표 인프라 및 정보보호 아키텍처 설계",
+        "keywords": "차세대, 정보시스템, 데이터플랫폼, 구축, 기술아키텍쳐"
     },
     {
-        id: 'CNR-009',
-        name: '공공의료 AI 거버넌스 및 데이터 관리체계 설계',
-        keywords: '공공의료, AI, 거버넌스, 데이터'
+        "id": "CNR-009",
+        "category": "컨설팅 요구사항",
+        "name": "공공의료 AI 거버넌스 및 데이터 관리체계 설계",
+        "description": "신뢰할 수 있는 공공의료 AI 서비스 운영을 위한 통합 거버넌스, 윤리 가이드라인 및 데이터 품질 관리 체계 설계",
+        "subItems": [
+            "공공보건의료 AI 추진 조직, 의사결정 체계 및 역할·책임(R&R) 정립",
+            "AI 모델 생애주기 관리(MLOps) 및 데이터 정기 검증 체계 수립",
+            "의료데이터 품질 관리, 메타데이터 표준화 및 비식별화 거버넌스 정의"
+        ],
+        "deliverables": "Ⅳ.12. 공공의료 정보화 통합 거버넌스",
+        "keywords": "공공의료, AI, 거버넌스, 데이터, 관리체계, 품질"
     },
     {
-        id: 'CNR-010',
-        name: '공공병원 AI 서비스 확산 및 스마트병원 활성화 추진 전략',
-        keywords: '공공병원, AI, 서비스, 확산'
+        "id": "CNR-010",
+        "category": "컨설팅 요구사항",
+        "name": "공공병원 AI 서비스 확산 및 스마트병원 활성화 추진 전략",
+        "description": "지역 공공병원 현장의 AI 도입 장벽을 해소하고 스마트병원 혁신 서비스를 확산하기 위한 단계별 추진 전략 수립",
+        "subItems": [
+            "공공병원 규모 및 특성(지방의료원, 적십자병원 등)별 맞춤형 AI 서비스 패키지 정의",
+            "현장 의료진 및 행정인력 대상 AI 활용 교육 및 변화관리(Change Management) 프로그램 수립",
+            "스마트병원 선도모델 실증 및 성과 확산 방안 수립"
+        ],
+        "deliverables": "Ⅳ.9. AI 서비스 확산 및 스마트병원 활성화 전략",
+        "keywords": "공공병원, AI, 서비스, 확산, 스마트병원, 활성화"
     },
     {
-        id: 'CNR-011',
-        name: '재난·재해 대응, 개인정보보호 및 정보보안 강화 전략 수립',
-        keywords: '재난·재해, 대응,, 개인정보보호, 정보보안'
+        "id": "CNR-011",
+        "category": "컨설팅 요구사항",
+        "name": "재난·재해 대응, 개인정보보호 및 정보보안 강화 전략 수립",
+        "description": "민감한 환자 의료데이터 보호 및 비상 상황 시 연속 진료 보장을 위한 재난복구(DR) 및 정보보안 체계 수립",
+        "subItems": [
+            "ISMS-P, 의료법 등 공공 정보보호 규정 준수를 위한 보안 아키텍처 설계",
+            "랜섬웨어, 침해사고 대응 및 24/365 보안관제 체계 수립",
+            "데이터 센터 이중화 및 재해복구(DR) 센터 구축 전략 수립"
+        ],
+        "deliverables": "Ⅳ.7. 목표 인프라 및 정보보호 아키텍처 설계",
+        "keywords": "재난·재해, 대응, 개인정보보호, 정보보안, DR, ISMS-P"
     },
     {
-        id: 'CNR-012',
-        name: '공공병원 AX 단계별 추진 로드맵 수립',
-        keywords: '공공병원, AX, 단계별, 추진'
+        "id": "CNR-012",
+        "category": "컨설팅 요구사항",
+        "name": "공공병원 AX 단계별 추진 로드맵 수립",
+        "description": "디지털 전환(AX) 목표 달성을 위한 단기(1단계), 중기(2단계), 장기(3단계) 종합 추진 로드맵 및 이행 일정 수립",
+        "subItems": [
+            "개선과제 간 선후행 관계 및 기술적 종속성을 고려한 단계별 로드맵 편성",
+            "연차별 시범사업, 본구축, 전국 확산 일정계획 수립",
+            "예산 투입 규모 및 조직 준비도를 반영한 마일스톤 정의"
+        ],
+        "deliverables": "Ⅴ.1. 이행계획 수립 개요, Ⅴ.5. 이행과제 로드맵",
+        "keywords": "공공병원, AX, 단계별, 추진, 로드맵, 일정"
     },
     {
-        id: 'CNR-013',
-        name: 'AI 기반 차세대 시스템 구축에 따른 기대효과 및 성과지표 도출',
-        keywords: 'AI, 기반, 차세대, 시스템'
+        "id": "CNR-013",
+        "category": "컨설팅 요구사항",
+        "name": "AI 기반 차세대 시스템 구축에 따른 기대효과 및 성과지표 도출",
+        "description": "차세대 플랫폼 구축 후 공공의료 서비스 질 향상, 재정 절감, 국민 편익을 측정할 정량적·정성적 기대효과 및 성과지표 도출",
+        "subItems": [
+            "진료 대기시간 단축, 오진율 감소, 의료 질 향상 등 정량적 기대효과 산출",
+            "지역 간 의료 격차 해소, 공공의료 신뢰도 제고 등 정성적 파급효과 분석",
+            "사업 완료 후 사후 성과평가를 위한 핵심 성과지표(KPI) 및 측정 방법론 제시"
+        ],
+        "deliverables": "Ⅴ.7. 기대효과분석, Ⅴ.8. 투자효과분석",
+        "keywords": "AI, 차세대, 시스템, 기대효과, 성과지표, ROI"
     },
     {
-        id: 'CNR-014',
-        name: '사업계획 수립 및 소요예산 산출, 개선과제 이행방안 수립',
-        keywords: '사업계획, 수립, 소요예산, 산출,'
+        "id": "CNR-014",
+        "category": "컨설팅 요구사항",
+        "name": "사업계획 수립 및 소요예산 산출, 개선과제 이행방안 수립",
+        "description": "본 구축 사업 추진을 위한 세부 사업계획 수립 및 SW 개발비, H/W·S/W 도입비, 인건비 등 객관적 소요예산 산출",
+        "subItems": [
+            "SW 기능점수(FP) 분석 및 엔지니어링 표준품셈 기반 개발비 산정",
+            "클라우드 인프라 이용료, 상용 SW 라이선스, AI 솔루션 도입 비용 산출",
+            "연차별/비목별 재정 투자계획 및 비용 절감 방안 수립"
+        ],
+        "deliverables": "Ⅴ.2. 이행과제 도출, Ⅴ.6. 소요예산 정의",
+        "keywords": "사업계획, 소요예산, 산출, 개선과제, 이행방안, 기능점수"
     },
     {
-        id: 'CNR-015',
-        name: '세부 사업계획서 및 제안요청서 작성',
-        keywords: '세부, 사업계획서, 제안요청서, 작성'
+        "id": "CNR-015",
+        "category": "컨설팅 요구사항",
+        "name": "세부 사업계획서 및 제안요청서 작성",
+        "description": "후속 본 구축 사업자 선정을 위한 공식 제안요청서(RFP) 및 세부 과업내용서 작성 지원",
+        "subItems": [
+            "정부 공식 서식에 맞춘 세부 사업계획서 및 제안요청서(RFP) 초안 작성",
+            "기능적·기술적·관리적 세부 요구사항 정의서 및 RTM 작성",
+            "사업자 선정 평가 기준표 및 기술제안서 평가 배점표 마련"
+        ],
+        "deliverables": "제안요청서(RFP) 산출물, 최종산출물 점검표",
+        "keywords": "세부, 사업계획서, 제안요청서, RFP, 과업내용서"
     },
     {
-        id: 'CNR-016',
-        name: '공통기반 시스템 연계·활용 방안 검토',
-        keywords: '공통기반, 시스템, 연계·활용, 방안'
+        "id": "CNR-016",
+        "category": "컨설팅 요구사항",
+        "name": "공통기반 시스템 연계·활용 방안 검토",
+        "description": "국가 진료정보교류시스템(MIE), 건강정보 고속도로, 응급의료 연계망 등 기존 공통기반 시스템과의 연계 방안 검토",
+        "subItems": [
+            "보건복지부 국가 진료정보교류 시스템과의 표준 인터페이스 연계 방안 수립",
+            "진료정보 고속도로(마이차트) 및 공공보건 포털 연계 방안 검토",
+            "응급의료관제센터 및 소방청 119 구급 이송 연계 프로토콜 정의"
+        ],
+        "deliverables": "Ⅳ.11. 공통기반 시스템 연계·활용 방안",
+        "keywords": "공통기반, 시스템, 연계·활용, 진료정보교류, 고속도로"
     },
     {
-        id: 'CNR-017',
-        name: 'OpenAPI 기능의 활용성 확장 및 타 시스템 간 연계',
-        keywords: 'OpenAPI, 기능의, 활용성, 확장'
+        "id": "CNR-017",
+        "category": "컨설팅 요구사항",
+        "name": "OpenAPI 기능의 활용성 확장 및 타 시스템 간 연계",
+        "description": "외부 의료기관 및 민간 헬스케어 서비스와의 원활한 데이터 교환을 위한 OpenAPI 표준 게이트웨이 및 연계 체계 수립",
+        "subItems": [
+            "RESTful API, HL7 FHIR 기반 표준 OpenAPI 규격 설계",
+            "API 보안 인증(OAuth 2.0, API Key), 접근제어 및 트래픽 스로틀링 정책 수립",
+            "외부 개발자 포털 및 개발 가이드라인 마련"
+        ],
+        "deliverables": "Ⅳ.11. 공통기반 시스템 연계·활용 방안",
+        "keywords": "OpenAPI, 활용성, 확장, 시스템, 연계, FHIR"
     },
     {
-        id: 'DAR-001',
-        name: '데이터 표준화 방안 제시',
-        keywords: '데이터, 표준화, 방안, 제시'
+        "id": "DAR-001",
+        "category": "데이터 요구사항",
+        "name": "데이터 표준화 방안 제시",
+        "description": "공공의료 데이터의 일관성 및 상호운용성 확보를 위한 전사 표준단어, 표준용어, 도메인, 코드 체계 수립",
+        "subItems": [
+            "보건의료 전사 표준 단어사전, 표준 용어사전, 코드 정의서 정립",
+            "국제 표준 의학용어(SNOMED-CT, LOINC, EDI) 매핑 방안 마련",
+            "데이터 명명 규칙 및 도메인 분류 표준 정의"
+        ],
+        "deliverables": "Ⅳ.6. 목표 데이터 아키텍처 설계, 데이터 표준화 방안",
+        "keywords": "데이터, 표준화, 단어사전, 도메인, 코드, 용어"
     },
     {
-        id: 'DAR-002',
-        name: '데이터 표준관리 방안 제시',
-        keywords: '데이터, 표준관리, 방안, 제시'
+        "id": "DAR-002",
+        "category": "데이터 요구사항",
+        "name": "데이터 표준관리 방안 제시",
+        "description": "수립된 데이터 표준의 지속적인 유지관리 및 신규 등록·변경 승인을 위한 데이터 표준관리 프로세스 수립",
+        "subItems": [
+            "데이터 표준 관리 조직 및 변경 심의 승인 절차 수립",
+            "표준관리 도구(Meta Tool) 연계 및 정기 표준 준수율 점검 방안 제시",
+            "표준 미준수 데이터 조기 식별 및 교정 프로세스 정의"
+        ],
+        "deliverables": "데이터 표준관리 현황 분석서, 목표 데이터 아키텍처",
+        "keywords": "데이터, 표준관리, 메타데이터, 승인절차, 준수율"
     },
     {
-        id: 'DAR-003',
-        name: '데이터 구조 설계 방안 제시',
-        keywords: '데이터, 구조, 설계, 방안'
+        "id": "DAR-003",
+        "category": "데이터 요구사항",
+        "name": "데이터 구조 설계 방안 제시",
+        "description": "의료 빅데이터 분석 및 AI 학습 파이프라인에 최적화된 개념/논리/물리 데이터 모델(ERD) 설계 방안 수립",
+        "subItems": [
+            "공공의료 지능형 플랫폼 목표 개념 및 논리 데이터 모델(ERD) 설계",
+            "시계열 생체신호, 비정형 영상(DICOM) 데이터 수집 및 모델링 방안 마련",
+            "데이터 정규화 및 분석 성능 최적화를 위한 반정규화 기준 수립"
+        ],
+        "deliverables": "Ⅳ.6. 목표 데이터 아키텍처 설계, 데이터 구조 설계 방안",
+        "keywords": "데이터, 구조, 설계, ERD, 논리모델, 물리모델"
     },
     {
-        id: 'DAR-004',
-        name: '데이터 구조 검증 및 개선방안 제시',
-        keywords: '데이터, 구조, 검증, 개선방안'
+        "id": "DAR-004",
+        "category": "데이터 요구사항",
+        "name": "데이터 구조 검증 및 개선방안 제시",
+        "description": "현행 공공병원 EMR 데이터 구조의 정합성, 중복성, 무결성 제약조건 검증 및 개선 방안 수립",
+        "subItems": [
+            "현행 DB 구조 역공학 분석 및 무결성 제약 누락 요소 식별",
+            "테이블/컬럼 단위 중복 및 데이터 모델 불일치 개선안 도출",
+            "대용량 파티셔닝 및 인덱스 최적화 방안 제시"
+        ],
+        "deliverables": "데이터 구조현황 분석서, 목표 데이터 아키텍처",
+        "keywords": "데이터, 구조, 검증, 개선, 무결성, 역공학"
     },
     {
-        id: 'DAR-005',
-        name: '데이터 구조 관리 방안 제시',
-        keywords: '데이터, 구조, 관리, 방안'
+        "id": "DAR-005",
+        "category": "데이터 요구사항",
+        "name": "데이터 구조 관리 방안 제시",
+        "description": "데이터 모델 형상관리 및 스키마 변경 이력 추적을 위한 구조 관리 절차 수립",
+        "subItems": [
+            "DB 스키마 변경 시 영향도 분석 프로세스 수립",
+            "데이터 모델링 툴 형상관리 및 버전 동기화 체계 정의",
+            "데이터 딕셔너리 정기 최신화 절차 수립"
+        ],
+        "deliverables": "데이터 구조 관리방안, 정보화 통합 거버넌스",
+        "keywords": "데이터, 구조, 관리, 스키마, 형상관리, 변경이력"
     },
     {
-        id: 'DAR-006',
-        name: '데이터 값 검증 방안 제시',
-        keywords: '데이터, 검증, 방안, 제시'
+        "id": "DAR-006",
+        "category": "데이터 요구사항",
+        "name": "데이터 값 검증 방안 제시",
+        "description": "수집 및 적재되는 공공의료 데이터의 유효성, 완전성, 정확성을 보장하기 위한 데이터 값 품질 진단 방안 수립",
+        "subItems": [
+            "필수값 누락(Null), 유효 범위 초과, 포맷 불일치 등 데이터 프로파일링 기법 정의",
+            "데이터 정제(Cleansing) 룰셋 및 이상치 탐지 알고리즘 적용 방안",
+            "주기적 데이터 품질 지수(DQ Index) 측정 체계 수립"
+        ],
+        "deliverables": "데이터(표준, 구조, 값, 연계)관리방안",
+        "keywords": "데이터, 값, 검증, 품질진단, 프로파일링, 정제"
     },
     {
-        id: 'DAR-007',
-        name: '이관 데이터 값 검증 방안 제시',
-        keywords: '이관, 데이터, 검증, 방안'
+        "id": "DAR-007",
+        "category": "데이터 요구사항",
+        "name": "이관 데이터 값 검증 방안 제시",
+        "description": "레거시 EMR 시스템에서 신규 플랫폼으로의 의료데이터 이관(Migration) 시 데이터 정합성 검증 방안 수립",
+        "subItems": [
+            "원천 DB와 목표 DB 간 레코드 건수 및 핵심 수치 대조 검증 룰 수립",
+            "환자 고유식별자 매핑 및 이력 데이터 정합성 검증 절차 수립",
+            "이관 실패 데이터(Exception) 격리 및 재이관 프로세스 마련"
+        ],
+        "deliverables": "데이터 관리방안, 이행계획 수립서",
+        "keywords": "이관, 데이터, 검증, 정합성, 마이그레이션, 무결성"
     },
     {
-        id: 'DAR-008',
-        name: '데이터 관리체계 현황분석 및 목표모델 제시',
-        keywords: '데이터, 관리체계, 현황분석, 목표모델'
+        "id": "DAR-008",
+        "category": "데이터 요구사항",
+        "name": "데이터 관리체계 현황분석 및 목표모델 제시",
+        "description": "현재 공공의료 데이터 관리 체계의 성숙도를 진단하고 차세대 지능형 데이터 레이크 목표 모델 설계",
+        "subItems": [
+            "공공의료 데이터 생애주기(생성, 저장, 활용, 폐기) 현황 진단",
+            "의료데이터 거버넌스 성숙도 평가 및 개선 목표 수립",
+            "데이터 카탈로그 및 셀프서비스 분석 환경 목표 모델 제시"
+        ],
+        "deliverables": "Ⅲ.5. 데이터 현황분석, Ⅳ.6. 목표 데이터 아키텍처",
+        "keywords": "데이터, 관리체계, 현황분석, 목표모델, 성숙도"
     },
     {
-        id: 'DAR-009',
-        name: '데이터 개방 및 메타데이터 관리체계',
-        keywords: '데이터, 개방, 메타데이터, 관리체계'
+        "id": "DAR-009",
+        "category": "데이터 요구사항",
+        "name": "데이터 개방 및 메타데이터 관리체계",
+        "description": "공공데이터 개방 규정에 따른 가명정보 결합, 비식별 조치 및 공공포털 메타데이터 연동 체계 구축",
+        "subItems": [
+            "보건의료 가명정보 처리 가이드라인에 따른 비식별화 파이프라인 설계",
+            "공공데이터포털(data.go.kr) 메타데이터 자동 연계 규격 수립",
+            "연구자용 안심존(Safe Haven) 데이터 제공 절차 정의"
+        ],
+        "deliverables": "데이터 개방 및 메타데이터 관리방안",
+        "keywords": "데이터, 개방, 메타데이터, 가명정보, 비식별화"
     },
     {
-        id: 'DAR-010',
-        name: '보건의료데이터 표준화',
-        keywords: '보건의료데이터, 표준화'
+        "id": "DAR-010",
+        "category": "데이터 요구사항",
+        "name": "보건의료데이터 표준화",
+        "description": "전국 의료기관 간 진료정보의 원활한 상호연계를 위한 보건의료 핵심 용어 및 FHIR 표준화 규격 수립",
+        "subItems": [
+            "보건의료 용어 표준(KOSTOM) 및 국제 진단코드(KCD-8) 표준 매핑",
+            "HL7 FHIR 기반 임상 데이터 리소스(Patient, Encounter, Condition 등) 표준 프로파일 정의",
+            "지방의료원 레거시 용어의 중앙 표준 용어 자동 변환 매핑 테이블 구축"
+        ],
+        "deliverables": "목표시스템 데이터 표준화 방안, Ⅳ.6. 목표 데이터 아키텍처",
+        "keywords": "보건의료데이터, 표준화, KOSTOM, FHIR, 용어표준"
     },
     {
-        id: 'SER-001',
-        name: '보안관리 준수사항',
-        keywords: '보안관리, 준수사항'
+        "id": "SER-001",
+        "category": "보안 요구사항",
+        "name": "보안관리 준수사항",
+        "description": "국가정보보안기본지침, 전자정부 정보보호 가이드라인 및 의료법상 기술적·관리적 보안 대책 수립",
+        "subItems": [
+            "행정안전부 및 국가정보원 정보보안 기본지침 준수 체계 수립",
+            "서버, 네트워크, DB 접근통제 및 비밀번호 정책, 세션 관리 지침 수립",
+            "시스템 취약점 분석·평가 및 침투 테스트 수행 방안 마련"
+        ],
+        "deliverables": "보안계획서 및 관련 문서, Ⅳ.7. 목표 인프라 및 정보보호 아키텍처",
+        "keywords": "보안관리, 준수사항, 보안가이드라인, 접근통제"
     },
     {
-        id: 'SER-002',
-        name: '누출금지 대상정보',
-        keywords: '누출금지, 대상정보'
+        "id": "SER-002",
+        "category": "보안 요구사항",
+        "name": "누출금지 대상정보",
+        "description": "국가계약법상 누출금지 대상정보 정의 및 사업 수행 중 정보 유출 방지를 위한 물리적·기술적 통제 방안 수립",
+        "subItems": [
+            "공공병원 네트워크 구성도, 시스템 IP, 계정 정보 등 누출금지 대상 정보 정의",
+            "환자 개인정보 및 전자의무기록(EMR) 데이터 무단 반출 차단 체계 수립",
+            "개발 사업장 출입 통제, PC 매체 제어 및 보안서약서 징구 방안 마련"
+        ],
+        "deliverables": "보안계획서(외부자 보안서약서 등)",
+        "keywords": "누출금지, 대상정보, 정보누출, 개인정보유출, 보안서약서"
     },
     {
-        id: 'SER-003',
-        name: '사업자 보안위규 처리기준',
-        keywords: '사업자, 보안위규, 처리기준'
+        "id": "SER-003",
+        "category": "보안 요구사항",
+        "name": "사업자 보안위규 처리기준",
+        "description": "사업 수행 인력의 보안 위규 행위 적발 시 경중별 제재 조치 및 처리 기준 정립",
+        "subItems": [
+            "보안 위규 사항 수준별(심각, 중대, 경미) 분류 및 벌점 기준 수립",
+            "위규자 즉시 교체 및 재발방지 대책 보고 절차 마련",
+            "주기적 참여인력 보안 교육 및 불시 보안점검 실시 방안"
+        ],
+        "deliverables": "보안계획서 및 착수계 관련 서식",
+        "keywords": "사업자, 보안위규, 처리기준, 보안점검, 위규자제재"
     },
     {
-        id: 'SER-004',
-        name: '사업자 보안위약금 부과기준',
-        keywords: '사업자, 보안위약금, 부과기준'
+        "id": "SER-004",
+        "category": "보안 요구사항",
+        "name": "사업자 보안위약금 부과기준",
+        "description": "정보 유출 및 보안 위규 행위에 따른 객관적 보안위약금 부과 기준 및 감액 기준 수립",
+        "subItems": [
+            "위규 수준에 따른 계약금액 대비 위약금 산정 비율표 정립",
+            "보안 사고 발생 시 손해배상 책임 및 행정 제재 기준 마련",
+            "기성금 지급 시 보안 위약금 공제 처리 절차 수립"
+        ],
+        "deliverables": "보안계획서 및 관련 문서",
+        "keywords": "사업자, 보안위약금, 부과기준, 손해배상"
     },
     {
-        id: 'QUR-001',
-        name: '품질관리 준수',
-        keywords: '품질관리, 준수'
+        "id": "QUR-001",
+        "category": "품질 요구사항",
+        "name": "품질관리 준수",
+        "description": "SW공학 및 감리 기준에 부합하는 분석·설계 산출물 품질보증(QA) 계획 및 결함 관리 절차 수립",
+        "subItems": [
+            "산출물 작성 표준 가이드라인 및 피어 리뷰(Peer Review) 체계 수립",
+            "단계별 품질 점검표 및 산출물 정합성(SSOT) 검증 절차 적용",
+            "공식 감리 지적사항에 대한 신속한 조치결과 이행 관리"
+        ],
+        "deliverables": "ISP 최종산출물 검토신청서, 최종산출물 점검표",
+        "keywords": "품질관리, 준수, QA, 감리, 결함관리, 피어리뷰"
     },
     {
-        id: 'COR-001',
-        name: '정보화기반 표준화 지침 및 가이드라인 준수',
-        keywords: '정보화기반, 표준화, 지침, 가이드라인'
+        "id": "COR-001",
+        "category": "제약사항",
+        "name": "정보화기반 표준화 지침 및 가이드라인 준수",
+        "description": "전자정부 표준프레임워크, 행정기관 공공기관 정보시스템 구축·운영 지침 및 기술적용기준 준수",
+        "subItems": [
+            "전자정부 표준프레임워크 최신 버전 준수 및 오픈소스 라이선스 검토",
+            "클라우드 보안인증(CSAP) 획득 인프라 활용 원칙 준수",
+            "행정기관 및 공공기관 정보시스템 구축·운영 기술적용계획표 작성 및 준수"
+        ],
+        "deliverables": "[별지 1] 기술적용계획표 및 기술적용결과표",
+        "keywords": "정보화기반, 표준화, 지침, 가이드라인, 전자정부, 기술적용"
     },
     {
-        id: 'COR-002',
-        name: '저작권 및 지식재산권',
-        keywords: '저작권, 지식재산권'
+        "id": "COR-002",
+        "category": "제약사항",
+        "name": "저작권 및 지식재산권",
+        "description": "사업 수행 중 생성되는 모든 분석·설계 산출물의 지식재산권 귀속 및 오픈소스 저작권 침해 방지 대책 수립",
+        "subItems": [
+            "기획재정부 계약예규에 따른 산출물 지식재산권 공동 귀속 원칙 정의",
+            "외부 폰트, 이미지, 오픈소스 라이선스 침해 여부 전수 검증",
+            "산출물의 무단 전재, 배포 방지 및 기술자료 임치 방안"
+        ],
+        "deliverables": "최종산출물 점검표, 계약 관련 서류",
+        "keywords": "저작권, 지식재산권, 오픈소스, 라이선스, 계약예규"
     },
     {
-        id: 'COR-003',
-        name: '정보시스템 운영 성과측정 기능활용도 측정 방안 마련',
-        keywords: '정보시스템, 운영, 성과측정, 기능활용도'
+        "id": "COR-003",
+        "category": "제약사항",
+        "name": "정보시스템 운영 성과측정 기능활용도 측정 방안 마련",
+        "description": "행정안전부 정보시스템 운영 성과관리 지침에 따른 기능 활용도 및 사용률 측정 방안 마련",
+        "subItems": [
+            "목표 시스템 기능별 호출 빈도 및 사용자 접속 로그 수집 아키텍처 설계",
+            "사용 빈도가 낮은 미활용 기능에 대한 지속적 모니터링 체계 수립",
+            "연차별 운영 성과측정 보고서 작성 체계 정의"
+        ],
+        "deliverables": "Ⅳ.5. 목표 응용시스템 아키텍처, Ⅴ.5. 이행과제 로드맵",
+        "keywords": "정보시스템, 운영, 성과측정, 기능활용도, 성과관리"
     },
     {
-        id: 'PMR-001',
-        name: '업무보고',
-        keywords: '업무보고'
+        "id": "PMR-001",
+        "category": "프로젝트관리",
+        "name": "업무보고",
+        "description": "사업 추진 과정의 투명한 진척 관리를 위한 정기(주간/월간) 및 비정기(착수/중간/완료/수시) 업무보고 체계 수립",
+        "subItems": [
+            "착수보고회, 중간보고회, 최종 완료보고회 계획 및 심의 절차 수립",
+            "주간/월간 정기 진척 보고서 작성 및 계획 대비 실적 갭(Gap) 관리",
+            "주요 이슈 및 리스크 발생 시 즉각적인 수시보고 체계 마련"
+        ],
+        "deliverables": "착수/중간/최종 보고서, 주간/월간 보고서",
+        "keywords": "업무보고, 주간보고, 월간보고, 착수보고, 완료보고"
     },
     {
-        id: 'PMR-002',
-        name: '프로젝트 일정관리 방안 제시',
-        keywords: '프로젝트, 일정관리, 방안, 제시'
+        "id": "PMR-002",
+        "category": "프로젝트관리",
+        "name": "프로젝트 일정관리 방안 제시",
+        "description": "WBS 기반의 상세 일정 계획 수립, 임계경로(Critical Path) 관리 및 지연 방지 대책 마련",
+        "subItems": [
+            "산출물 단위 세부 작업분할구조도(WBS) 작성 및 마일스톤 관리",
+            "일정 지연 위험 감지 시 자원 추가 투입 및 일정 압축(Fast-tracking) 방안",
+            "발주처 및 감리 일정과의 긴밀한 동기화 관리"
+        ],
+        "deliverables": "Ⅴ.1. 이행계획 수립 개요, 착수계(수행계획서)",
+        "keywords": "프로젝트, 일정관리, WBS, 마일스톤, 공정관리"
     },
     {
-        id: 'PMR-003',
-        name: '사업수행 산출물 작성 및 제출',
-        keywords: '사업수행, 산출물, 작성, 제출'
+        "id": "PMR-003",
+        "category": "프로젝트관리",
+        "name": "사업수행 산출물 작성 및 제출",
+        "description": "단계별 요구되는 공식 산출물의 작성 기준, 제출 일정 및 발주처 승인 절차 수립",
+        "subItems": [
+            "환경분석, 현황분석, 목표모델, 이행계획 등 34대 표준 산출물 목록 정의",
+            "산출물 양식 표준화 및 전자문서(PPTX/HWPX/PDF) 포맷 준수",
+            "발주처 검토 의견서 피드백 반영 및 최종 승인 징구"
+        ],
+        "deliverables": "ISP 최종산출물 검토신청서, 34대 표준 산출물 일체",
+        "keywords": "사업수행, 산출물, 작성, 제출, 산출물점검, 승인절차"
     },
     {
-        id: 'PMR-004',
-        name: '프로젝트 조직구성(인력관리 등)',
-        keywords: '프로젝트, 조직구성(인력관리, 등)'
+        "id": "PMR-004",
+        "category": "프로젝트관리",
+        "name": "프로젝트 조직구성(인력관리 등)",
+        "description": "전문 컨설턴트 및 기술 아키텍트 중심의 전담 투입 조직 구성 및 인력 운영·교체 관리 방안 수립",
+        "subItems": [
+            "총괄 PM, 도메인 컨설팅팀, TA/DA 기술팀, 품질보증팀 간 R&R 정의",
+            "투입 인력의 자격 요건 검증 및 보안/서약 관리",
+            "불가피한 인력 교체 시 동급 이상 대체 인력 투입 및 인수인계 계획"
+        ],
+        "deliverables": "착수계(사업수행계획서 내 투입조직도)",
+        "keywords": "프로젝트, 조직구성, 인력관리, 투입인력, R&R"
     },
     {
-        id: 'PSR-001',
-        name: '관련 기술 이전 및 지원',
-        keywords: '관련, 기술, 이전, 지원'
+        "id": "PSR-001",
+        "category": "지원 요구사항",
+        "name": "관련 기술 이전 및 지원",
+        "description": "ISP 수립 결과물 및 AI To-Be 모델에 대한 발주처 실무진 역량 강화를 위한 기술 이전 및 교육 지원",
+        "subItems": [
+            "공공의료 AI 플랫폼 설계 원리 및 아키텍처 기술 이전 교육 실시",
+            "발주기관 시스템 담당자 대상 관리자 교육 및 기술자료 이관",
+            "본 사업 발주 시 질의응답 및 기술 자문 지원"
+        ],
+        "deliverables": "기술지원 계획서, 기술이전 보고서",
+        "keywords": "기술이전, 지원, 교육, 역량강화, 기술자문"
     },
     {
-        id: 'PSR-002',
-        name: '전산장비 및 각종 사무기기 확보',
-        keywords: '전산장비, 각종, 사무기기, 확보'
+        "id": "PSR-002",
+        "category": "지원 요구사항",
+        "name": "전산장비 및 각종 사무기기 확보",
+        "description": "사업 수행 인력의 원활한 업무 환경 조성을 위한 독립된 작업 공간, 보안 PC 및 집기류 확보 계획 수립",
+        "subItems": [
+            "사업 수행 장소(발주처 인접 공간) 확보 및 출입통제 체계 수립",
+            "인터넷망/업무망 분리 개발 PC 및 소프트웨어 정품 라이선스 구비",
+            "보안 프린터, 문서 파쇄기 등 보안 사무기기 설치 및 운영"
+        ],
+        "deliverables": "착수계(수행환경 구축 보고)",
+        "keywords": "전산장비, 사무기기, 작업공간, 보안PC, 사무환경"
     },
     {
-        id: 'PSR-003',
-        name: '하자보수 일반',
-        keywords: '하자보수, 일반'
+        "id": "PSR-003",
+        "category": "지원 요구사항",
+        "name": "하자보수 일반",
+        "description": "ISP 완료 후 제안요청서 작성 및 본 사업 발주 과정에서 발견되는 산출물 오류에 대한 무상 하자보수 지원",
+        "subItems": [
+            "사업 종료 후 1년간 산출물 오탈자 및 오류에 대한 무상 정정 지원",
+            "후속 본 구축 사업자 입찰 시 RFP 관련 질의에 대한 기술적 답변 지원",
+            "정부 예산 심의 시 산출 근거 추가 소명 자료 작성 지원"
+        ],
+        "deliverables": "하자보수 계획서, 사업완료 확인서",
+        "keywords": "하자보수, 일반, 무상보수, 질의대응, 사후지원"
     },
     {
-        id: 'PSR-004',
-        name: '행사(보고회) 및 워크숍 지원',
-        keywords: '행사(보고회), 워크숍, 지원'
+        "id": "PSR-004",
+        "category": "지원 요구사항",
+        "name": "행사(보고회) 및 워크숍 지원",
+        "description": "이해관계자 의견 수렴 및 공감대 형성을 위한 대외 보고회, 자문회의, 전문가 워크숍 기획 및 운영 지원",
+        "subItems": [
+            "전국 지방의료원장 및 실무진 초청 의견수렴 워크숍 개최 지원",
+            "의료 AI 전문가 자문위원회 구성 및 정기 회의체 운영",
+            "보고회 발표 자료(PPT) 및 홍보 리플릿 제작 지원"
+        ],
+        "deliverables": "워크숍 결과보고서, 전문가 자문의견서",
+        "keywords": "행사, 보고회, 워크숍, 자문회의, 의견수렴"
     },
     {
-        id: 'PSR-005',
-        name: '추가제안',
-        keywords: '추가제안'
-    },
+        "id": "PSR-005",
+        "category": "지원 요구사항",
+        "name": "추가제안",
+        "description": "본 제안요청서 범위 외에 공공의료 AI 플랫폼의 성공적 구축과 혁신을 위해 제안사가 추가 제시하는 창의적 제안",
+        "subItems": [
+            "민간 AI 파운데이션 모델 활용 및 공공-민간 협력 방안 추가 제시",
+            "지방의료원 의료진 소진 방지를 위한 의료 행정 자동화(RPA) 도입 방안 제안",
+            "추가 제안 과제의 타당성, 소요 예산 및 기대효과 명시"
+        ],
+        "deliverables": "추가제안 기술서, Ⅳ.9. 스마트병원 활성화 전략",
+        "keywords": "추가제안, 창의제안, 부가가치, 민관협력, 혁신"
+    }
 ];
 
 export const DEFAULT_REQUIREMENTS = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS;
@@ -2977,7 +3329,7 @@ export function extractRfpWithRules(text, tables = []) {
     }
 
     // 5) 요구사항 목록 추출 (표 우선 -> 텍스트 보완)
-    // ID -> { id, name, keywords } 맵으로 관리하여 유효한 진짜 이름이 발견되면 즉시 업데이트!
+    // ID -> { id, category, name, description, subItems, deliverables, keywords } 맵
     const reqDict = new Map();
 
     const isPlaceholderName = (name, id) => {
@@ -2990,58 +3342,121 @@ export function extractRfpWithRules(text, tables = []) {
         return false;
     };
 
-    const addOrUpdateReq = (id, rawName, rawDesc) => {
+    // 텍스트 블록에서 번호 매김 하위 세부 항목들을 분리 추출하는 헬퍼
+    const parseSubItemsFromText = (descText) => {
+        if (!descText) return [];
+        const lines = String(descText).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const subList = [];
+        for (const line of lines) {
+            const cleanLine = line.replace(/^(?:[0-9]+[.)]|[-•*□■▶◆○●]|(?:\([0-9]+\))|(?:[가-힣]\.))\s*/, '').trim();
+            if (cleanLine.length >= 6) {
+                subList.push(cleanLine);
+            }
+        }
+        return subList.slice(0, 10);
+    };
+
+    const addOrUpdateReq = (id, rawName, rawDesc, rawCategory = '', rawDeliverables = '', rawSubItems = null) => {
         if (!id) return;
         const cleanId = String(id).trim().toUpperCase();
         if (!/^[A-Z]{2,6}[-_]\d{2,4}$/.test(cleanId)) return;
 
         let name = String(rawName || '').trim();
-        // 앞뒤 불필요한 번호, 특수기호, 줄바꿈 제거
         name = name
             .replace(/[\r\n\t]+/g, ' ')
             .replace(/^(?:[0-9]+[.)]|[-•*□■▶◆○●])\s*/, '')
             .replace(/\s+/g, ' ')
             .trim();
 
+        let desc = String(rawDesc || '').trim();
+        let category = String(rawCategory || '').trim();
+        let deliverables = String(rawDeliverables || '').trim();
+
+        // subItems 파싱
+        let subItems = Array.isArray(rawSubItems) && rawSubItems.length > 0
+            ? rawSubItems.map(s => String(s).trim()).filter(Boolean)
+            : parseSubItemsFromText(desc);
+
+        // 키워드 추출
         let keywords = '';
-        if (rawDesc) {
-            const words = String(rawDesc)
+        if (desc || name) {
+            const words = `${name} ${desc}`
                 .replace(/[\r\n\t]+/g, ' ')
                 .replace(/[()[\]{}.,~;:_!?"'`/\\|]/g, ' ')
                 .split(/\s+/)
                 .map(w => w.trim())
-                .filter(w => w.length >= 2 && !['체계', '구축', '방안', '수립', '및', '관한', '위한', '지원', '제공', '등', '에', '의', '수행', '대상', '내용', '정의', '요구사항'].includes(w));
+                .filter(w => w.length >= 2 && !['체계', '구축', '방안', '수립', '및', '관한', '위한', '지원', '제공', '등', '에', '의', '수행', '대상', '내용', '정의', '요구사항', '관리'].includes(w));
             keywords = Array.from(new Set(words)).slice(0, 5).join(', ');
         }
 
-        // 표준 카탈로그 조회 (플레이스홀더인 경우 공공의료 AI ISP 표준 명칭 자동 복원)
+        // 표준 44종 카탈로그 조회 및 자동 보강
         const stdCatalog = PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS.find(r => r.id === cleanId);
         let resolvedName = name;
+        let resolvedCategory = category;
+        let resolvedDesc = desc;
+        let resolvedSubItems = subItems;
+        let resolvedDeliverables = deliverables;
         let resolvedKeywords = keywords;
-        if (isPlaceholderName(resolvedName, cleanId) && stdCatalog) {
-            resolvedName = stdCatalog.name;
-            if (!resolvedKeywords) resolvedKeywords = stdCatalog.keywords;
+
+        if (stdCatalog) {
+            if (isPlaceholderName(resolvedName, cleanId)) {
+                resolvedName = stdCatalog.name;
+            }
+            if (!resolvedCategory && stdCatalog.category) {
+                resolvedCategory = stdCatalog.category;
+            }
+            if ((!resolvedDesc || resolvedDesc.length < 10) && stdCatalog.description) {
+                resolvedDesc = stdCatalog.description;
+            }
+            if ((!resolvedSubItems || resolvedSubItems.length === 0) && Array.isArray(stdCatalog.subItems)) {
+                resolvedSubItems = [...stdCatalog.subItems];
+            }
+            if (!resolvedDeliverables && stdCatalog.deliverables) {
+                resolvedDeliverables = stdCatalog.deliverables;
+            }
+            if (!resolvedKeywords && stdCatalog.keywords) {
+                resolvedKeywords = stdCatalog.keywords;
+            }
+        }
+
+        if (!resolvedCategory) {
+            if (cleanId.startsWith('CNR')) resolvedCategory = '컨설팅 요구사항';
+            else if (cleanId.startsWith('SFR')) resolvedCategory = '기능 요구사항';
+            else if (cleanId.startsWith('DAR')) resolvedCategory = '데이터 요구사항';
+            else if (cleanId.startsWith('SER')) resolvedCategory = '보안 요구사항';
+            else if (cleanId.startsWith('QUR')) resolvedCategory = '품질 요구사항';
+            else if (cleanId.startsWith('PMR')) resolvedCategory = '프로젝트관리 요구사항';
+            else if (cleanId.startsWith('PSR')) resolvedCategory = '프로젝트지원 요구사항';
+            else resolvedCategory = '일반 요구사항';
         }
 
         const existing = reqDict.get(cleanId);
         if (!existing) {
             reqDict.set(cleanId, {
                 id: cleanId,
+                category: resolvedCategory,
                 name: !isPlaceholderName(resolvedName, cleanId) ? resolvedName : `요구사항 ${cleanId}`,
+                description: resolvedDesc,
+                subItems: resolvedSubItems,
+                deliverables: resolvedDeliverables,
                 keywords: resolvedKeywords || (resolvedName && !isPlaceholderName(resolvedName, cleanId) ? resolvedName.split(/\s+/).filter(w => w.length >= 2).slice(0, 4).join(', ') : '')
             });
         } else {
-            // 기존 이름이 플레이스홀더인데 새 이름이 유효한 경우 교체!
+            // 업데이트 및 세부내용 보강
             if (isPlaceholderName(existing.name, cleanId) && !isPlaceholderName(resolvedName, cleanId)) {
                 existing.name = resolvedName;
-                if (!existing.keywords && resolvedKeywords) existing.keywords = resolvedKeywords;
             } else if (!isPlaceholderName(resolvedName, cleanId) && resolvedName.length > existing.name.length && !existing.name.includes(resolvedName)) {
-                // 더 구체적인 이름이 발견되면 업데이트
                 existing.name = resolvedName;
-                if (resolvedKeywords) existing.keywords = resolvedKeywords;
-            } else if (!existing.keywords && resolvedKeywords) {
-                existing.keywords = resolvedKeywords;
             }
+            if (!existing.category && resolvedCategory) existing.category = resolvedCategory;
+            if ((!existing.description || existing.description.length < resolvedDesc.length) && resolvedDesc) {
+                existing.description = resolvedDesc;
+            }
+            if ((!existing.subItems || existing.subItems.length === 0) && resolvedSubItems.length > 0) {
+                existing.subItems = resolvedSubItems;
+            }
+            if (!existing.deliverables && resolvedDeliverables) existing.deliverables = resolvedDeliverables;
+            if (!existing.keywords && resolvedKeywords) existing.keywords = resolvedKeywords;
         }
     };
 
@@ -3051,10 +3466,11 @@ export function extractRfpWithRules(text, tables = []) {
             if (rows.length < 1) continue;
 
             // ── [패턴 1: 양식형 Key-Value 표 (공공 RFP 세부 요구사항 정의서 표)] ──
-            // 한 표 안에 '요구사항 고유번호' 라벨 셀과 '요구사항명' 라벨 셀이 존재하는 경우
             let kvId = '';
             let kvName = '';
+            let kvCategory = '';
             let kvDesc = '';
+            let kvDeliverables = '';
 
             for (let r = 0; r < rows.length; r++) {
                 const row = rows[r];
@@ -3063,15 +3479,21 @@ export function extractRfpWithRules(text, tables = []) {
 
                     // ID 라벨 탐색
                     if (cell.includes('요구사항고유번호') || cell.includes('요구사항번호') || cell.includes('요구사항id') || cell.includes('요구사항식별자')) {
-                        // 같은 행 다음 셀 탐색
                         const nextCell = (row[c + 1] || '').trim();
                         const idMatch = nextCell.match(/[A-Z]{2,6}[-_]\d{2,4}/i);
                         if (idMatch) {
                             kvId = idMatch[0].toUpperCase();
                         } else if (rows[r + 1] && rows[r + 1][c]) {
-                            // 아래 행 셀 탐색
                             const belowMatch = (rows[r + 1][c] || '').match(/[A-Z]{2,6}[-_]\d{2,4}/i);
                             if (belowMatch) kvId = belowMatch[0].toUpperCase();
+                        }
+                    }
+
+                    // 분류 라벨 탐색
+                    if (cell.includes('요구사항구분') || cell.includes('요구사항분류') || cell === '구분' || cell === '분류' || cell.includes('과업구분')) {
+                        const nextCell = (row[c + 1] || '').trim();
+                        if (nextCell && nextCell.length >= 2 && !nextCell.includes('고유번호')) {
+                            kvCategory = nextCell;
                         }
                     }
 
@@ -3086,8 +3508,8 @@ export function extractRfpWithRules(text, tables = []) {
                         }
                     }
 
-                    // 세부내용 라벨 탐색
-                    if (cell.includes('세부내용') || cell.includes('요구사항세부') || cell.includes('과업내용')) {
+                    // 세부내용 / 상세설명 / 과업내용 라벨 탐색
+                    if (cell.includes('세부내용') || cell.includes('요구사항세부') || cell.includes('과업내용') || cell.includes('상세설명') || cell.includes('세부요건') || cell.includes('과업상세')) {
                         const nextCell = (row[c + 1] || '').trim();
                         if (nextCell && nextCell.length >= 5) {
                             kvDesc = nextCell;
@@ -3096,31 +3518,44 @@ export function extractRfpWithRules(text, tables = []) {
                             if (belowCell && belowCell.length >= 5) kvDesc = belowCell;
                         }
                     }
+
+                    // 관련 산출물 라벨 탐색
+                    if (cell.includes('산출물') || cell.includes('관련산출물') || cell.includes('제출산출물') || cell.includes('증빙')) {
+                        const nextCell = (row[c + 1] || '').trim();
+                        if (nextCell && nextCell.length >= 2) {
+                            kvDeliverables = nextCell;
+                        }
+                    }
                 }
             }
 
-            if (kvId && kvName) {
-                addOrUpdateReq(kvId, kvName, kvDesc);
+            if (kvId && (kvName || kvDesc)) {
+                addOrUpdateReq(kvId, kvName, kvDesc, kvCategory, kvDeliverables);
             }
 
             // ── [패턴 2: 그리드형 요구사항 총괄/목록 테이블] ──
-            // 첫 1~3개 행 중에서 열 헤더 감지
             let bestHeaderRow = 0;
             let idCol = -1;
             let nameCol = -1;
+            let catCol = -1;
             let descCol = -1;
+            let delivCol = -1;
 
             for (let r = 0; r < Math.min(4, rows.length); r++) {
                 const headerRow = rows[r].map(c => (c || '').replace(/\s+/g, '').toLowerCase());
                 const curId = headerRow.findIndex(h => h.includes('고유번호') || h.includes('요구사항id') || h.includes('요구사항번호') || h === 'id' || h.includes('식별자') || (h.includes('번호') && !h.includes('전화') && !h.includes('순번')));
                 const curName = headerRow.findIndex(h => (h.includes('요구사항명') || h.includes('기능명') || h.includes('과업명') || h.includes('항목명') || h === '명칭' || h === '제목' || h === '과제명') && !h.includes('설명') && !h.includes('구분'));
-                const curDesc = headerRow.findIndex(h => h.includes('내용') || h.includes('설명') || h.includes('정의') || h.includes('키워드') || h.includes('개요'));
+                const curCat = headerRow.findIndex(h => h.includes('구분') || h.includes('분류') || h.includes('유형'));
+                const curDesc = headerRow.findIndex(h => h.includes('세부') || h.includes('내용') || h.includes('설명') || h.includes('정의') || h.includes('키워드') || h.includes('개요'));
+                const curDeliv = headerRow.findIndex(h => h.includes('산출물') || h.includes('증빙'));
 
                 if (curId >= 0 || curName >= 0) {
                     bestHeaderRow = r;
                     idCol = curId;
                     nameCol = curName;
+                    catCol = curCat;
                     descCol = curDesc;
+                    delivCol = curDeliv;
                     break;
                 }
             }
@@ -3129,7 +3564,9 @@ export function extractRfpWithRules(text, tables = []) {
                 const row = rows[r];
                 let rowReqId = '';
                 let rowReqName = '';
+                let rowReqCat = '';
                 let rowReqDesc = '';
+                let rowReqDeliv = '';
 
                 // 1) idCol에서 ID 추출 시도
                 if (idCol >= 0 && row[idCol]) {
@@ -3167,7 +3604,6 @@ export function extractRfpWithRules(text, tables = []) {
                             const nextC = idCellIdx + offset;
                             if (nextC < row.length && row[nextC]) {
                                 const candidate = row[nextC].trim();
-                                // 길이가 3 이상이고, 단순 숫자/특수문자/구분자가 아닌 한글 포함 문자열
                                 if (candidate.length >= 3 && /[가-힣]/.test(candidate) && !candidate.match(/^[A-Z]{2,6}[-_]\d{2,4}$/i) && !['공통', '기능', '보안', '품질', '운영', '필수'].includes(candidate)) {
                                     rowReqName = candidate;
                                     break;
@@ -3176,29 +3612,28 @@ export function extractRfpWithRules(text, tables = []) {
                         }
                     }
 
-                    // 설명 추출
+                    if (catCol >= 0 && row[catCol]) {
+                        rowReqCat = row[catCol].trim();
+                    }
                     if (descCol >= 0 && row[descCol]) {
                         rowReqDesc = row[descCol].trim();
                     }
+                    if (delivCol >= 0 && row[delivCol]) {
+                        rowReqDeliv = row[delivCol].trim();
+                    }
 
-                    addOrUpdateReq(rowReqId, rowReqName, rowReqDesc);
+                    addOrUpdateReq(rowReqId, rowReqName, rowReqDesc, rowReqCat, rowReqDeliv);
                 }
             }
         }
     }
 
     // ── 3) 텍스트 본문 정규식 전수 탐색 및 보완 ──
-    // 공공기관 RFP의 다양한 표기 패턴 전수 수용
     const regexPatterns = [
-        // 1. [CNR-001] 요구사항명 또는 [CNR-001] : 요구사항명
         /\[([A-Z]{2,6}[-_]\d{2,4})\][ \t]*[:：\-–—./)\]]?[ \t]*([가-힣A-Za-z0-9][^\n\r]{2,80})/g,
-        // 2. 글머리표 + CNR-001 요구사항명
         /(?:^|\n)[ \t]*(?:[□■▶◆○●*·-]|가\.|나\.|다\.|라\.|[0-9]+[.)])?[ \t]*([A-Z]{2,6}[-_]\d{2,4})[ \t]*[:：\-–—./)\]][ \t]*([가-힣A-Za-z0-9][^\n\r]{2,80})/g,
-        // 3. 콜론 없는 공백형: CNR-001 공공의료 정보화 환경 및 법·제도 분석
         /(?:^|\n)[ \t]*(?:[□■▶◆○●*·-]|가\.|나\.|다\.|라\.|[0-9]+[.)])?[ \t]*([A-Z]{2,6}[-_]\d{2,4})[ \t]{1,6}([가-힣A-Za-z0-9][^\n\r]{2,80})/g,
-        // 4. 요구사항ID : 요구사항명
         /(?:요구사항\s*(?:ID|번호|고유번호)?[ \t]*[:：|][ \t]*)([A-Z]{2,6}[-_]\d{2,4})[ \t\n\r]*(?:요구사항명[ \t]*[:：|][ \t]*)([가-힣A-Za-z0-9][^\n\r]{2,80})/g,
-        // 5. 표 텍스트 변환 시 나타나는 줄바꿈 분리형: CNR-001\n요구사항명
         /(?:^|\n)[ \t]*([A-Z]{2,6}[-_]\d{2,4})[ \t]*\n[ \t]*([가-힣][^\n\r]{2,80})/g
     ];
 
@@ -3207,7 +3642,6 @@ export function extractRfpWithRules(text, tables = []) {
         while ((m = pat.exec(cleanText)) !== null) {
             const id = m[1].trim().toUpperCase();
             let rawName = m[2].trim();
-            // 괄호 안의 부가설명이나 [필수] 태그 분리
             let kw = '';
             const bMatch = rawName.match(/\[([^\]]+)\]/);
             if (bMatch) {
@@ -3280,7 +3714,7 @@ export function extractRfpWithRules(text, tables = []) {
                 id: `glo-rfp-sys`,
                 category: '시스템명',
                 approved: sysMatch[1],
-                forbidden: sysMatch[1].split('').join(' '), // 띄어쓰기 오표기 방지 (예: 건강정보고속도로 -> 건 강 정 보...)
+                forbidden: sysMatch[1].split('').join(' '),
                 note: 'RFP 대상 핵심 시스템 명칭'
             });
         }
@@ -3299,7 +3733,7 @@ export function extractRfpWithRules(text, tables = []) {
 }
 
 /**
- * Gemini AI 기반 심층 RFP 분석기
+ * Gemini AI 기반 심층 RFP 분석기 (한 단계 더 세부적인 과업 및 하위 항목 추출)
  */
 export async function extractRfpWithAI({
     text,
@@ -3311,10 +3745,8 @@ export async function extractRfpWithAI({
     onProgress({ percent: 20, message: 'RFP 핵심 요약 및 요구사항 표 데이터 선별 중...' });
 
     const fullText = text || '';
-    // 앞부분 8,000자 (사업개요, 발주처, 예산, 기간 집중)
     const introSnippet = fullText.slice(0, 8000);
 
-    // 요구사항 ID(예: CNR-001) 또는 '요구사항' 키워드가 밀집된 본문 단락 지능적 수집
     const paragraphs = fullText.split(/\n{2,}/);
     const reqParagraphs = [];
     let reqChars = 0;
@@ -3323,42 +3755,46 @@ export async function extractRfpWithAI({
         if (/[A-Z]{2,6}[-_]\d{2,4}/.test(p) || (p.includes('요구사항') && (p.includes('기능') || p.includes('분석') || p.includes('체계') || p.includes('구축')))) {
             reqParagraphs.push(p);
             reqChars += p.length;
-            if (reqChars > 40000) break; // 최대 40,000자
+            if (reqChars > 40000) break;
         }
     }
 
     const textSnippet = introSnippet + '\n\n... [중략: 요구사항 핵심 본문 발췌] ...\n\n' + reqParagraphs.join('\n\n');
 
-    // 표 데이터도 요구사항 ID 패턴을 포함한 표들을 최우선 선별 (최대 20개)
     const relevantTables = (tables || []).filter(t => {
         const str = JSON.stringify(t.rows || []);
-        return /[A-Z]{2,6}[-_]\d{2,4}/.test(str) || str.includes('요구사항') || str.includes('과업명') || str.includes('고유번호');
+        return /[A-Z]{2,6}[-_]\d{2,4}/.test(str) || str.includes('요구사항') || str.includes('과업명') || str.includes('고유번호') || str.includes('세부내용');
     });
 
-    const tablesToUse = (relevantTables.length > 0 ? relevantTables : (tables || [])).slice(0, 20);
+    const tablesToUse = (relevantTables.length > 0 ? relevantTables : (tables || [])).slice(0, 25);
 
     const tableSnippets = tablesToUse.map((t, idx) => {
-        const rowsStr = (t.rows || []).slice(0, 35).map(r => r.join(' | ')).join('\n');
+        const rowsStr = (t.rows || []).slice(0, 40).map(r => r.join(' | ')).join('\n');
         return `[표 #${idx + 1} (${t.source || '표'})]:\n${rowsStr}`;
     }).join('\n\n');
 
-    const prompt = `당신은 공공기관 정보화전략계획(ISP/ISMP) 및 IT 공공제안요청서(RFP) 분석 전문 수석 감리위원입니다.
-제공된 제안요청서(RFP) 문서 원문과 표 데이터를 정밀 분석하여, 향후 제안서 및 산출물 정합성 검증의 기준이 될 [단일 진실 원천(SSOT) 마스터 정보]를 추출하십시오.
+    const prompt = `당신은 공공기관 정보화전략계획(ISP/ISMP) 및 IT 공공제안요청서(RFP) 분석 전문 수석 감리위원이자 수석 PMO입니다.
+제공된 제안요청서(RFP) 문서 원문과 표 데이터를 정밀 분석하여, 향후 제안서 및 산출물 정합성 검증의 기준이 될 [단일 진실 원천(SSOT) 마스터 정보]를 한 단계 더 세부 내용까지 추출하십시오.
 
 [제안요청서(RFP) 텍스트 발췌]:
 ${textSnippet}
 
 ${tableSnippets ? `[제안요청서 표 발췌]:\n${tableSnippets}\n` : ''}
 
-[추출 지침]:
+[정밀 추출 지침]:
 1. metadata:
    - projectName: 공식 사업명 (예: 2026년 공공보건의료 AI 기반 지능형 플랫폼 구축 ISP)
    - clientAgency: 발주기관/수요기관 공식 명칭 (예: 국립중앙의료원)
    - period: 사업기간 (예: 계약체결일로부터 8개월간 (2026.04 ~ 2026.11))
    - budget: 총사업비/배정예산 (숫자 및 한글 표기, 부가세 포함 여부)
-2. requirements:
-   - RFP 내에 명시된 모든 요구사항 고유번호(ID: 예 CNR-001, SFR-001, PMR-001 등), 실제 요구사항명(과업명), 필수 핵심키워드(쉼표 구분)
-   - ★ 주의: 요구사항명을 단순히 '요구사항 CNR-002'처럼 ID를 기재하지 마십시오. 반드시 제안요청서에 기재된 실제 기능명/과업명(예: '공공의료 정보화 환경 및 법·제도 분석')을 정확히 추출하십시오.
+2. requirements (★ 한 단계 더 세부적인 과업 내용까지 정밀 추출):
+   - id: 요구사항 고유번호 (예: CNR-001, SFR-001, DAR-001 등)
+   - category: 요구사항 분류 (예: 컨설팅 요구사항, 기능 요구사항, 데이터 요구사항, 보안 요구사항, 품질 요구사항, 프로젝트관리 요구사항 등)
+   - name: 공식 요구사항명(과업명). 절대 '요구사항 CNR-001'처럼 ID만 기재하지 말고 실제 명칭 기재
+   - description: ★ RFP 요구사항 정의서에 명시된 1단계 더 구체적인 과업 상세 설명 (2~3문장으로 구체적 목표와 범위를 명확히 기술)
+   - subItems: ★ 해당 요구사항에 포함된 세부 하위 요건/과업 항목 목록 (배열 형태, 2~5개의 구체적 실행 항목)
+   - deliverables: 관련 산출물 (예: Ⅱ.3. 법제도 분석, Ⅲ.2. 업무 현황분석 등)
+   - keywords: 필수 핵심 키워드 (쉼표 구분)
 3. glossary:
    - RFP에서 정의하거나 자주 등장하는 핵심 기관명, 시스템명, 행정용어, 약어, 기술용어 8~15개
    - category: '기관명' | '시스템명' | '행정용어' | '약어' | '기술용어'
@@ -3375,7 +3811,19 @@ ${tableSnippets ? `[제안요청서 표 발췌]:\n${tableSnippets}\n` : ''}
     "budget": "총사업비"
   },
   "requirements": [
-    { "id": "CNR-001", "name": "공공의료 정보화 환경 및 법·제도 분석", "keywords": "공공의료, 정보화, 법제도, 환경분석" }
+    {
+      "id": "CNR-001",
+      "category": "컨설팅 요구사항",
+      "name": "공공의료 정보화 환경 및 법·제도 분석",
+      "description": "국내외 공공보건의료 정보화 정책 및 법·제도, 규제 요건을 종합 분석하여 정보화 추진 방향성 및 규제 준수 체계 수립",
+      "subItems": [
+        "국내외 공공보건의료 정보화 관련 법령·제도적 제약사항 및 규제 프레임워크 분석",
+        "의료법, 개인정보보호법, 보건의료 마이데이터 정책 요건 및 공공 데이터 거버넌스 검토",
+        "보건복지부, 국립중앙의료원 등 유관기관 정보화 추진 지침 및 표준 준수 방향성 정립"
+      ],
+      "deliverables": "Ⅱ.1. 환경분석 개요, Ⅱ.3. 법제도 분석",
+      "keywords": "공공의료, 정보화, 법제도, 환경분석, 규제"
+    }
   ],
   "glossary": [
     { "category": "기관명", "approved": "표준어", "forbidden": "오표기, 금지어", "note": "비고" }
@@ -3383,7 +3831,7 @@ ${tableSnippets ? `[제안요청서 표 발췌]:\n${tableSnippets}\n` : ''}
 }
 `;
 
-    onProgress({ percent: 50, message: 'Gemini AI로 마스터 메타데이터, 요구사항, 표준용어 정밀 추출 중...' });
+    onProgress({ percent: 50, message: 'Gemini AI로 마스터 메타데이터, 세부 과업 및 하위 항목 정밀 추출 중...' });
 
     const aiRes = await callGeminiProxyWithJson({
         apiKey,
@@ -3392,7 +3840,7 @@ ${tableSnippets ? `[제안요청서 표 발췌]:\n${tableSnippets}\n` : ''}
         chunkIndex: 0
     });
 
-    onProgress({ percent: 90, message: '추출 데이터 구조화 및 정합성 검증 중...' });
+    onProgress({ percent: 90, message: '추출 데이터 구조화 및 세부 항목 정합성 검증 중...' });
 
     let parsed = null;
     if (aiRes) {
@@ -3407,7 +3855,7 @@ ${tableSnippets ? `[제안요청서 표 발췌]:\n${tableSnippets}\n` : ''}
 }
 
 /**
- * RFP 통합 분석 실행기 (규칙 기반 + AI 하이브리드 지원)
+ * RFP 통합 분석 실행기 (규칙 기반 + AI 하이브리드 지원, 세부 과업 통합)
  */
 export async function parseRfpContent({
     text,
@@ -3417,7 +3865,7 @@ export async function parseRfpContent({
     useAI = false,
     onProgress = () => {}
 }) {
-    onProgress({ percent: 10, message: '결정론적 룰 기반 RFP 1차 파싱 중...' });
+    onProgress({ percent: 10, message: '결정론적 룰 기반 RFP 1차 파싱 및 세부항목 분석 중...' });
     const ruleResult = extractRfpWithRules(text, tables);
 
     if (!useAI || !apiKey) {
@@ -3451,7 +3899,6 @@ export async function parseRfpContent({
             budget: aiResult.metadata?.budget || ruleResult.metadata.budget
         };
 
-        // 요구사항 병합: 플레이스홀더 여부 검사 후 실제 유효한 이름 우선 채택
         const isPlaceholder = (name, id) => {
             if (!name) return true;
             const str = String(name).trim();
@@ -3461,30 +3908,45 @@ export async function parseRfpContent({
         const reqMap = new Map();
         // 1) 룰 기반 요구사항 먼저 세팅
         (ruleResult.requirements || []).forEach(r => {
-            if (r.id) reqMap.set(r.id.toUpperCase(), r);
+            if (r.id) reqMap.set(r.id.toUpperCase(), { ...r });
         });
 
-        // 2) AI 요구사항으로 보강 (AI 이름이 유효하면 우선, AI가 플레이스홀더면 룰 결과 유지)
+        // 2) AI 요구사항으로 보강 (세부 설명, 하위 항목, 카테고리, 산출물 병합)
         (aiResult.requirements || []).forEach(aiReq => {
             if (!aiReq.id) return;
             const key = aiReq.id.toUpperCase();
             const existing = reqMap.get(key);
 
+            let subItems = [];
+            if (Array.isArray(aiReq.subItems)) {
+                subItems = aiReq.subItems.map(s => String(s).trim()).filter(Boolean);
+            } else if (typeof aiReq.subItems === 'string') {
+                subItems = aiReq.subItems.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+            }
+
             if (!existing) {
                 reqMap.set(key, {
                     id: key,
+                    category: aiReq.category || '컨설팅 요구사항',
                     name: !isPlaceholder(aiReq.name, key) ? aiReq.name : `요구사항 ${key}`,
+                    description: aiReq.description || '',
+                    subItems: subItems,
+                    deliverables: aiReq.deliverables || '',
                     keywords: aiReq.keywords || ''
                 });
             } else {
-                // 기존(룰)이 플레이스홀더인데 AI가 유효한 이름을 가진 경우 AI로 교체
                 if (isPlaceholder(existing.name, key) && !isPlaceholder(aiReq.name, key)) {
                     existing.name = aiReq.name;
                 }
-                // AI에 키워드가 더 많으면 키워드 보강
-                if (!existing.keywords && aiReq.keywords) {
-                    existing.keywords = aiReq.keywords;
+                if (!existing.category && aiReq.category) existing.category = aiReq.category;
+                if ((!existing.description || existing.description.length < (aiReq.description || '').length) && aiReq.description) {
+                    existing.description = aiReq.description;
                 }
+                if ((!existing.subItems || existing.subItems.length === 0) && subItems.length > 0) {
+                    existing.subItems = subItems;
+                }
+                if (!existing.deliverables && aiReq.deliverables) existing.deliverables = aiReq.deliverables;
+                if (!existing.keywords && aiReq.keywords) existing.keywords = aiReq.keywords;
             }
         });
 
@@ -3507,7 +3969,7 @@ export async function parseRfpContent({
         });
         const mergedGlossary = Array.from(gloMap.values());
 
-        onProgress({ percent: 100, message: 'Gemini AI 심층 분석 및 마스터 추출 완료' });
+        onProgress({ percent: 100, message: 'Gemini AI 심층 분석 및 세부과업 마스터 추출 완료' });
 
         return {
             metadata: mergedMetadata,
@@ -3551,7 +4013,12 @@ export function applyRfpToMasterData(currentMaster, rfpData, mode = 'replace') {
         (rfpData.requirements || []).forEach(r => {
             if (r.id) {
                 const key = r.id.toUpperCase();
-                reqMap.set(key, { ...(reqMap.get(key) || {}), ...r });
+                const existing = reqMap.get(key);
+                reqMap.set(key, {
+                    ...(existing || {}),
+                    ...r,
+                    subItems: (Array.isArray(r.subItems) && r.subItems.length > 0) ? r.subItems : (existing?.subItems || [])
+                });
             }
         });
         newRequirements = Array.from(reqMap.values());
