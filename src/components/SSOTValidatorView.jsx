@@ -51,7 +51,8 @@ import {
     MANUAL_CONFIRMATION_TEMPLATE_CSV,
     OFFICIAL_RTM_TEMPLATE_ITEMS,
     parseRfpContent,
-    applyRfpToMasterData
+    applyRfpToMasterData,
+    flattenDetailedRequirements
 } from '../utils/ssotValidator';
 import { extractStructuredFileContent } from '../utils/fileExtractor';
 
@@ -123,7 +124,8 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
     }, [batchResults, selectedFileIdx]);
 
     // 요구사항추적표와 같은 근거 판정(대응표·ID·절 제목·동의어) - 일괄 검수 요약·리포트에서 공용
-    const [batchEvidence, setBatchEvidence] = useState(null); // { key, results } | null
+    const [batchEvidence, setBatchEvidence] = useState(null);
+    const [rtmEvaluationScope, setRtmEvaluationScope] = useState('subItem'); // 'subItem' (세부 요구사항 기준) | 'parent' (상위 기준) // { key, results } | null
     const [isAnalyzingEvidence, setIsAnalyzingEvidence] = useState(false);
 
     // 다중 산출물 일괄 검수 시 프로젝트 레벨 통합 RTM 및 산출물 간 정합성 집계
@@ -178,16 +180,19 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
             batchResults: doneResults,
             managementFiles: rtmManagementFiles,
             matchingConfig: rtmMatchingConfig,
-            manualEntries: rtmManualEntries
+            manualEntries: rtmManualEntries,
+            evaluationScope: rtmEvaluationScope
         })
-            .then(({ results }) => { if (!cancelled) setBatchEvidence({ results }); })
+            .then(({ results, subItemResults, parentResults }) => {
+                if (!cancelled) setBatchEvidence({ results, subItemResults, parentResults, evaluationScope: rtmEvaluationScope });
+            })
             .catch(err => {
                 console.warn('요구사항 근거 판정 실패 (ID 출현 기준으로 표시):', err);
                 if (!cancelled) setBatchEvidence(null);
             })
             .finally(() => { if (!cancelled) setIsAnalyzingEvidence(false); });
         return () => { cancelled = true; };
-    }, [batchResults, ssotData, rtmManagementFiles, rtmMatchingConfig, rtmManualEntries]);
+    }, [batchResults, ssotData, rtmManagementFiles, rtmMatchingConfig, rtmManualEntries, rtmEvaluationScope]);
 
     // ── 사업 RFP 자동 분석 및 마스터 정보 동기화 상태 ────────────────
     const [showRfpModal, setShowRfpModal] = useState(false);
@@ -879,6 +884,86 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
         }
     };
 
+    // ── RFP 분석 결과 엑셀 다운로드 (세부 요구사항 10건 전수 포함) ───────
+    const handleExportExtractedRfpExcel = () => {
+        if (!extractedRfpData) return;
+        try {
+            const wb = XLSX.utils.book_new();
+            const meta = extractedRfpData.metadata || {};
+
+            // 1) 사업 기본 정보 시트
+            const metaRows = [
+                ['항목', '내용'],
+                ['공식 사업명', meta.projectName || ''],
+                ['발주/수요기관', meta.clientAgency || ''],
+                ['사업수행기간', meta.period || ''],
+                ['총 사업비(배정예산)', meta.budget || ''],
+                ['분석 출처', extractedRfpData.source || 'HYBRID_AI'],
+                ['추출 요구사항 수', `${(extractedRfpData.requirements || []).length}건`],
+                ['추출 표준용어 수', `${(extractedRfpData.glossary || []).length}건`],
+                ['추출 일시', new Date().toLocaleString()]
+            ];
+            const metaWs = XLSX.utils.aoa_to_sheet(metaRows);
+            XLSX.utils.book_append_sheet(wb, metaWs, '사업기본정보');
+
+            // 2) 요구사항 목록(종합) 시트
+            const reqSummaryRows = (extractedRfpData.requirements || []).map((r, idx) => ({
+                '순번': idx + 1,
+                '요구사항 ID': r.id || '',
+                '분류': r.category || '컨설팅 요구사항',
+                '요구사항명': r.name || '',
+                '1단계 세부 과업 설명': r.description || '',
+                '세부 항목 수': Array.isArray(r.subItems) ? r.subItems.length : 0,
+                '하위 세부 요구사항 목록 (줄바꿈 구분)': Array.isArray(r.subItems) ? r.subItems.join('\n') : (r.subItems || ''),
+                '관련 산출물': r.deliverables || '',
+                '필수 키워드': r.keywords || ''
+            }));
+            const reqSummaryWs = XLSX.utils.json_to_sheet(reqSummaryRows);
+            XLSX.utils.book_append_sheet(wb, reqSummaryWs, '요구사항목록(종합)');
+
+            // 3) 세부 요구사항 단위 목록 (10건 전수 개별 행 전개) 시트
+            const detailedReqRows = [];
+            let detailSeq = 1;
+            (extractedRfpData.requirements || []).forEach(r => {
+                const subItems = Array.isArray(r.subItems) && r.subItems.length > 0
+                    ? r.subItems
+                    : [r.description || r.name];
+
+                subItems.forEach((sub, sIdx) => {
+                    detailedReqRows.push({
+                        '순번': detailSeq++,
+                        '세부 요구사항 ID': `${r.id}-${String(sIdx + 1).padStart(2, '0')}`,
+                        '모(Parent) 요구사항 ID': r.id || '',
+                        '분류': r.category || '컨설팅 요구사항',
+                        '모 요구사항명': r.name || '',
+                        '세부 요구사항 내용 (하위 실행 요건)': sub,
+                        '관련 산출물': r.deliverables || '',
+                        '필수 키워드': r.keywords || ''
+                    });
+                });
+            });
+            const detailWs = XLSX.utils.json_to_sheet(detailedReqRows);
+            XLSX.utils.book_append_sheet(wb, detailWs, '세부요구사항(전수목록)');
+
+            // 4) 표준용어사전 시트
+            const gloRows = (extractedRfpData.glossary || []).map((g, idx) => ({
+                '순번': idx + 1,
+                '구분': g.category || '행정용어',
+                '표준 공식 표기(승인어)': g.approved || '',
+                '금지동의어 / 오표기': g.forbidden || '',
+                '선정 사유 및 비고': g.note || ''
+            }));
+            const gloWs = XLSX.utils.json_to_sheet(gloRows);
+            XLSX.utils.book_append_sheet(wb, gloWs, '표준용어사전');
+
+            const safeName = (meta.projectName || '사업RFP').replace(/[/\\?%*:|"<>]/g, '_').slice(0, 30);
+            XLSX.writeFile(wb, `RFP_분석결과_${safeName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        } catch (err) {
+            console.error('RFP 분석 결과 엑셀 다운로드 오류:', err);
+            alert(`엑셀 파일 생성 중 오류가 발생했습니다: ${err.message}`);
+        }
+    };
+
     // ── 공공 표준 요구사항추적표(RTM) 엑셀 생성 및 다운로드 ──────
     const handleGenerateOfficialRtm = async () => {
         setIsGeneratingRtm(true);
@@ -892,7 +977,8 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                 includeDocChecklist,
                 managementFiles: rtmManagementFiles,
                 matchingConfig: rtmMatchingConfig,
-                manualEntries: rtmManualEntries
+                manualEntries: rtmManualEntries,
+                evaluationScope: rtmEvaluationScope
             });
             setShowOfficialRtmModal(false);
         } catch (err) {
@@ -2573,52 +2659,116 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 </div>
                             </div>
                         ) : activeResultTab === 'rtm' ? (
-                            <div style={{ overflowX: 'auto', border: '1px solid var(--panel-border)', borderRadius: '8px' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
-                                    <thead>
-                                        <tr style={{ background: 'rgba(255,255,255,0.06)', borderBottom: '1px solid var(--panel-border)', textAlign: 'left' }}>
-                                            <th style={{ padding: '10px 12px', width: '60px', textAlign: 'center' }}>No.</th>
-                                            <th style={{ padding: '10px 12px', width: '140px' }}>요구사항 ID</th>
-                                            <th style={{ padding: '10px 12px' }}>요구사항명</th>
-                                            <th style={{ padding: '10px 12px', width: '220px' }}>필수 키워드</th>
-                                            <th style={{ padding: '10px 12px', width: '120px', textAlign: 'center' }}>출현 여부</th>
-                                            <th style={{ padding: '10px 12px', width: '140px', textAlign: 'center' }}>위치(페이지)</th>
-                                            <th style={{ padding: '10px 12px', width: '150px', textAlign: 'center' }}>정합성 상태</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {validationResult.stage1.rtmMatrix.map((item, idx) => (
-                                            <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: !item.isPresent ? 'rgba(239, 68, 68, 0.04)' : undefined }}>
-                                                <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)' }}>{idx + 1}</td>
-                                                <td style={{ padding: '10px', fontWeight: 700, color: 'var(--accent-blue)' }}>{item.id}</td>
-                                                <td style={{ padding: '10px', color: 'var(--text-primary)' }}>{item.name}</td>
-                                                <td style={{ padding: '10px', color: 'var(--text-secondary)', fontSize: '12px' }}>{item.keywords || '-'}</td>
-                                                <td style={{ padding: '10px', textAlign: 'center' }}>
-                                                    {item.isPresent ? (
-                                                        <span style={{ color: '#10b981', fontWeight: 700 }}>출현 (O)</span>
-                                                    ) : (
-                                                        <span style={{ color: '#ef4444', fontWeight: 700 }}>누락 (X)</span>
-                                                    )}
-                                                </td>
-                                                <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                                                    {item.pages.length > 0 ? `p.${item.pages.join(', ')}` : '-'}
-                                                </td>
-                                                <td style={{ padding: '10px', textAlign: 'center' }}>
-                                                    <span style={{
-                                                        padding: '3px 8px',
-                                                        borderRadius: '10px',
-                                                        fontSize: '11px',
-                                                        fontWeight: 700,
-                                                        background: !item.isPresent ? 'rgba(239, 68, 68, 0.15)' : item.status.includes('누락') ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                                                        color: !item.isPresent ? '#ef4444' : item.status.includes('누락') ? '#f59e0b' : '#10b981'
-                                                    }}>
-                                                        {item.status}
-                                                    </span>
-                                                </td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {/* RTM 평가 기준 선택 툴바 */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', padding: '10px 14px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <ListChecks size={16} style={{ color: 'var(--accent-blue)' }} />
+                                        <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                            요구사항 추적표(RTM) 정밀 평가 매트릭스
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>평가 기준:</span>
+                                        <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', padding: '2px', border: '1px solid var(--panel-border)' }}>
+                                            <button
+                                                onClick={() => setRtmEvaluationScope('subItem')}
+                                                style={{
+                                                    padding: '4px 12px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '11.5px',
+                                                    fontWeight: rtmEvaluationScope === 'subItem' ? 700 : 500,
+                                                    background: rtmEvaluationScope === 'subItem' ? 'var(--accent-blue)' : 'transparent',
+                                                    color: rtmEvaluationScope === 'subItem' ? '#fff' : 'var(--text-muted)',
+                                                    border: 'none',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                🔘 세부 요구사항 기준 ({validationResult.stage1.subRtmMatrix?.length || 0}건)
+                                            </button>
+                                            <button
+                                                onClick={() => setRtmEvaluationScope('parent')}
+                                                style={{
+                                                    padding: '4px 12px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '11.5px',
+                                                    fontWeight: rtmEvaluationScope === 'parent' ? 700 : 500,
+                                                    background: rtmEvaluationScope === 'parent' ? 'var(--accent-blue)' : 'transparent',
+                                                    color: rtmEvaluationScope === 'parent' ? '#fff' : 'var(--text-muted)',
+                                                    border: 'none',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                ⚪ 상위 요구사항 기준 ({validationResult.stage1.rtmMatrix?.length || 0}건)
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ overflowX: 'auto', border: '1px solid var(--panel-border)', borderRadius: '8px' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                                        <thead>
+                                            <tr style={{ background: 'rgba(255,255,255,0.06)', borderBottom: '1px solid var(--panel-border)', textAlign: 'left' }}>
+                                                <th style={{ padding: '10px 12px', width: '50px', textAlign: 'center' }}>No.</th>
+                                                <th style={{ padding: '10px 12px', width: rtmEvaluationScope === 'subItem' ? '120px' : '140px' }}>
+                                                    {rtmEvaluationScope === 'subItem' ? '세부 요구사항 ID' : '요구사항 ID'}
+                                                </th>
+                                                {rtmEvaluationScope === 'subItem' && (
+                                                    <th style={{ padding: '10px 12px', width: '220px' }}>모(Parent) 요구사항</th>
+                                                )}
+                                                <th style={{ padding: '10px 12px' }}>
+                                                    {rtmEvaluationScope === 'subItem' ? '세부 과업 내용 (하위 실행 요건)' : '요구사항명'}
+                                                </th>
+                                                <th style={{ padding: '10px 12px', width: '180px' }}>필수 키워드</th>
+                                                <th style={{ padding: '10px 12px', width: '100px', textAlign: 'center' }}>출현 여부</th>
+                                                <th style={{ padding: '10px 12px', width: '120px', textAlign: 'center' }}>위치(페이지)</th>
+                                                <th style={{ padding: '10px 12px', width: '120px', textAlign: 'center' }}>정합성 상태</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody>
+                                            {(rtmEvaluationScope === 'subItem' && validationResult.stage1.subRtmMatrix && validationResult.stage1.subRtmMatrix.length > 0
+                                                ? validationResult.stage1.subRtmMatrix
+                                                : validationResult.stage1.rtmMatrix
+                                            ).map((item, idx) => (
+                                                <tr key={item.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: !item.isPresent ? 'rgba(239, 68, 68, 0.04)' : undefined }}>
+                                                    <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)' }}>{idx + 1}</td>
+                                                    <td style={{ padding: '10px', fontWeight: 700, color: 'var(--accent-blue)' }}>{item.id}</td>
+                                                    {rtmEvaluationScope === 'subItem' && (
+                                                        <td style={{ padding: '10px', color: 'var(--text-secondary)', fontSize: '12px' }}>
+                                                            {item.parentName ? `[${item.parentReqId}] ${item.parentName}` : (item.parentReqId || '-')}
+                                                        </td>
+                                                    )}
+                                                    <td style={{ padding: '10px', color: 'var(--text-primary)', fontWeight: rtmEvaluationScope === 'subItem' ? 600 : 400 }}>
+                                                        {item.name}
+                                                    </td>
+                                                    <td style={{ padding: '10px', color: 'var(--text-secondary)', fontSize: '11.5px' }}>{item.keywords || '-'}</td>
+                                                    <td style={{ padding: '10px', textAlign: 'center' }}>
+                                                        {item.isPresent ? (
+                                                            <span style={{ color: '#10b981', fontWeight: 700 }}>출현 (O)</span>
+                                                        ) : (
+                                                            <span style={{ color: '#ef4444', fontWeight: 700 }}>누락 (X)</span>
+                                                        )}
+                                                    </td>
+                                                    <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                                        {item.pages && item.pages.length > 0 ? `p.${item.pages.join(', ')}` : '-'}
+                                                    </td>
+                                                    <td style={{ padding: '10px', textAlign: 'center' }}>
+                                                        <span style={{
+                                                            padding: '3px 8px',
+                                                            borderRadius: '10px',
+                                                            fontSize: '11px',
+                                                            fontWeight: 700,
+                                                            background: !item.isPresent ? 'rgba(239, 68, 68, 0.15)' : (item.status.includes('누락') || item.status.includes('부분')) ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                                                            color: !item.isPresent ? '#ef4444' : (item.status.includes('누락') || item.status.includes('부분')) ? '#f59e0b' : '#10b981'
+                                                        }}>
+                                                            {item.status}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         ) : (
                             /* 결함 목록 카드/테이블 뷰 */
@@ -2979,12 +3129,34 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                             RFP 분석 결과 검토 (마스터 반영 대기)
                                         </span>
                                     </div>
-                                    <span style={{
-                                        padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600,
-                                        background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.3)'
-                                    }}>
-                                        분석 출처: {extractedRfpData.source}
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <button
+                                            onClick={handleExportExtractedRfpExcel}
+                                            style={{
+                                                padding: '5px 12px',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontWeight: 700,
+                                                background: 'linear-gradient(135deg, #10b981, #059669)',
+                                                color: '#ffffff',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '5px',
+                                                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
+                                            }}
+                                            title="추출된 전체 세부 요구사항(10건 전수) 및 표준용어를 엑셀로 다운로드합니다"
+                                        >
+                                            <Download size={13} /> RFP 분석 결과 엑셀 다운로드
+                                        </button>
+                                        <span style={{
+                                            padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600,
+                                            background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.3)'
+                                        }}>
+                                            출처: {extractedRfpData.source}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 {/* 1. 메타데이터 편집기 */}

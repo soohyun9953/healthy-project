@@ -489,7 +489,8 @@ function collectDeckEvidence(req, decks, ctx, expected = []) {
         const titleIdSlides = [];
         const bodyIdSlides = [];
         deck.slides.forEach(slide => {
-            if (!slide.ids.includes(id)) return;
+            const hasId = slide.ids.includes(id) || (req.isSubItem && slide.ids.includes(parentId));
+            if (!hasId) return;
             // ① 대응표: 해당 행(또는 문단)에 적힌 작성 위치를 근거로 채택
             if (isMappingSlide(slide, masterIds)) {
                 const rows = slide.tables.filter(cells => cells.join(' ').toUpperCase().includes(id));
@@ -747,7 +748,15 @@ function finalize(req, status, evidences, outputs, missing, warnings, notes, isM
     const pageText = labels.length ? formatPageLabelRanges(labels, pages) : (evidences.length ? (evidences.find(e => e.pagesText)?.pagesText || '전 페이지') : '-');
     return {
         id: req.id,
+        parentReqId: req.parentReqId || req.id,
+        parentName: req.parentName || req.name,
+        category: req.category || '컨설팅 요구사항',
         name: req.name,
+        description: req.description || req.name,
+        subIndex: req.subIndex || 1,
+        totalSubCount: req.totalSubCount || 1,
+        isSubItem: !!req.isSubItem,
+        deliverables: req.deliverables || '',
         status,
         typeLabels,
         evidences,
