@@ -933,7 +933,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
             const reqSummaryWs = XLSX.utils.json_to_sheet(reqSummaryRows);
             XLSX.utils.book_append_sheet(wb, reqSummaryWs, '요구사항목록(종합)');
 
-            // 3) 세부 요구사항 단위 목록 (10건 전수 개별 행 전개) 시트
+            // 3) 세부 요구사항 단위 목록 (전수 개별 행 전개) 시트
             const detailedReqRows = [];
             let detailSeq = 1;
             (extractedRfpData.requirements || []).forEach(r => {
@@ -944,17 +944,25 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                 subItems.forEach((sub, sIdx) => {
                     detailedReqRows.push({
                         '순번': detailSeq++,
-                        '세부 요구사항 ID': `${r.id}-${String(sIdx + 1).padStart(2, '0')}`,
-                        '모(Parent) 요구사항 ID': r.id || '',
-                        '분류': r.category || '컨설팅 요구사항',
-                        '모 요구사항명': r.name || '',
-                        '세부 요구사항 내용 (하위 실행 요건)': sub,
-                        '관련 산출물': r.deliverables || '',
-                        '필수 키워드': r.keywords || ''
+                        '요구사항 ID': r.id || '',
+                        '요구사항명': r.name || '',
+                        '세부요구사항 ID': `${r.id}-${String(sIdx + 1).padStart(2, '0')}`,
+                        '세부요구사항 내용': sub,
+                        '관련산출물': r.deliverables || '',
+                        '필수키워드': r.keywords || ''
                     });
                 });
             });
             const detailWs = XLSX.utils.json_to_sheet(detailedReqRows);
+            detailWs['!cols'] = [
+                { wch: 8 },   // 순번
+                { wch: 16 },  // 요구사항 ID
+                { wch: 32 },  // 요구사항명
+                { wch: 18 },  // 세부요구사항 ID
+                { wch: 70 },  // 세부요구사항 내용
+                { wch: 35 },  // 관련산출물
+                { wch: 30 }   // 필수키워드
+            ];
             XLSX.utils.book_append_sheet(wb, detailWs, '세부요구사항(전수목록)');
 
             // 4) 표준용어사전 시트
