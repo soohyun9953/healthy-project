@@ -120,15 +120,15 @@ export const PUBLIC_HEALTHCARE_AI_ISP_REQUIREMENTS = [
     {
         "id": "CNR-001",
         "category": "컨설팅 요구사항",
-        "name": "공공의료 정보화 환경 및 법·제도 분석",
-        "description": "국내외 공공보건의료 정보화 정책 및 법·제도, 규제 요건을 종합 분석하여 정보화 추진 방향성 및 규제 준수 체계 수립",
+        "name": "공공의료 정보화 환경 및 현황 분석",
+        "description": "공공의료 정보시스템* 관련 법령·정책, 지침, 제도 현황 검토 및 분석, 내외부 정보기술 환경을 종합 분석하고, 문제점 및 시사점 도출",
         "subItems": [
-            "국내외 공공보건의료 정보화 관련 법령·제도적 제약사항 및 규제 프레임워크 분석",
-            "의료법, 개인정보보호법, 보건의료 마이데이터 정책 요건 및 공공 데이터 거버넌스 검토",
-            "보건복지부, 국립중앙의료원 등 유관기관 정보화 추진 지침 및 표준 준수 방향성 정립"
+            "(법제도 분석) 지역·필수공공보건의료와 AI 관련 법, 정책, 지침 현황 검토 (국정과제, 공공보건의료계획 등 보건의료 분야 추진정책 환경 분석, 보건의료·데이터·정보기술·보안·개인정보보호 관련 법·제도 변화, 공공의료 AI정보화 추진시 고려할 제약사항 및 기회요인 도출)",
+            "(환경분석) 현행 정책, 기술 환경과의 적합성 분석, 적용가능 범위 도출 (보건의료분야 국내외 공공 데이터 및 기술 생태계 동향 분석, 최신 IT 메가트렌드 및 핵심IT 기술의 공공의료 정보시스템 적용 가능성 분석, 데이터표준 기술·클라우드·데이터 파이프라인 자동화 등 인프라 기술 동향 및 적용 가능성 분석)",
+            "(사례분석) 국내외 정부, 지자체, 공공기관 유사 ISP 및 구축 사례 분석 (국내외 AI기반 정보시스템 구축 사례를 수집하고 각 시스템별 장단점 분석, 국내외 AI기반 정보시스템 모범 사례 발굴 및 사업간 공통된 데이터 특징·구성요소 및 차별점 분석)"
         ],
         "deliverables": "Ⅱ.1. 환경분석 개요, Ⅱ.3. 법제도 분석",
-        "keywords": "공공의료, 정보화, 환경, 법·제도, 규제, 가이드라인"
+        "keywords": "공공의료, 정보화, 환경, 현황, 법제도, 사례분석, 환경분석"
     },
     {
         "id": "CNR-002",
@@ -3574,8 +3574,8 @@ export function extractRfpWithRules(text, tables = []) {
         let currentItem = null;
 
         for (const line of lines) {
-            // 대항목 판별: '○', '●', '□', '■', '▶', '◆', 번호 매김('1.', '2.', '(1)', '①'), 한글 번호('가.', '나.')
-            const isMajor = /^(?:[○●□■▶◆]|(?:\d+[.)])|(?:\(\d+\))|(?:[①-⑳])|(?:[가-힣]\.))\s*/.test(line);
+            // 대항목 판별: '○', '●', '□', '■', '▶', '◆', 'ㅇ'(한글 이응 불릿), 번호 매김('1.', '2.', '(1)', '①'), 한글 번호('가.', '나.')
+            const isMajor = /^(?:[○●□■▶◆ㅇ]|(?:\d+[.)])|(?:\(\d+\))|(?:[①-⑳])|(?:[가-힣]\.))\s*/.test(line);
             // 소항목(보조 설명) 판별: '-', '•', '*', '·'
             const isMinor = /^[-•*·]\s*/.test(line);
 
@@ -3583,7 +3583,7 @@ export function extractRfpWithRules(text, tables = []) {
                 if (currentItem) {
                     subList.push(currentItem.trim());
                 }
-                currentItem = line.replace(/^(?:[○●□■▶◆]|(?:\d+[.)])|(?:\(\d+\))|(?:[①-⑳])|(?:[가-힣]\.))\s*/, '').trim();
+                currentItem = line.replace(/^(?:[○●□■▶◆ㅇ]|(?:\d+[.)])|(?:\(\d+\))|(?:[①-⑳])|(?:[가-힣]\.))\s*/, '').trim();
             } else if (isMinor) {
                 const minorText = line.replace(/^[-•*·]\s*/, '').trim();
                 if (currentItem) {
@@ -3605,7 +3605,7 @@ export function extractRfpWithRules(text, tables = []) {
 
         if (subList.length === 0) {
             for (const line of lines) {
-                const clean = line.replace(/^(?:[0-9]+[.)]|[-•*□■▶◆○●·]|(?:\(\d+\))|(?:[가-힣]\.))\s*/, '').trim();
+                const clean = line.replace(/^(?:[0-9]+[.)]|[-•*□■▶◆○●·ㅇ]|(?:\(\d+\))|(?:[가-힣]\.))\s*/, '').trim();
                 if (clean.length >= 6) subList.push(clean);
             }
         }
@@ -3683,7 +3683,8 @@ export function extractRfpWithRules(text, tables = []) {
             else if (cleanId.startsWith('SER')) resolvedCategory = '보안 요구사항';
             else if (cleanId.startsWith('QUR')) resolvedCategory = '품질 요구사항';
             else if (cleanId.startsWith('PMR')) resolvedCategory = '프로젝트관리 요구사항';
-            else if (cleanId.startsWith('PSR')) resolvedCategory = '프로젝트지원 요구사항';
+            else if (cleanId.startsWith('PSR')) resolvedCategory = '지원 요구사항';
+            else if (cleanId.startsWith('COR')) resolvedCategory = '제약사항';
             else resolvedCategory = '일반 요구사항';
         }
 
@@ -3755,7 +3756,7 @@ export function extractRfpWithRules(text, tables = []) {
                     }
 
                     // 요구사항명 라벨 탐색
-                    if ((cell.includes('요구사항명') || cell.includes('과업명') || cell.includes('기능명')) && !cell.includes('내용') && !cell.includes('설명')) {
+                    if ((cell.includes('요구사항명') || cell.includes('명칭') || cell.includes('과업명') || cell.includes('기능명')) && !cell.includes('내용') && !cell.includes('설명') && !cell.includes('고유번호')) {
                         const nextCell = (row[c + 1] || '').trim();
                         if (nextCell && nextCell.length >= 3 && !nextCell.includes('고유번호')) {
                             kvName = nextCell;
@@ -4047,9 +4048,9 @@ ${tableSnippets ? `[제안요청서 표 발췌]:\n${tableSnippets}\n` : ''}
 2. requirements (★ 한 단계 더 세부적인 과업 내용까지 정밀 추출):
    - id: 요구사항 고유번호 (예: CNR-001, SFR-001, DAR-001 등)
    - category: 요구사항 분류 (예: 컨설팅 요구사항, 기능 요구사항, 데이터 요구사항, 보안 요구사항, 품질 요구사항, 프로젝트관리 요구사항 등)
-   - name: 공식 요구사항명(과업명). 절대 '요구사항 CNR-001'처럼 ID만 기재하지 말고 실제 명칭 기재
-   - description: ★ RFP 요구사항 정의서에 명시된 1단계 더 구체적인 과업 상세 설명 (2~3문장으로 구체적 목표와 범위를 명확히 기술)
-   - subItems: ★ 해당 요구사항에 포함된 세부 하위 요건/과업 항목 목록 (배열 형태, 2~5개의 구체적 실행 항목)
+   - name: ★ RFP 요구사항 정의서의 '요구사항 명칭' 필드에 명시된 공식 요구사항명을 그대로 사용. 절대 '요구사항 CNR-001'처럼 ID만 기재하지 말고, 반드시 RFP 원문의 '요구사항 명칭' 필드값 그대로 기재
+   - description: RFP 요구사항 정의서의 '정의' 필드에 명시된 과업 상세 설명 (2~3문장으로 구체적 목표와 범위를 명확히 기술)
+   - subItems: ★★ RFP '세부내용' 중 'ㅇ'(한글 이응) 또는 '○' 불릿으로 시작하는 각 문장을 하나의 독립 세부 요구사항으로 인식하여 배열로 추출. 'ㅇ' 아래의 '-' 소항목은 해당 ㅇ 항목에 괄호로 결합. 세부 항목 수 제한 없이 전수 추출
    - deliverables: 관련 산출물 (예: Ⅱ.3. 법제도 분석, Ⅲ.2. 업무 현황분석 등)
    - keywords: 필수 핵심 키워드 (쉼표 구분)
 3. glossary:
@@ -4071,15 +4072,15 @@ ${tableSnippets ? `[제안요청서 표 발췌]:\n${tableSnippets}\n` : ''}
     {
       "id": "CNR-001",
       "category": "컨설팅 요구사항",
-      "name": "공공의료 정보화 환경 및 법·제도 분석",
-      "description": "국내외 공공보건의료 정보화 정책 및 법·제도, 규제 요건을 종합 분석하여 정보화 추진 방향성 및 규제 준수 체계 수립",
+      "name": "공공의료 정보화 환경 및 현황 분석",
+      "description": "공공의료 정보시스템 관련 법령·정책, 지침, 제도 현황 검토 및 분석, 내외부 정보기술 환경을 종합 분석하고, 문제점 및 시사점 도출",
       "subItems": [
-        "국내외 공공보건의료 정보화 관련 법령·제도적 제약사항 및 규제 프레임워크 분석",
-        "의료법, 개인정보보호법, 보건의료 마이데이터 정책 요건 및 공공 데이터 거버넌스 검토",
-        "보건복지부, 국립중앙의료원 등 유관기관 정보화 추진 지침 및 표준 준수 방향성 정립"
+        "(법제도 분석) 지역·필수공공보건의료와 AI 관련 법, 정책, 지침 현황 검토",
+        "(환경분석) 현행 정책, 기술 환경과의 적합성 분석, 적용가능 범위 도출",
+        "(사례분석) 국내외 정부, 지자체, 공공기관 유사 ISP 및 구축 사례 분석"
       ],
       "deliverables": "Ⅱ.1. 환경분석 개요, Ⅱ.3. 법제도 분석",
-      "keywords": "공공의료, 정보화, 법제도, 환경분석, 규제"
+      "keywords": "공공의료, 정보화, 환경분석, 현황분석, 사례분석"
     }
   ],
   "glossary": [

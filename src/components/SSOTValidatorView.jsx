@@ -907,14 +907,26 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
             XLSX.utils.book_append_sheet(wb, metaWs, '사업기본정보');
 
             // 2) 요구사항 목록(종합) 시트
+            const getCategoryFromId = (id) => {
+                const cleanId = (id || '').trim().toUpperCase();
+                if (cleanId.startsWith('CNR')) return '컨설팅 요구사항';
+                if (cleanId.startsWith('SFR')) return '기능 요구사항';
+                if (cleanId.startsWith('DAR')) return '데이터 요구사항';
+                if (cleanId.startsWith('SER')) return '보안 요구사항';
+                if (cleanId.startsWith('QUR')) return '품질 요구사항';
+                if (cleanId.startsWith('PMR')) return '프로젝트관리 요구사항';
+                if (cleanId.startsWith('PSR')) return '지원 요구사항';
+                if (cleanId.startsWith('COR')) return '제약사항';
+                return '일반 요구사항';
+            };
             const reqSummaryRows = (extractedRfpData.requirements || []).map((r, idx) => ({
                 '순번': idx + 1,
                 '요구사항 ID': r.id || '',
-                '분류': r.category || '컨설팅 요구사항',
+                '분류': r.category || getCategoryFromId(r.id),
                 '요구사항명': r.name || '',
-                '1단계 세부 과업 설명': r.description || '',
-                '세부 항목 수': Array.isArray(r.subItems) ? r.subItems.length : 0,
-                '하위 세부 요구사항 목록 (줄바꿈 구분)': Array.isArray(r.subItems) ? r.subItems.join('\n') : (r.subItems || ''),
+                '요구사항 정의': r.description || '',
+                '세부 요구사항 수(ㅇ 기준)': Array.isArray(r.subItems) ? r.subItems.length : 0,
+                '세부 요구사항 목록 (줄바꿈 구분)': Array.isArray(r.subItems) ? r.subItems.join('\n') : (r.subItems || ''),
                 '관련 산출물': r.deliverables || '',
                 '필수 키워드': r.keywords || ''
             }));
