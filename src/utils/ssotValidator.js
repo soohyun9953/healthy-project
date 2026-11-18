@@ -3488,7 +3488,7 @@ export async function exportOfficialRtmToExcel({
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const filePrefix = includeDocChecklist ? '요구사항추적표_및_산출물현황표' : '요구사항추적표(조견표)';
+    const filePrefix = '요구사항추적표';
     const downloadName = `${filePrefix}_${(ssotData.metadata?.projectName || '공공ISP').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
     saveAs(blob, downloadName);
 }
