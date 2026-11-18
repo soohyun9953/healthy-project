@@ -480,7 +480,8 @@ const isMappingSlide = (slide, masterIds) => {
 // 요구사항별 근거 수집
 // ─────────────────────────────────────────────────────────────────────────────
 function collectDeckEvidence(req, decks, ctx, expected = []) {
-    const id = req.id.toUpperCase();
+    const id = (req.id || '').toUpperCase();
+    const parentId = (req.parentReqId || '').toUpperCase();
     const evidences = [];
     const { masterIds, config } = ctx;
     const listingThreshold = config.policy?.idListingThreshold || 4;
@@ -489,14 +490,18 @@ function collectDeckEvidence(req, decks, ctx, expected = []) {
         const titleIdSlides = [];
         const bodyIdSlides = [];
         deck.slides.forEach(slide => {
-            const hasId = slide.ids.includes(id) || (req.isSubItem && slide.ids.includes(parentId));
+            const hasId = slide.ids.includes(id) || (req.isSubItem && parentId && slide.ids.includes(parentId));
             if (!hasId) return;
             // ① 대응표: 해당 행(또는 문단)에 적힌 작성 위치를 근거로 채택
             if (isMappingSlide(slide, masterIds)) {
-                const rows = slide.tables.filter(cells => cells.join(' ').toUpperCase().includes(id));
+                const rows = slide.tables.filter(cells => {
+                    const rowText = cells.join(' ').toUpperCase();
+                    return rowText.includes(id) || (parentId && rowText.includes(parentId));
+                });
                 const sources = rows.length ? rows.map(cells => cells.join(' ')) : [slide.text];
                 sources.forEach(src => {
-                    const refs = parseLocationRefs(src.replace(new RegExp(id, 'gi'), ' '), deck.roman);
+                    const cleanSrc = src.replace(new RegExp(id, 'gi'), ' ');
+                    const refs = parseLocationRefs(cleanSrc, deck.roman);
                     refs.forEach(ref => {
                         resolveRef(ref, decks).forEach(({ deck: d, slides, codeText }) => {
                             evidences.push({ ...makeEvidence('table', d, slides, { codeText }), via: `${deck.fileName} ${slide.label} 대응표` });
@@ -506,7 +511,7 @@ function collectDeckEvidence(req, decks, ctx, expected = []) {
                 return;
             }
             // ② 장표 제목에 ID 명시 / ③ 거버닝·본문 ID 언급 (ID를 여러 개 나열한 장표는 제외)
-            if (slide.titleUpper.includes(id)) titleIdSlides.push(slide);
+            if (slide.titleUpper.includes(id) || (parentId && slide.titleUpper.includes(parentId))) titleIdSlides.push(slide);
             else if (slide.ids.filter(x => masterIds.has(x)).length < listingThreshold) bodyIdSlides.push(slide);
         });
         evidences.push(...groupSlidesAsEvidence('titleId', deck, titleIdSlides));
