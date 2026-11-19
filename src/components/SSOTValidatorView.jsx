@@ -238,6 +238,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
             id: `glo-${Date.now()}`,
             category: '행정용어',
             approved: '',
+            synonyms: '',
             forbidden: '',
             note: ''
         };
@@ -268,10 +269,19 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
             '순번': idx + 1,
             '분류': g.category || '행정용어',
             '표준용어(Approved)': g.approved || '',
-            '금지동의어/오표기(Forbidden, 쉼표구분)': g.forbidden || '',
+            '허용 동의어/약어(Synonyms, 정상통과)': g.synonyms || '',
+            '금지동의어/오표기(Forbidden, 오류검출)': g.forbidden || '',
             '비고/설명': g.note || ''
         }));
         const worksheet = XLSX.utils.json_to_sheet(rows);
+        worksheet['!cols'] = [
+            { wch: 8 },   // 순번
+            { wch: 14 },  // 분류
+            { wch: 22 },  // 표준용어
+            { wch: 25 },  // 허용 동의어
+            { wch: 35 },  // 금지동의어
+            { wch: 35 }   // 비고
+        ];
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, '표준용어사전');
         XLSX.writeFile(workbook, `프로젝트_표준용어사전_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -293,7 +303,8 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                     id: `glo-imp-${Date.now()}-${i}`,
                     category: r['분류'] || r['카테고리'] || '행정용어',
                     approved: (r['표준용어(Approved)'] || r['표준용어'] || r['표준'] || '').trim(),
-                    forbidden: (r['금지동의어/오표기(Forbidden, 쉼표구분)'] || r['금지동의어'] || r['금지어'] || r['오표기'] || '').trim(),
+                    synonyms: (r['허용 동의어/약어(Synonyms, 정상통과)'] || r['허용동의어'] || r['동의어'] || r['허용약어'] || r['약어'] || '').trim(),
+                    forbidden: (r['금지동의어/오표기(Forbidden, 오류검출)'] || r['금지동의어/오표기(Forbidden, 쉼표구분)'] || r['금지동의어'] || r['금지어'] || r['오표기'] || '').trim(),
                     note: (r['비고/설명'] || r['비고'] || '').trim()
                 })).filter(g => g.approved.length > 0);
 
@@ -970,10 +981,19 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                 '순번': idx + 1,
                 '구분': g.category || '행정용어',
                 '표준 공식 표기(승인어)': g.approved || '',
-                '금지동의어 / 오표기': g.forbidden || '',
+                '허용 동의어/약어(정상통과)': g.synonyms || '',
+                '금지동의어 / 오표기(오류검출)': g.forbidden || '',
                 '선정 사유 및 비고': g.note || ''
             }));
             const gloWs = XLSX.utils.json_to_sheet(gloRows);
+            gloWs['!cols'] = [
+                { wch: 8 },   // 순번
+                { wch: 14 },  // 구분
+                { wch: 22 },  // 표준 공식 표기
+                { wch: 25 },  // 허용 동의어/약어
+                { wch: 35 },  // 금지동의어
+                { wch: 35 }   // 비고
+            ];
             XLSX.utils.book_append_sheet(wb, gloWs, '표준용어사전');
 
             const safeName = (meta.projectName || '사업RFP').replace(/[/\\?%*:|"<>]/g, '_').slice(0, 30);
@@ -1347,7 +1367,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                                 <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                                    💡 문서 내에서 금지동의어가 발견되면 즉시 표준용어로 치환 권고가 발생합니다.
+                                    💡 <strong>허용 동의어/약어</strong>(예: <code>복지부</code>, <code>NMC</code>)에 등록된 단어는 산출물에서 사용해도 <strong>정상 통과(오류 제외)</strong>됩니다. <strong>금지동의어/오표기</strong>에 등록된 단어만 결함으로 검출됩니다.
                                 </span>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <input
@@ -1385,11 +1405,12 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                                     <thead>
                                         <tr style={{ background: 'rgba(255,255,255,0.06)', borderBottom: '1px solid var(--panel-border)', textAlign: 'left' }}>
-                                            <th style={{ padding: '8px 10px', width: '110px' }}>분류</th>
-                                            <th style={{ padding: '8px 10px', width: '180px' }}>표준용어(Approved)</th>
-                                            <th style={{ padding: '8px 10px' }}>금지동의어/오표기(Forbidden, 쉼표구분)</th>
-                                            <th style={{ padding: '8px 10px', width: '220px' }}>비고</th>
-                                            <th style={{ padding: '8px 10px', width: '50px', textAlign: 'center' }}>삭제</th>
+                                            <th style={{ padding: '8px 10px', width: '100px' }}>분류</th>
+                                            <th style={{ padding: '8px 10px', width: '160px' }}>표준용어(Approved)</th>
+                                            <th style={{ padding: '8px 10px', width: '170px' }}>허용 동의어/약어(정상통과)</th>
+                                            <th style={{ padding: '8px 10px' }}>금지동의어/오표기(Forbidden, 오류검출)</th>
+                                            <th style={{ padding: '8px 10px', width: '180px' }}>비고</th>
+                                            <th style={{ padding: '8px 10px', width: '45px', textAlign: 'center' }}>삭제</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1413,8 +1434,18 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                                         type="text"
                                                         value={item.approved}
                                                         onChange={(e) => handleUpdateGlossaryItem(idx, 'approved', e.target.value)}
-                                                        placeholder="예: 지방의료원"
+                                                        placeholder="예: 보건복지부"
                                                         style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: '#10b981', fontWeight: 600, fontSize: '12px' }}
+                                                    />
+                                                </td>
+                                                <td style={{ padding: '6px 8px' }}>
+                                                    <input
+                                                        type="text"
+                                                        value={item.synonyms || ''}
+                                                        onChange={(e) => handleUpdateGlossaryItem(idx, 'synonyms', e.target.value)}
+                                                        placeholder="예: 복지부, MOHW"
+                                                        style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(56,189,248,0.4)', color: '#38bdf8', fontWeight: 500, fontSize: '12px' }}
+                                                        title="허용 동의어/약어에 등록된 단어는 산출물에 작성되어도 정상 통과됩니다."
                                                     />
                                                 </td>
                                                 <td style={{ padding: '6px 8px' }}>
@@ -1422,7 +1453,7 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                                         type="text"
                                                         value={item.forbidden}
                                                         onChange={(e) => handleUpdateGlossaryItem(idx, 'forbidden', e.target.value)}
-                                                        placeholder="예: 지역의료원, 도립병원"
+                                                        placeholder="예: 보건부 (오류검출)"
                                                         style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'var(--danger-color)', fontSize: '12px' }}
                                                     />
                                                 </td>
@@ -3296,6 +3327,9 @@ export default function SSOTValidatorView({ apiKey, llmProvider, omniRouteModel 
                                                     <div key={g.id || i} style={{ display: 'flex', gap: '8px', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                                                         <span style={{ padding: '1px 4px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', fontSize: '10.5px' }}>{g.category || '용어'}</span>
                                                         <span style={{ fontWeight: 600, color: '#10b981' }}>{g.approved}</span>
+                                                        {g.synonyms && (
+                                                            <span style={{ color: '#38bdf8', fontSize: '11px', whiteSpace: 'nowrap' }}>[통과: {g.synonyms}]</span>
+                                                        )}
                                                         <span style={{ color: 'var(--danger-color)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>({g.forbidden})</span>
                                                     </div>
                                                 ))

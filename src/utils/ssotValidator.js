@@ -75,8 +75,9 @@ export const DEFAULT_GLOSSARY = [
         id: 'glo-7',
         category: '기관명',
         approved: '보건복지부',
-        forbidden: '복지부, 보건부',
-        note: '정부조직법상 중앙행정기관 공식 명칭 풀네임 기재'
+        synonyms: '복지부, MOHW',
+        forbidden: '보건부',
+        note: '공식 명칭 및 통용 약칭 (복지부 통과 허용)'
     },
     {
         id: 'glo-8',
@@ -103,8 +104,9 @@ export const DEFAULT_GLOSSARY = [
         id: 'glo-11',
         category: '기관명',
         approved: '국립중앙의료원',
-        forbidden: '중앙의료원, 국립의료원, NMC',
-        note: '발주기관 공식 명칭 (본문 내 한글 정식명칭 원칙)'
+        synonyms: 'NMC',
+        forbidden: '중앙의료원, 국립의료원, 국립중앙병원',
+        note: '발주기관 공식 명칭 (NMC 영문약어 통과 허용)'
     },
     {
         id: 'glo-12',
@@ -734,9 +736,39 @@ export function loadSSOTData() {
                 });
             }
 
+            let loadedGlossary = Array.isArray(parsed.glossary) && parsed.glossary.length > 0 ? parsed.glossary : DEFAULT_GLOSSARY;
+            // 허용 동의어(synonyms) 필드 보장 및 기존 데이터 보정 (보건복지부 -> 복지부 허용, 국립중앙의료원 -> NMC 허용)
+            loadedGlossary = loadedGlossary.map(g => {
+                let syn = (g.synonyms || '').trim();
+                let forb = (g.forbidden || '').trim();
+                const app = (g.approved || '').trim();
+
+                if (app === '보건복지부') {
+                    if (forb.includes('복지부')) {
+                        forb = forb.replace(/복지부/g, '').replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').trim();
+                    }
+                    if (!syn.includes('복지부')) {
+                        syn = syn ? `${syn}, 복지부` : '복지부, MOHW';
+                    }
+                } else if (app === '국립중앙의료원') {
+                    if (forb.includes('NMC')) {
+                        forb = forb.replace(/NMC/g, '').replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').trim();
+                    }
+                    if (!syn.includes('NMC')) {
+                        syn = syn ? `${syn}, NMC` : 'NMC';
+                    }
+                }
+
+                return {
+                    ...g,
+                    synonyms: syn,
+                    forbidden: forb
+                };
+            });
+
             return {
                 metadata: { ...DEFAULT_PROJECT_METADATA, ...(parsed.metadata || {}) },
-                glossary: Array.isArray(parsed.glossary) && parsed.glossary.length > 0 ? parsed.glossary : DEFAULT_GLOSSARY,
+                glossary: loadedGlossary,
                 requirements: reqs
             };
         }
@@ -907,16 +939,31 @@ export async function runStage1Validation(fileContent, tables, masterData, optio
     const issues = [];
     let issueSeq = 1;
 
-    // A. 1) 금지 동의어 / 오표기 검출 (오탐 0건 보장 로직)
+    // A. 1) 금지 동의어 / 오표기 검출 (오탐 0건 보장 로직 - 허용 동의어는 절대 오류 제외)
+    // 전역 허용 동의어/약어 화이트리스트 사전 구축
+    const allAllowedSynonyms = new Set();
+    glossary.forEach(item => {
+        const syns = (item.synonyms || '').split(',').map(s => s.trim()).filter(Boolean);
+        syns.forEach(s => allAllowedSynonyms.add(s.toUpperCase()));
+    });
+
     glossary.forEach(item => {
         const approved = (item.approved || '').trim();
+        const itemSynonyms = (item.synonyms || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+
+        // 허용 동의어(synonyms)에 등록된 단어는 금지어 목록에 있더라도 무조건 제외
         const forbiddenList = (item.forbidden || '')
             .split(',')
             .map(s => s.trim())
-            .filter(s => s.length > 0 && s !== approved);
+            .filter(s => s.length > 0 && s !== approved && !itemSynonyms.includes(s) && !allAllowedSynonyms.has(s.toUpperCase()));
 
         forbiddenList.forEach(forbiddenTerm => {
             if (forbiddenTerm.length < 2) return;
+            // 허용 동의어로 등록된 단어는 절대 결함으로 판정하지 않음 (스킵)
+            if (itemSynonyms.includes(forbiddenTerm) || allAllowedSynonyms.has(forbiddenTerm.toUpperCase())) return;
 
             const isAscii = /^[A-Za-z0-9_-]+$/.test(forbiddenTerm);
 
@@ -3945,10 +3992,13 @@ export function extractRfpWithRules(text, tables = []) {
     if (clientAgency && !seenTerms.has(clientAgency.toLowerCase())) {
         seenTerms.add(clientAgency.toLowerCase());
         let autoForbidden = '';
+        let autoSynonyms = '';
         if (clientAgency.includes('국립중앙의료원')) {
-            autoForbidden = '중앙의료원, 국립의료원, NMC, 국립중앙병원';
+            autoSynonyms = 'NMC';
+            autoForbidden = '중앙의료원, 국립의료원, 국립중앙병원';
         } else if (clientAgency.includes('보건복지부')) {
-            autoForbidden = '복지부, 보건부';
+            autoSynonyms = '복지부, MOHW';
+            autoForbidden = '보건부';
         } else if (clientAgency.includes('정보원')) {
             autoForbidden = clientAgency.replace(/정보원$/, '센터');
         } else {
@@ -3959,8 +4009,9 @@ export function extractRfpWithRules(text, tables = []) {
             id: `glo-rfp-agency`,
             category: '기관명',
             approved: clientAgency,
+            synonyms: autoSynonyms,
             forbidden: autoForbidden,
-            note: 'RFP 발주기관 공식 명칭'
+            note: 'RFP 발주기관 공식 명칭 (허용 약어/동의어는 정상 통과)'
         });
     }
 
@@ -4298,6 +4349,7 @@ export function applyRfpToMasterData(currentMaster, rfpData, mode = 'replace') {
                     id: existing?.id || `glo-${Date.now()}-${idx}`,
                     category: g.category || existing?.category || '행정용어',
                     approved: g.approved,
+                    synonyms: g.synonyms || existing?.synonyms || '',
                     forbidden: g.forbidden || existing?.forbidden || '',
                     note: g.note || existing?.note || ''
                 });
