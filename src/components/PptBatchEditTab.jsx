@@ -222,7 +222,16 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 return { saved: true, aborted: false, usedFallback: false, error: null };
             } catch (pickerErr) {
                 if (pickerErr.name === 'AbortError') {
-                    return { saved: false, aborted: true, usedFallback: false, error: null };
+                    // 저장 위치 선택 취소 시 → file-saver로 즉시 다운로드 폴백 (오류 없이 브라우저 기본 다운로드)
+                    console.info('showSaveFilePicker 취소됨, file-saver 직접 다운로드로 폴백합니다.');
+                    try {
+                        const { saveAs } = await import('file-saver');
+                        saveAs(blob, suggestedName);
+                        return { saved: true, aborted: false, usedFallback: true, error: null };
+                    } catch (fallbackErr2) {
+                        console.error('file-saver 폴백 실패:', fallbackErr2);
+                        return { saved: false, aborted: false, usedFallback: true, error: fallbackErr2 };
+                    }
                 }
                 // SecurityError(대용량 파일 처리 지연으로 User Activation 만료 등)나 권한 오류 시 file-saver 폴백 시도
                 console.warn('showSaveFilePicker 실패, 기본 다운로드로 폴백합니다:', pickerErr);
@@ -246,8 +255,6 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
         if (res.saved) {
             reportSuccess(`결과 파일(${pendingDownload.fileName}) 저장을 완료했습니다.`);
             setPendingDownload(null);
-        } else if (res.aborted) {
-            reportError('저장 위치 선택이 취소되었습니다. 다시 시도하려면 아래 [결과 파일 직접 다운로드] 버튼을 눌러주세요.');
         } else {
             reportError(`파일 저장에 실패했습니다: ${res.error?.message || '브라우저 저장 권한 오류'}`);
         }
@@ -613,12 +620,6 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         }
                         reports.push({ fileName: file.name, status: 'success', detail: detailMsg });
                         successCount++;
-                    } else if (saveRes.aborted) {
-                        reports.push({
-                            fileName: file.name,
-                            status: 'error',
-                            detail: `⚠️ 저장 위치 선택이 취소되었습니다. (${detailMsg}) 아래 [결과 파일 다운로드] 버튼을 눌러 저장할 수 있습니다.`
-                        });
                     } else {
                         reports.push({
                             fileName: file.name,
@@ -724,8 +725,6 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 set_add_title_page_numbers(false);
                 set_add_space_before_parenthesis(true);
                 setFixLangErrFlags(false);
-            } else if (finalSaveResult?.aborted) {
-                reportError(`저장 위치 선택이 취소되어 파일이 저장되지 않았습니다. 아래 [결과 파일 직접 다운로드] 버튼을 눌러 "${finalOutputName}" 파일을 바로 저장할 수 있습니다.`);
             } else if (finalSaveResult?.error) {
                 reportError(`편집은 완료되었으나 파일 저장 중 오류가 발생했습니다: ${finalSaveResult.error.message || '브라우저 저장 권한 오류'}. 아래 [결과 파일 직접 다운로드] 버튼으로 다시 시도해주세요.`);
             } else {
