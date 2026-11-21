@@ -11,6 +11,15 @@ const chip = (ok) => ({ fontSize: '12px', fontWeight: 600, padding: '3px 9px', b
 const input = { background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)', padding: '6px 8px', fontSize: '13px', fontFamily: 'inherit' };
 const fileBtn = { display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--panel-border)', cursor: 'pointer', fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)', background: 'rgba(255,255,255,0.04)' };
 
+// 샘플 목차 깊이 설명 (예: 2단계 · 절 › 항)
+function depthInfo(slide) {
+    if (!slide || !slide.levels) return null;
+    const names = slide.topIsChapter ? ['장', '절', '항'] : ['절', '항', '세부 항목'];
+    const chain = names.slice(0, slide.levels).join(' › ');
+    const overviewChain = ['장', '절', '항'].slice(0, slide.levels).join(' › ');
+    return { label: `${slide.levels}단계 · ${chain}`, overview: overviewChain, perChapter: chain, usesSubsections: slide.topIsChapter ? slide.levels >= 3 : slide.levels >= 2 };
+}
+
 export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
     const [deliverables, setDeliverables] = useState([]);
     const [chapters, setChapters] = useState([]);
@@ -101,7 +110,12 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
     };
 
     const selectedSlide = sampleInfo?.slides.find(s => s.index === slideIndex) || null;
+    const depth = depthInfo(selectedSlide);
+    const updateSub = (ci, si, xi, patch) => setChapters(prev => prev.map((c, i) => (i === ci
+        ? { ...c, sections: c.sections.map((s, j) => (j === si ? { ...s, subsections: s.subsections.map((x, k) => (k === xi ? { ...x, ...patch } : x)) } : s)) }
+        : c)));
     const includedSections = chapters.filter(c => c.include).reduce((n, c) => n + c.sections.filter(s => s.include).length, 0);
+    const includedSubs = chapters.filter(c => c.include).reduce((n, c) => n + c.sections.filter(s => s.include).reduce((m, s) => m + (s.subsections || []).filter(x => x.include).length, 0), 0);
     const canBuild = chapters.length > 0 && sampleFile && slideIndex != null && (options.overview || options.perChapter) && !isBuilding;
 
     return (
@@ -166,6 +180,7 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                             {selectedSlide && (
                                 <div data-testid="toc-sample-detect" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                     <span style={chip(true)}>{selectedSlide.mode === 'token' ? '{{토큰}} 지정 방식' : '자동 인식'}</span>
+                                    {depth && <span data-testid="toc-sample-depth" style={{ ...chip(true), background: 'rgba(249,115,22,0.16)', color: '#fb923c' }}>목차 깊이 {depth.label}</span>}
                                     <span style={chip(true)}>항목 칸 {selectedSlide.rowCount}개{selectedSlide.columns > 1 ? ` · ${selectedSlide.columns}단` : ''}</span>
                                     <span style={chip(selectedSlide.hasNum)}>번호 칸 {selectedSlide.hasNum ? '✓' : '없음'}</span>
                                     <span style={chip(selectedSlide.hasPage)}>페이지 칸 {selectedSlide.hasPage ? '✓' : '없음'}</span>
@@ -174,6 +189,11 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                                 </div>
                             )}
                         </>
+                    )}
+                    {depth && (
+                        <p style={{ ...muted, color: 'var(--text-primary)' }}>
+                            샘플과 같은 깊이로 만듭니다 → 전체 목차: <strong>{depth.overview}</strong> · 장별 목차: <strong>{depth.perChapter}</strong>
+                        </p>
                     )}
                     <p style={muted}>
                         인식이 어긋나면 샘플 목차 슬라이드의 글자를 <code>{'{{장번호}}'}</code> <code>{'{{장제목}}'}</code> <code>{'{{번호}}'}</code> <code>{'{{제목}}'}</code> <code>{'{{페이지}}'}</code>로 바꿔 올려 주세요. 목차 행은 한 줄만 만들어도 됩니다.
@@ -206,7 +226,7 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                         {isBuilding ? <><Loader2 size={15} className="animate-spin" /> 생성 중…</> : <><FileDown size={16} /> 샘플 디자인으로 목차 PPT 생성</>}
                     </button>
                     <p style={muted}>
-                        {chapters.length ? `포함: ${chapters.filter(c => c.include).length}개 장 · ${includedSections}개 절` : '① 목차 추출과 ② 샘플 선택을 마치면 생성할 수 있습니다.'}
+                        {chapters.length ? `포함: ${chapters.filter(c => c.include).length}개 장 · ${includedSections}개 절${depth?.usesSubsections ? ` · ${includedSubs}개 항` : ''}` : '① 목차 추출과 ② 샘플 선택을 마치면 생성할 수 있습니다.'}
                     </p>
                     {warnings.length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -223,7 +243,7 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                 <section style={{ ...panel, padding: 0, overflow: 'hidden' }} data-testid="toc-preview">
                     <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--panel-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                         <h3 style={h3}>목차 미리보기 · 편집</h3>
-                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>제목을 고치거나 체크를 해제하면 생성 결과에 반영됩니다.</span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>제목을 고치거나 체크를 해제하면 생성 결과에 반영됩니다.{depth ? (depth.usesSubsections ? ' 샘플 깊이에 맞춰 항(1.1 …)까지 표시합니다.' : ' 샘플 깊이에 맞춰 항은 제외합니다.') : ''}</span>
                     </div>
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', fontSize: '13px' }}>
@@ -247,13 +267,24 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                                             <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', fontSize: '12px' }}>{c.fileName}</td>
                                         </tr>
                                         {c.sections.map((s, si) => (
-                                            <tr key={`${c.key}-${si}`} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', opacity: c.include && s.include ? 1 : 0.45 }}>
-                                                <td style={{ padding: '6px 12px' }}><input type="checkbox" aria-label={`${s.title} 절 포함`} checked={s.include} onChange={e => updateSection(ci, si, { include: e.target.checked })} /></td>
-                                                <td style={{ padding: '6px 12px', color: 'var(--text-secondary)' }}>{c.roman ? `${c.roman}.${s.num}` : s.num}</td>
-                                                <td style={{ padding: '4px 12px' }}><input aria-label="절 제목" value={s.title} onChange={e => updateSection(ci, si, { title: e.target.value })} style={{ ...input, width: '100%' }} /></td>
-                                                <td style={{ padding: '6px 12px', color: s.startLabel ? 'var(--text-secondary)' : '#fbbf24' }}>{s.startLabel || '페이지 미확인'}</td>
-                                                <td style={{ padding: '6px 12px', color: 'var(--text-secondary)', fontSize: '12px' }}>{s.pageRange || ''}</td>
-                                            </tr>
+                                            <React.Fragment key={`${c.key}-${si}`}>
+                                                <tr style={{ borderTop: '1px solid rgba(255,255,255,0.04)', opacity: c.include && s.include ? 1 : 0.45 }}>
+                                                    <td style={{ padding: '6px 12px' }}><input type="checkbox" aria-label={`${s.title} 절 포함`} checked={s.include} onChange={e => updateSection(ci, si, { include: e.target.checked })} /></td>
+                                                    <td style={{ padding: '6px 12px', color: 'var(--text-secondary)' }}>{c.roman ? `${c.roman}.${s.num}` : s.num}</td>
+                                                    <td style={{ padding: '4px 12px' }}><input aria-label="절 제목" value={s.title} onChange={e => updateSection(ci, si, { title: e.target.value })} style={{ ...input, width: '100%' }} /></td>
+                                                    <td style={{ padding: '6px 12px', color: s.startLabel ? 'var(--text-secondary)' : '#fbbf24' }}>{s.startLabel || '페이지 미확인'}</td>
+                                                    <td style={{ padding: '6px 12px', color: 'var(--text-secondary)', fontSize: '12px' }}>{s.pageRange || ''}</td>
+                                                </tr>
+                                                {depth?.usesSubsections && (s.subsections || []).map((x, xi) => (
+                                                    <tr key={`${c.key}-${si}-${xi}`} style={{ borderTop: '1px solid rgba(255,255,255,0.03)', opacity: c.include && s.include && x.include ? 1 : 0.45 }}>
+                                                        <td style={{ padding: '4px 12px' }}><input type="checkbox" aria-label={`${x.title} 항 포함`} checked={x.include} onChange={e => updateSub(ci, si, xi, { include: e.target.checked })} /></td>
+                                                        <td style={{ padding: '4px 12px 4px 24px', color: 'var(--text-secondary)', fontSize: '12px' }}>{`${s.num}.${x.num}`}</td>
+                                                        <td style={{ padding: '3px 12px 3px 28px' }}><input aria-label="항 제목" value={x.title} onChange={e => updateSub(ci, si, xi, { title: e.target.value })} style={{ ...input, width: '100%', fontSize: '12.5px' }} /></td>
+                                                        <td style={{ padding: '4px 12px', color: 'var(--text-secondary)', fontSize: '12px' }}>{x.startLabel || '-'}</td>
+                                                        <td></td>
+                                                    </tr>
+                                                ))}
+                                            </React.Fragment>
                                         ))}
                                         {c.sections.length === 0 && (
                                             <tr><td colSpan={5} style={{ padding: '8px 12px 8px 60px', color: '#fbbf24', fontSize: '12.5px' }}><AlertTriangle size={13} /> 이 파일에서 절 구조를 찾지 못했습니다.</td></tr>

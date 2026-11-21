@@ -92,11 +92,18 @@ export async function extractTocFromDeliverables(files, buildDeliverableTocIndex
                 title: s.title,
                 startLabel: s.labels?.[0] || (s.pages?.[0] != null ? String(s.pages[0]) : ''),
                 pageRange: s.pages?.length ? formatPageLabelRanges(s.labels, s.pages) : '',
-                include: true
+                include: true,
+                // 항 (1.1, 1.2 …) - 샘플 목차가 그 깊이까지 있을 때 사용
+                subsections: (s.subsections || []).filter(sub => sub.title).map(sub => ({
+                    num: sub.num,
+                    title: sub.title,
+                    startLabel: sub.labels?.[0] || (sub.pages?.[0] != null ? String(sub.pages[0]) : ''),
+                    include: true
+                }))
             }));
         // 절 구간이 없으면 목차 슬라이드의 번호 목차로 보완 (페이지 미확인)
         if (sections.length === 0) {
-            (doc.numericToc || []).forEach(t => sections.push({ num: t.num, title: t.title, startLabel: '', pageRange: '', include: true }));
+            (doc.numericToc || []).forEach(t => sections.push({ num: t.num, title: t.title, startLabel: '', pageRange: '', include: true, subsections: [] }));
         }
         sections.sort((a, b) => a.num - b.num);
         return {
@@ -220,12 +227,54 @@ async function layoutPlaceholderXfrms(zip, slidePath) {
     return map;
 }
 
-const FILLER_RE = /^(내\s*용|목차\s*내용|제\s*목|소제목|항목|텍스트|text|title|subtitle|lorem.*|x{3,}|ㅇ{2,}|○{2,})$/i;
 const center = (b) => ({ cx: b.x + b.w / 2, cy: b.y + b.h / 2 });
 
+// 번호 표기 형식: base(roman|compound|pad2|plain) + suffix('.', ')', '')
+function numStyleOf(text) {
+    const t = String(text || '').trim();
+    if (!t) return null;
+    let m = t.match(/^([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])\s*([.．)]?)$/);
+    if (m) return { base: 'roman', suffix: m[2] ? '.' : '' };
+    m = t.match(/^(\d{1,2}(?:\.\d{1,2})+)\s*([.．)]?)$/);
+    if (m) return { base: 'compound', suffix: m[2] ? '.' : '' };
+    m = t.match(/^(0\d)\s*([.．)]?)$/);
+    if (m) return { base: 'pad2', suffix: m[2] === ')' ? ')' : (m[2] ? '.' : '') };
+    m = t.match(/^(\d{1,2})\s*([.．)]?)$/);
+    if (m) return { base: 'plain', suffix: m[2] === ')' ? ')' : (m[2] ? '.' : '') };
+    return null;
+}
+
+// 제목 앞 번호(예: '1. 환경분석 개요', 'Ⅰ. 사업 개요', '1.1 분석목적') 형식
+function titlePrefixOf(text) {
+    const m = String(text || '').match(/^\s*([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|\d{1,2}(?:\.\d{1,2}){0,2})(\s*[.．]\s*|\s+)(?=\S)/);
+    if (!m) return null;
+    const style = numStyleOf(m[1]);
+    if (!style) return null;
+    return { base: style.base, sep: m[2].replace(/．/g, '.') };
+}
+
+const IN = EMU_PER_INCH;
+const rangeY = (cl) => ({ top: Math.min(...cl.items.map(i => i.box.y)), bottom: Math.max(...cl.items.map(i => i.box.y + i.box.h)) });
+
+// 두 제목 묶음이 같은 목록의 상·하위 단계인지 (들여쓰기 가까이 + 줄이 서로 끼어 있거나 바로 붙어 있음)
+function sameList(a, b) {
+    if (Math.abs(a.x - b.x) > 2.5 * IN) return false;
+    const ra = rangeY(a);
+    const rb = rangeY(b);
+    const ys = (cl) => cl.items.map(i => i.box.y).sort((p, q) => p - q);
+    const ya = ys(a);
+    const yb = ys(b);
+    const between = (outer, inner) => inner.some(y => outer.some((y0, k) => k < outer.length - 1 && y > y0 && y < outer[k + 1]));
+    if (between(ya, yb) || between(yb, ya)) return true;
+    const rowH = Math.max(...a.items.map(i => i.box.h), ...b.items.map(i => i.box.h));
+    const gap = Math.max(ra.top, rb.top) - Math.min(ra.bottom, rb.bottom);
+    return gap <= rowH * 1.5;
+}
+
 /**
- * 목차 템플릿 인식
- * @returns {{mode, rows:[{y,h,title,num,page,leaves}], columns:number, chapterRoman, chapterTitle, chapterWord, numFormat}}
+ * 목차 템플릿 인식 (단계·열 구조 포함)
+ * @returns {{mode, groups, rows, levels, templates, pitch, numStyles, titlePrefixes, topIsChapter,
+ *            chapterRoman, chapterTitle, chapterWord, lastRowBottom}}
  */
 function detectTemplate(slideDoc, layoutXfrms, slideSize) {
     const spTree = descendants(slideDoc, 'spTree')[0];
@@ -233,11 +282,11 @@ function detectTemplate(slideDoc, layoutXfrms, slideSize) {
     const textLeaves = leaves.filter(l => l.hasText);
     const tokenMode = textLeaves.some(l => TOKEN_RE.test(l.text));
 
-    let titleLeaves;
+    let candidates;
     if (tokenMode) {
-        titleLeaves = textLeaves.filter(l => /\{\{\s*제목\s*\}\}/.test(l.text));
+        candidates = textLeaves.filter(l => /\{\{\s*제목\s*\}\}/.test(l.text));
     } else {
-        const candidates = textLeaves.filter(l => {
+        candidates = textLeaves.filter(l => {
             const t = l.text;
             if (NUM_RE.test(t) || ROMAN_RE.test(t) || TOC_MARKER_RE.test(t) || CHAPTER_WORD_RE.test(t) || PAGE_RE.test(t)) return false;
             if (t.length > 80 || t.split('\n').length > 2) return false;
@@ -246,58 +295,84 @@ function detectTemplate(slideDoc, layoutXfrms, slideSize) {
             if (cy < slideSize.cy * 0.1 || cy > slideSize.cy * 0.94) return false;
             return l.box.h < slideSize.cy * 0.2;
         });
-        // 같은 왼쪽 x·비슷한 높이·글자 크기로 반복되는 칸 묶음 = 목차 항목 열
-        const tolX = 0.2 * EMU_PER_INCH;
-        const clusters = [];
-        candidates.forEach(l => {
-            const c = clusters.find(cl => Math.abs(cl.x - l.box.x) <= tolX
-                && Math.abs(cl.h - l.box.h) <= Math.max(cl.h, l.box.h) * 0.6
-                && (!cl.font || !l.fontSize || Math.abs(cl.font - l.fontSize) <= Math.max(cl.font, l.fontSize) * 0.3));
-            if (c) { c.items.push(l); } else { clusters.push({ x: l.box.x, h: l.box.h, font: l.fontSize, items: [l] }); }
-        });
-        // 서로 다른 줄에 2개 이상 있는 묶음만
-        const valid = clusters.filter(cl => new Set(cl.items.map(i => Math.round(i.box.y / (0.05 * EMU_PER_INCH)))).size >= 2);
-        const maxSize = Math.max(0, ...valid.map(cl => cl.items.length));
-        titleLeaves = valid.filter(cl => cl.items.length >= Math.max(2, Math.ceil(maxSize * 0.5))).flatMap(cl => cl.items);
     }
-    if (titleLeaves.length === 0) return null;
 
-    // 열(column) 구분: 제목 칸의 왼쪽 x로 묶음
-    const colXs = [];
-    titleLeaves.forEach(l => { if (!colXs.some(x => Math.abs(x - l.box.x) <= 0.3 * EMU_PER_INCH)) colXs.push(l.box.x); });
-    colXs.sort((a, b) => a - b);
-    const colOf = (l) => colXs.findIndex(x => Math.abs(x - l.box.x) <= 0.3 * EMU_PER_INCH);
-    const colBounds = colXs.map((x, i) => {
-        const prevRight = i === 0 ? 0 : Math.max(...titleLeaves.filter(l => colOf(l) === i - 1).map(l => l.box.x + l.box.w));
-        const left = i === 0 ? 0 : (prevRight + x) / 2;
-        const right = i === colXs.length - 1 ? slideSize.cx : (Math.max(...titleLeaves.filter(l => colOf(l) === i).map(l => l.box.x + l.box.w)) + colXs[i + 1]) / 2;
-        return { left, right };
+    // 같은 왼쪽 x·비슷한 높이·글자 크기 = 한 단계의 제목 칸 묶음
+    const tolX = 0.2 * IN;
+    const clusters = [];
+    candidates.forEach(l => {
+        const c = clusters.find(cl => Math.abs(cl.x - l.box.x) <= tolX
+            && Math.abs(cl.h - l.box.h) <= Math.max(cl.h, l.box.h) * 0.6
+            && (!cl.font || !l.fontSize || Math.abs(cl.font - l.fontSize) <= Math.max(cl.font, l.fontSize) * 0.15));
+        if (c) c.items.push(l); else clusters.push({ x: l.box.x, h: l.box.h, font: l.fontSize, items: [l] });
+    });
+    const distinctRows = (cl) => new Set(cl.items.map(i => Math.round(i.box.y / (0.05 * IN)))).size;
+    const valid = tokenMode ? clusters : clusters.filter(cl => distinctRows(cl) >= 2);
+    if (valid.length === 0) return null;
+    const maxSize = Math.max(...valid.map(cl => cl.items.length));
+    const big = tokenMode ? valid : valid.filter(cl => cl.items.length >= Math.max(2, Math.ceil(maxSize * 0.5)));
+    const selected = [...big];
+    // 개수는 적어도 큰 묶음과 같은 목록의 상·하위 단계면 포함 (예: 장 2개 + 절 10개)
+    valid.forEach(cl => { if (!selected.includes(cl) && big.some(b => sameList(cl, b))) selected.push(cl); });
+    // 열마다 하나뿐인 상위 제목(예: 2단 목차의 'Ⅰ. 사업 개요' / 'Ⅱ. 환경분석')
+    // 번호 머리말이 있거나, 같은 모양이 여러 열에 반복될 때만 상위 단계로 인정 (번호 없는 장 제목 1개는 장 슬롯)
+    if (!tokenMode) {
+        const singles = clusters.filter(cl => !selected.includes(cl) && cl.items.length === 1
+            && big.some(b => sameList(cl, b) && cl.x <= b.x + 0.05 * IN && (cl.font || 0) >= (b.font || 0)));
+        singles.forEach(cl => {
+            const twins = singles.filter(o => o !== cl && Math.abs(o.h - cl.h) <= cl.h * 0.2 && (!o.font || !cl.font || Math.abs(o.font - cl.font) <= cl.font * 0.15));
+            if (titlePrefixOf(cl.items[0].text) || twins.length > 0) selected.push(cl);
+        });
+    }
+
+    // 열(group) 구성: 같은 목록인 묶음끼리
+    const groups = [];
+    selected.sort((a, b) => a.x - b.x).forEach(cl => {
+        const g = groups.find(gr => gr.clusters.some(m => sameList(cl, m)));
+        if (g) g.clusters.push(cl); else groups.push({ clusters: [cl] });
+    });
+    groups.forEach(g => {
+        g.x = Math.min(...g.clusters.map(c => c.x));
+        g.right = Math.max(...g.clusters.flatMap(c => c.items.map(i => i.box.x + i.box.w)));
+        // 단계: 왼쪽일수록, 같은 위치면 글자가 클수록 상위
+        const order = [...g.clusters].sort((a, b) => (Math.round((a.x - b.x) / (0.1 * IN))) || ((b.font || 0) - (a.font || 0)) || (b.h - a.h));
+        order.forEach((c, i) => { c.level = Math.min(i, 2); });
+    });
+    groups.sort((a, b) => a.x - b.x);
+    groups.forEach((g, gi) => {
+        const prevRight = gi === 0 ? 0 : groups[gi - 1].right;
+        g.left = gi === 0 ? 0 : (prevRight + g.x) / 2;
+        g.boundRight = gi === groups.length - 1 ? slideSize.cx : (g.right + groups[gi + 1].x) / 2;
+        g.leftMost = Math.max(g.left, g.x - 1.5 * IN);
     });
 
     const rows = [];
-    colXs.forEach((_, ci) => {
-        const colTitles = titleLeaves.filter(l => colOf(l) === ci).sort((a, b) => a.box.y - b.box.y);
-        colTitles.forEach((t, i) => {
+    groups.forEach((g, gi) => {
+        const items = g.clusters.flatMap(c => c.items.map(t => ({ t, level: c.level }))).sort((a, b) => a.t.box.y - b.t.box.y);
+        items.forEach(({ t, level }, i) => {
             const c = center(t.box).cy;
-            const prevGap = i > 0 ? c - center(colTitles[i - 1].box).cy : Infinity;
-            const nextGap = i < colTitles.length - 1 ? center(colTitles[i + 1].box).cy - c : Infinity;
+            const prevGap = i > 0 ? c - center(items[i - 1].t.box).cy : Infinity;
+            const nextGap = i < items.length - 1 ? center(items[i + 1].t.box).cy - c : Infinity;
             let half = Math.min(prevGap, nextGap) / 2;
             if (!isFinite(half)) half = t.box.h * 0.75;
-            rows.push({ col: ci, title: t, center: c, half, leaves: [t] });
+            rows.push({ group: gi, level, title: t, center: c, half, leaves: [t] });
         });
     });
 
-    // 같은 줄의 번호·페이지·장식 도형 (목록 영역 가까이에 있는 것만: 왼쪽 장 표시 영역 등은 제외)
-    const titleSet = new Set(titleLeaves);
-    const colLeftMost = colXs.map((x, i) => Math.max(colBounds[i].left, x - 1.5 * EMU_PER_INCH));
+    // 같은 줄의 번호·페이지·장식 도형 (목록 영역 가까이에 있는 것만)
+    const titleSet = new Set(rows.map(r => r.title));
     leaves.forEach(l => {
         if (titleSet.has(l)) return;
         const { cx, cy } = center(l.box);
         if (tokenMode && /\{\{\s*(장번호|장제목)\s*\}\}/.test(l.text)) return;
-        if (l.hasText && (ROMAN_RE.test(l.text) && !tokenMode || TOC_MARKER_RE.test(l.text) || /CHAPTER/i.test(l.text))) return;
+        if (l.hasText && ((ROMAN_RE.test(l.text) && !tokenMode) || TOC_MARKER_RE.test(l.text) || /CHAPTER/i.test(l.text))) {
+            // 로마숫자는 목록 안에 있으면(장 단계 번호) 행에 포함, 밖이면 장 슬롯
+            const inList = rows.some(r => Math.abs(cy - r.center) <= r.half * 0.95 && cx >= groups[r.group].leftMost && cx < r.title.box.x);
+            if (!(ROMAN_RE.test(l.text) && inList)) return;
+        }
         const row = rows.find(r => Math.abs(cy - r.center) <= r.half * 0.95
-            && cx >= colLeftMost[r.col] && cx <= colBounds[r.col].right
-            && l.box.x >= colLeftMost[r.col] - 0.05 * EMU_PER_INCH
+            && cx >= groups[r.group].leftMost && cx <= groups[r.group].boundRight
+            && l.box.x >= groups[r.group].leftMost - 0.05 * IN
             && l.box.h <= Math.max(r.title.box.h * 3, r.half * 2.2));
         if (row) row.leaves.push(l);
     });
@@ -311,16 +386,12 @@ function detectTemplate(slideDoc, layoutXfrms, slideSize) {
                 return;
             }
             const lc = center(l.box).cx;
-            if ((NUM_RE.test(l.text) || ROMAN_RE.test(l.text)) && lc < tc && !r.num) r.num = l;
+            if ((NUM_RE.test(l.text) || ROMAN_RE.test(l.text) || /^\s*\d{1,2}(\.\d{1,2})+\s*$/.test(l.text)) && lc < tc && !r.num) r.num = l;
             else if ((PAGE_RE.test(l.text) || NUM_RE.test(l.text)) && lc > tc && !r.page) r.page = l;
         });
-        if (tokenMode) {
-            if (/\{\{\s*번호\s*\}\}/.test(r.title.text) && !r.num) r.numInTitle = true;
-            if (/\{\{\s*페이지\s*\}\}/.test(r.title.text) && !r.page) r.pageInTitle = true;
-        }
     });
 
-    // 장 슬롯 (행 밖)
+    // 장 슬롯 (목록 밖)
     const rowLeafSet = new Set(rows.flatMap(r => r.leaves));
     const outside = textLeaves.filter(l => !rowLeafSet.has(l));
     let chapterRoman = null;
@@ -337,26 +408,65 @@ function detectTemplate(slideDoc, layoutXfrms, slideSize) {
             chapterTitle = outside
                 .filter(l => l !== chapterRoman && l !== chapterWord && !TOC_MARKER_RE.test(l.text) && !CHAPTER_WORD_RE.test(l.text) && l.text.length <= 30)
                 .map(l => ({ l, d: Math.hypot(center(l.box).cx - rc.cx, center(l.box).cy - rc.cy) }))
-                .filter(x => x.d <= 3.5 * EMU_PER_INCH)
+                .filter(x => x.d <= 3.5 * IN)
                 .sort((a, b) => a.d - b.d)[0]?.l || null;
         }
     }
 
-    // 번호 표기 형식 ("01", "1.", "1")
-    const sampleNum = rows.find(r => r.num)?.num?.text || '';
-    const numFormat = /^\s*0\d/.test(sampleNum) ? 'pad2' : (/\.\s*$/.test(sampleNum) ? 'dot' : (/^\s*[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]/.test(sampleNum) ? 'roman' : 'plain'));
+    // 단계별 견본 행·간격·번호 형식
+    const levels = Math.max(...rows.map(r => r.level)) + 1;
+    const templates = {};
+    const pitch = {};
+    const pairPitch = {}; // '앞 단계>이 단계' → 간격
+    const numStyles = {};
+    const titlePrefixes = {};
+    for (let lv = 0; lv < levels; lv++) {
+        const lvRows = rows.filter(r => r.level === lv);
+        templates[lv] = lvRows[0];
+        const deltas = [];
+        groups.forEach((g, gi) => {
+            const gRows = rows.filter(r => r.group === gi).sort((a, b) => a.center - b.center);
+            gRows.forEach((r, i) => { if (i > 0 && r.level === lv) deltas.push(r.center - gRows[i - 1].center); });
+        });
+        deltas.sort((a, b) => a - b);
+        pitch[lv] = deltas.length ? deltas[Math.floor(deltas.length / 2)] : lvRows[0].title.box.h * 1.5;
+        groups.forEach((g, gi) => {
+            const gRows = rows.filter(r => r.group === gi).sort((a, b) => a.center - b.center);
+            gRows.forEach((r, i) => {
+                if (i === 0 || r.level !== lv) return;
+                const key = `${gRows[i - 1].level}>${lv}`;
+                (pairPitch[key] = pairPitch[key] || []).push(r.center - gRows[i - 1].center);
+            });
+        });
+        const numRow = lvRows.find(r => r.num);
+        numStyles[lv] = numRow ? (tokenMode ? { base: 'plain', suffix: '' } : numStyleOf(numRow.num.text)) : null;
+        titlePrefixes[lv] = tokenMode ? null : (lvRows.map(r => titlePrefixOf(r.title.text)).find(Boolean) || null);
+    }
+    Object.keys(pairPitch).forEach(k => { const v = pairPitch[k].sort((a, b) => a - b); pairPitch[k] = v[Math.floor(v.length / 2)]; });
+    const topStyle = numStyles[0] || titlePrefixes[0];
+    const topIsChapter = !!topStyle && topStyle.base === 'roman';
+    groups.forEach((g, gi) => {
+        const gRows = rows.filter(r => r.group === gi);
+        g.y0 = Math.min(...gRows.map(r => r.center));
+    });
+    const lastRowBottom = Math.max(...rows.map(r => r.title.box.y + r.title.box.h));
 
-    // 열 우선, 위→아래 순서
-    rows.sort((a, b) => a.col - b.col || a.center - b.center);
+    rows.sort((a, b) => a.group - b.group || a.center - b.center);
     return {
         mode: tokenMode ? 'token' : 'auto',
+        groups,
         rows,
-        columns: colXs.length,
+        levels,
+        templates,
+        pitch,
+        pairPitch,
+        numStyles,
+        titlePrefixes,
+        topIsChapter,
         chapterRoman,
         chapterTitle,
         chapterWord,
-        numFormat,
-        slideSize
+        lastRowBottom
     };
 }
 
@@ -388,10 +498,12 @@ export async function analyzeTocSample(file) {
             path,
             preview: allText.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 4).join(' · ').slice(0, 80),
             rowCount,
-            columns: det?.columns || 0,
+            columns: det?.groups.length || 0,
+            levels: det?.levels || 0,
+            topIsChapter: !!det?.topIsChapter,
             mode: det?.mode || null,
-            hasNum: !!det?.rows.some(r => r.num || r.numInTitle),
-            hasPage: !!det?.rows.some(r => r.page || r.pageInTitle),
+            hasNum: !!det?.rows.some(r => r.num) || !!(det && Object.values(det.titlePrefixes).some(Boolean)),
+            hasPage: !!det?.rows.some(r => r.page),
             hasChapterRoman: !!det?.chapterRoman,
             hasChapterTitle: !!det?.chapterTitle,
             score: (det?.mode === 'token' ? 1000 : 0) + rowCount * 10 + (tocWord ? 25 : 0) + (det?.chapterRoman ? 5 : 0)
@@ -454,12 +566,14 @@ function setLeafText(sp, text, tokenMap = null) {
     t.textContent = text;
 }
 
-function formatNum(n, fmt) {
-    if (typeof n === 'string') return n;
-    if (fmt === 'pad2') return String(n).padStart(2, '0');
-    if (fmt === 'dot') return `${n}.`;
-    if (fmt === 'roman') return NUM_TO_ROMAN[n] || String(n);
-    return String(n);
+function numText(item, style) {
+    if (!style) return '';
+    let core;
+    if (style.base === 'roman' || (item.isChapter && style.base !== 'compound')) core = item.roman || NUM_TO_ROMAN[item.num] || String(item.num ?? '');
+    else if (style.base === 'compound') core = item.parentNum != null ? `${item.parentNum}.${item.num}` : String(item.num ?? '');
+    else if (style.base === 'pad2') core = String(item.num ?? '').padStart(2, '0');
+    else core = String(item.num ?? '');
+    return core + (style.suffix || '');
 }
 
 // 행을 이루는 최상위 단위(그룹이면 그 행만 담은 가장 큰 그룹)
@@ -478,18 +592,20 @@ function rowUnits(row) {
     return Array.from(units);
 }
 
-// 단위 요소를 슬라이드 좌표 dy만큼 이동 (그룹 안이면 부모 그룹 축척 반영)
-function shiftUnit(unit, dyEmu) {
-    let scale = 1;
+// 단위 요소를 슬라이드 좌표 (dx, dy)만큼 이동 (그룹 안이면 부모 그룹 축척 반영)
+function shiftUnit(unit, dxEmu, dyEmu) {
+    let sx = 1;
+    let sy = 1;
     let p = unit.parentNode;
     while (p && p.localName === 'grpSp') {
         const box = readXfrm(p);
-        if (box && box.chcy) scale *= box.cy / box.chcy;
+        if (box && box.chcx) { sx *= box.cx / box.chcx; sy *= box.cy / box.chcy; }
         p = p.parentNode;
     }
     const box = readXfrm(unit);
     if (!box) return;
-    box.offEl.setAttribute('y', String(Math.round(box.y + dyEmu / (scale || 1))));
+    if (dxEmu) box.offEl.setAttribute('x', String(Math.round(box.x + dxEmu / (sx || 1))));
+    if (dyEmu) box.offEl.setAttribute('y', String(Math.round(box.y + dyEmu / (sy || 1))));
 }
 
 function nextShapeId(doc) {
@@ -516,100 +632,167 @@ function followPath(root, path) {
 }
 
 /**
- * 템플릿 슬라이드(XML 문자열)를 항목으로 채운 슬라이드 XML 반환
- * @param {object} p
- * @param {Array<{num,title,page}>} p.items
- * @param {{roman,title,num}} p.chapter 장 슬롯 값 (전체 목차면 roman ''·title '목차')
+ * 템플릿 요약 (목차 깊이·장 단계 여부) - 항목 구성 결정용
  */
-export function fillTemplateSlide({ templateXml, layoutXfrms, slideSize, items, chapter, showPage = true }) {
-    const doc = parseXml(templateXml);
-    const det = detectTemplate(doc, layoutXfrms, slideSize);
-    if (!det || det.rows.length === 0) throw new Error('목차 샘플에서 반복되는 목차 항목 칸을 찾지 못했습니다.');
+export function describeTemplate({ templateXml, layoutXfrms, slideSize }) {
+    const det = detectTemplate(parseXml(templateXml), layoutXfrms, slideSize);
+    if (!det) return null;
+    return { levels: det.levels, topIsChapter: det.topIsChapter, columns: det.groups.length, rows: det.rows.length, mode: det.mode };
+}
+
+/**
+ * 항목(단계 포함)을 템플릿 디자인으로 배치해 슬라이드 XML 목록을 만든다 (넘치면 여러 장)
+ * @param {Array<{level,num,parentNum,roman,title,page}>} p.items
+ * @param {{roman,title,num}} p.chapter 장 슬롯 값
+ */
+export function fillTemplateSlides({ templateXml, layoutXfrms, slideSize, items, chapter, showPage = true }) {
+    const probe = detectTemplate(parseXml(templateXml), layoutXfrms, slideSize);
+    if (!probe || probe.rows.length === 0) throw new Error('목차 샘플에서 반복되는 목차 항목 칸을 찾지 못했습니다.');
     const warnings = [];
-    const tokenMode = det.mode === 'token';
+    const list = items.filter(it => it.level < probe.levels);
+    if (list.length === 0) return { slides: [], warnings };
 
-    // 장 슬롯
-    const chapterTokens = { 장번호: chapter.roman || '', 장제목: chapter.title || '' };
-    if (det.chapterRoman) setLeafText(det.chapterRoman.el, chapter.roman || '', tokenMode ? chapterTokens : null);
-    if (det.chapterTitle) setLeafText(det.chapterTitle.el, chapter.title || '', tokenMode ? chapterTokens : null);
-    if (det.chapterWord) {
-        setLeafText(det.chapterWord.el, chapter.num
-            ? det.chapterWord.text.replace(/(CHAPTER\s*)0?\d{1,2}/i, (m, w) => `${w}${String(chapter.num).padStart(2, '0')}`)
-            : 'CONTENTS');
+    // ── 배치 계산: 열마다 위에서부터 단계별 간격으로, 넘치면 다음 열·다음 장 ──
+    const groups = probe.groups;
+    const maxRowH = Math.max(...probe.rows.map(r => r.title.box.h));
+    const bottomLimit = Math.max(probe.lastRowBottom, slideSize.cy * 0.9) - maxRowH / 2;
+    const place = (seq, f) => {
+        const pos = [];
+        let g = 0;
+        let y = groups[0].y0;
+        for (let i = 0; i < seq.length; i++) {
+            if (i > 0) {
+                const key = `${seq[i - 1].level}>${seq[i].level}`;
+                const step = probe.pairPitch[key] ?? probe.pitch[seq[i].level];
+                const next = y + step * f;
+                if (next > bottomLimit) {
+                    g += 1;
+                    if (g >= groups.length) return null;
+                    y = groups[g].y0;
+                } else {
+                    y = next;
+                }
+            }
+            pos.push({ g, y });
+        }
+        return pos;
+    };
+    // 줄이 서로 겹치지 않는 한도까지 간격을 좁힐 수 있음 (넘으면 다음 장)
+    const MIN_F = Math.min(1, Math.max(0.55, ...Object.keys(probe.templates).map(lv => {
+        const t = probe.templates[lv];
+        return (t.title.box.h * 1.05) / (probe.pitch[lv] || t.title.box.h * 1.5);
+    })));
+    const paginate = (softMax) => {
+        const out = [];
+        let cur = [];
+        list.forEach(it => {
+            // 장 나눔 균형: 목표 개수에 이르면 상위 단계 항목에서 끊음
+            if (softMax && cur.length >= softMax) {
+                const carry = [];
+                while (cur.length > 1 && cur[cur.length - 1].level < it.level) carry.unshift(cur.pop());
+                out.push(cur);
+                cur = carry;
+            }
+            cur.push(it);
+            if (!place(cur, MIN_F) && cur.length > 1) {
+                cur.pop();
+                // 상위 항목만 덩그러니 남지 않게 다음 장으로 넘김
+                const carry = [];
+                while (cur.length > 1 && cur[cur.length - 1].level < it.level) carry.unshift(cur.pop());
+                out.push(cur);
+                cur = [...carry, it];
+            }
+        });
+        if (cur.length) out.push(cur);
+        return out;
+    };
+    let pages = paginate(0);
+    if (pages.length > 1) {
+        // 마지막 장에 몇 줄만 남지 않도록 장마다 비슷한 개수로 다시 나눔 (같은 장 수가 되는 가장 작은 목표치)
+        const base = Math.ceil(list.length / pages.length);
+        for (let extra = 0; extra <= 6; extra++) {
+            const balanced = paginate(base + extra);
+            if (balanced.length === pages.length) { pages = balanced; break; }
+        }
     }
+    if (pages.length > 1) warnings.push(`항목 ${list.length}개가 한 장에 다 들어가지 않아 ${pages.length}장으로 나눴습니다.`);
 
-    // 행 수 맞추기
-    const rows = det.rows;
-    const lastCol = Math.max(...rows.map(r => r.col));
-    const colRows = rows.filter(r => r.col === lastCol);
-    const slots = rows.map(r => ({ row: r, units: rowUnits(r), dy: 0 }));
-    const need = items.length - slots.length;
-    if (need < 0) {
-        slots.slice(items.length).forEach(s => s.units.forEach(u => u.parentNode && u.parentNode.removeChild(u)));
-        slots.length = items.length;
-    } else if (need > 0) {
-        const last = colRows[colRows.length - 1];
-        const prev = colRows[colRows.length - 2];
-        const pitch = prev ? last.center - prev.center : last.title.box.h * 1.4;
-        const lastSlot = slots.find(s => s.row === last);
+    const slides = pages.map((pageItems, pi) => {
+        let f = 1;
+        let pos = place(pageItems, 1);
+        if (!pos) {
+            let lo = MIN_F;
+            let hi = 1;
+            for (let k = 0; k < 12; k++) { const mid = (lo + hi) / 2; if (place(pageItems, mid)) lo = mid; else hi = mid; }
+            f = lo;
+            pos = place(pageItems, f) || place(pageItems, MIN_F);
+            if (f < 0.95) warnings.push(`${pages.length > 1 ? `${pi + 1}번째 장: ` : ''}행 간격을 ${Math.round((1 - f) * 100)}% 좁혔습니다.`);
+        }
+
+        const doc = parseXml(templateXml);
+        const det = detectTemplate(doc, layoutXfrms, slideSize);
+        const tokenMode = det.mode === 'token';
+
+        // 장 슬롯
+        const title = pi > 0 && chapter.title ? `${chapter.title} (계속)` : (chapter.title || '');
+        const chapterTokens = { 장번호: chapter.roman || '', 장제목: title };
+        if (det.chapterRoman) setLeafText(det.chapterRoman.el, chapter.roman || '', tokenMode ? chapterTokens : null);
+        if (det.chapterTitle) setLeafText(det.chapterTitle.el, title, tokenMode ? chapterTokens : null);
+        if (det.chapterWord) {
+            setLeafText(det.chapterWord.el, chapter.num
+                ? det.chapterWord.text.replace(/(CHAPTER\s*)0?\d{1,2}/i, (m, w) => `${w}${String(chapter.num).padStart(2, '0')}`)
+                : 'CONTENTS');
+        }
+
+        // 단계별 견본(복제 원본)을 기억하고 샘플의 행은 모두 제거
+        const tpl = {};
+        for (let lv = 0; lv < det.levels; lv++) {
+            const row = det.templates[lv];
+            const units = rowUnits(row).map(u => ({ el: u, parent: u.parentNode }));
+            const locate = (leaf) => {
+                if (!leaf) return null;
+                const ui = units.findIndex(u => u.el === leaf.el || isAncestor(u.el, leaf.el));
+                return ui < 0 ? null : { ui, path: units[ui].el === leaf.el ? [] : pathFrom(units[ui].el, leaf.el) };
+            };
+            tpl[lv] = { row, units, title: locate(row.title), num: locate(row.num), page: locate(row.page), groupX: det.groups[row.group].x };
+        }
+        det.rows.forEach(r => rowUnits(r).forEach(u => u.parentNode && u.parentNode.removeChild(u)));
+
         let idCounter = nextShapeId(doc);
-        for (let k = 1; k <= need; k++) {
-            const clones = lastSlot.units.map(u => {
-                const c = u.cloneNode(true);
+        pageItems.forEach((it, i) => {
+            const t = tpl[it.level];
+            const { g, y } = pos[i];
+            const dx = det.groups[g].x - t.groupX;
+            const dy = y - t.row.center;
+            const clones = t.units.map(u => {
+                const c = u.el.cloneNode(true);
                 descendants(c, 'cNvPr').forEach(n => n.setAttribute('id', String(idCounter++)));
-                // 같은 부모 안, 원본 뒤에 삽입 (앞서 넣은 복제본 뒤)
-                u.parentNode.insertBefore(c, u.nextSibling);
-                shiftUnit(c, pitch * k);
+                u.parent.appendChild(c);
+                shiftUnit(c, dx, dy);
                 return c;
             });
-            // 복제본에서 제목·번호·페이지 잎 찾기
-            const mapLeaf = (leaf) => {
-                if (!leaf) return null;
-                const ui = lastSlot.units.findIndex(u => u === leaf.el || u.contains?.(leaf.el) || isAncestor(u, leaf.el));
-                if (ui < 0) return null;
-                const unit = lastSlot.units[ui];
-                const el = unit === leaf.el ? clones[ui] : followPath(clones[ui], pathFrom(unit, leaf.el));
-                return { ...leaf, el };
-            };
-            slots.push({
-                row: { ...last, title: mapLeaf(last.title), num: mapLeaf(last.num), page: mapLeaf(last.page), center: last.center + pitch * k },
-                units: clones,
-                dy: 0
-            });
-        }
-        // 슬라이드 아래로 넘치면 마지막 열의 행 간격을 균등 압축
-        const colSlots = slots.filter(s => s.row.col === lastCol);
-        const first = colSlots[0].row;
-        const bottomLimit = Math.max(last.title.box.y + last.title.box.h, slideSize.cy * 0.93);
-        const rowH = last.title.box.h;
-        const lastCenter = colSlots[colSlots.length - 1].row.center;
-        if (lastCenter + rowH / 2 > bottomLimit && colSlots.length > 1) {
-            const newPitch = (bottomLimit - rowH / 2 - first.center) / (colSlots.length - 1);
-            colSlots.forEach((s, i) => {
-                const target = first.center + newPitch * i;
-                const delta = target - s.row.center;
-                if (Math.abs(delta) > 1) s.units.forEach(u => shiftUnit(u, delta));
-            });
-            if (newPitch < rowH * 0.9) warnings.push(`항목 ${items.length}개가 샘플 칸(${rows.length}개)보다 많아 행 간격을 좁혔습니다. 칸이 더 많은(2단 등) 샘플을 쓰면 더 보기 좋습니다.`);
-        }
-    }
-
-    // 텍스트 채우기
-    slots.forEach((s, i) => {
-        const it = items[i];
-        const tokens = { 번호: formatNum(it.num, det.numFormat), 제목: it.title, 페이지: showPage ? (it.page || '') : '' };
-        if (tokenMode) {
-            setLeafText(s.row.title.el, '', tokens);
-            if (s.row.num) setLeafText(s.row.num.el, '', tokens);
-            if (s.row.page) setLeafText(s.row.page.el, '', tokens);
-        } else {
-            setLeafText(s.row.title.el, it.title);
-            if (s.row.num) setLeafText(s.row.num.el, formatNum(it.num, det.numFormat));
-            if (s.row.page) setLeafText(s.row.page.el, showPage ? (it.page || '') : '');
-        }
+            const leafOf = (loc) => (loc ? (loc.path.length ? followPath(clones[loc.ui], loc.path) : clones[loc.ui]) : null);
+            const titleEl = leafOf(t.title);
+            const numEl = leafOf(t.num);
+            const pageEl = leafOf(t.page);
+            const numStr = numText(it, det.numStyles[it.level]);
+            const pageStr = showPage ? (it.page || '') : '';
+            if (tokenMode) {
+                const tokens = { 번호: numStr || String(it.num ?? ''), 제목: it.title, 페이지: pageStr };
+                if (titleEl) setLeafText(titleEl, '', tokens);
+                if (numEl) setLeafText(numEl, '', tokens);
+                if (pageEl) setLeafText(pageEl, '', tokens);
+            } else {
+                const prefix = det.titlePrefixes[it.level];
+                const titleText = prefix ? `${numText(it, { base: prefix.base, suffix: '' })}${prefix.sep}${it.title}` : it.title;
+                if (titleEl) setLeafText(titleEl, titleText);
+                if (numEl) setLeafText(numEl, numStr);
+                if (pageEl) setLeafText(pageEl, pageStr);
+            }
+        });
+        return serializeXml(doc);
     });
-
-    return { xml: serializeXml(doc), warnings, detection: { rows: rows.length, mode: det.mode } };
+    return { slides, warnings };
 }
 
 function isAncestor(a, b) {
@@ -643,21 +826,29 @@ export async function buildTocPptx({ sampleFile, slideIndex, chapters, options =
     const slideSize = await slideSizeOf(zip);
 
     const included = chapters.filter(c => c.include);
+    const desc = describeTemplate({ templateXml, layoutXfrms, slideSize });
+    if (!desc) throw new Error('목차 샘플에서 반복되는 목차 항목 칸을 찾지 못했습니다.');
+    const L = desc.levels;
+    const secItems = (c, level, withChapterParent) => c.sections.filter(s => s.include).flatMap(s => [
+        { level, num: s.num, parentNum: withChapterParent ? c.num : null, title: s.title, page: s.startLabel },
+        ...(level + 1 < L ? (s.subsections || []).filter(x => x.include).map(x => ({ level: level + 1, num: x.num, parentNum: s.num, title: x.title, page: x.startLabel })) : [])
+    ]);
+    const chapterItem = (c, i) => ({ level: 0, isChapter: true, num: c.num ?? (i + 1), roman: c.roman, title: c.title, page: c.startLabel });
+
     const outSlides = [];
     const warnings = [];
+    const push = (label, r) => { outSlides.push(...r.slides); warnings.push(...r.warnings.map(w => `[${label}] ${w}`)); };
     if (overview && included.length) {
-        const items = included.map((c, i) => ({ num: c.roman || (i + 1), title: c.title, page: c.startLabel }));
-        const r = fillTemplateSlide({ templateXml, layoutXfrms, slideSize, items, chapter: { roman: '', title: overviewTitle, num: null }, showPage });
-        outSlides.push(r.xml);
-        warnings.push(...r.warnings.map(w => `[전체 목차] ${w}`));
+        // 전체 목차: 샘플 깊이만큼 장 › 절 › 항
+        const items = included.flatMap((c, i) => [chapterItem(c, i), ...(L >= 2 ? secItems(c, 1, true) : [])]);
+        push('전체 목차', fillTemplateSlides({ templateXml, layoutXfrms, slideSize, items, chapter: { roman: '', title: overviewTitle, num: null }, showPage }));
     }
     if (perChapter) {
-        included.forEach(c => {
-            const items = c.sections.filter(s => s.include).map(s => ({ num: s.num, title: s.title, page: s.startLabel }));
-            if (items.length === 0) return;
-            const r = fillTemplateSlide({ templateXml, layoutXfrms, slideSize, items, chapter: { roman: c.roman, title: c.title, num: c.num }, showPage });
-            outSlides.push(r.xml);
-            warnings.push(...r.warnings.map(w => `[${c.roman || ''} ${c.title}] ${w}`));
+        included.forEach((c, i) => {
+            // 장별 목차: 샘플 최상위가 장 단계면 장 › 절(› 항), 아니면 절(› 항)
+            const items = desc.topIsChapter ? [chapterItem(c, i), ...secItems(c, 1, true)] : secItems(c, 0, false);
+            if (!items.some(it => it.level >= (desc.topIsChapter ? 1 : 0))) return;
+            push(`${c.roman || ''} ${c.title}`.trim(), fillTemplateSlides({ templateXml, layoutXfrms, slideSize, items, chapter: { roman: c.roman, title: c.title, num: c.num }, showPage }));
         });
     }
     if (outSlides.length === 0) throw new Error('생성할 목차 항목이 없습니다.');
@@ -748,5 +939,5 @@ export async function buildTocPptx({ sampleFile, slideIndex, chapters, options =
     }
 
     const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
-    return { blob, warnings, slideCount: outSlides.length };
+    return { blob, warnings, slideCount: outSlides.length, levels: L, topIsChapter: desc.topIsChapter };
 }
