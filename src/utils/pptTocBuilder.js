@@ -83,6 +83,8 @@ async function presentationSlides(zip) {
  * @param {Function} buildDeliverableTocIndex ssotValidator의 절 색인 함수 (순환 의존 방지를 위해 주입)
  * @returns {Promise<Array<{roman,num,title,fileName,startLabel,include,sections:[{num,title,startLabel,pageRange,include}]}>>}
  */
+const normTitle = (t) => String(t || '').replace(/[\s·ㆍ・.,()-]/g, '').toLowerCase();
+
 export async function extractTocFromDeliverables(files, buildDeliverableTocIndex, formatPageLabelRanges) {
     const index = await buildDeliverableTocIndex(files.map(f => ({ file: f, fileName: f.name })));
     const chapters = index.map((doc, i) => {
@@ -105,10 +107,26 @@ export async function extractTocFromDeliverables(files, buildDeliverableTocIndex
                     include: true
                 }))
             }));
-        // 절 구간이 없으면 목차 슬라이드의 번호 목차로 보완 (페이지 미확인)
-        // 본문에서 못 찾은 절도 목차 슬라이드에 있으면 추가 (페이지 미확인으로 표시)
+        // 목차 슬라이드 번호 목차로 보완
+        // - 본문에서 절을 하나도 못 찾았으면 목차 슬라이드 항목 전체
+        // - 찾았으면 인식된 번호 범위 안의 빈 번호만 (예: 1장짜리 '1. 개요'). 범위 밖 번호는 본문에 없는 목차로 보고 제외
+        const recognized = sections.map(s => s.num);
+        const maxNum = recognized.length ? Math.max(...recognized) : Infinity;
+        const firstPageOf = (sec) => (doc.sections || []).find(x => x.num === sec.num)?.pages?.[0];
         (doc.numericToc || []).forEach(t => {
-            if (!sections.some(s => s.num === t.num)) sections.push({ num: t.num, title: t.title, startLabel: '', pageRange: '', include: true, subsections: [] });
+            if (sections.some(s => s.num === t.num) || t.num > maxNum) return;
+            // 시작 쪽: 다음 절 시작 전 슬라이드 중 이 제목이 나오는 첫 슬라이드 (여러 절이 나열된 목차 슬라이드는 제외)
+            const next = sections.filter(s => s.num > t.num).sort((x, y) => x.num - y.num)[0];
+            const nextPage = next ? firstPageOf(next) : null;
+            const pageMap = doc.content?.pageMap || {};
+            const want = normTitle(t.title);
+            const hit = Object.keys(pageMap).map(Number).sort((x, y) => x - y).find(n => {
+                if (nextPage != null && n >= nextPage) return false;
+                const ps = (pageMap[n] || []).map(normTitle);
+                const listed = sections.filter(s => ps.some(q => q.includes(normTitle(s.title)))).length;
+                return listed < 2 && ps.some(q => q.includes(want));
+            });
+            sections.push({ num: t.num, title: t.title, startLabel: hit != null ? (labels[hit] || String(hit)) : '', pageRange: '', include: true, subsections: [] });
         });
         sections.sort((a, b) => a.num - b.num);
         return {
