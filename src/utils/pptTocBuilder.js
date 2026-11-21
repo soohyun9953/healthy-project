@@ -106,9 +106,10 @@ export async function extractTocFromDeliverables(files, buildDeliverableTocIndex
                 }))
             }));
         // 절 구간이 없으면 목차 슬라이드의 번호 목차로 보완 (페이지 미확인)
-        if (sections.length === 0) {
-            (doc.numericToc || []).forEach(t => sections.push({ num: t.num, title: t.title, startLabel: '', pageRange: '', include: true, subsections: [] }));
-        }
+        // 본문에서 못 찾은 절도 목차 슬라이드에 있으면 추가 (페이지 미확인으로 표시)
+        (doc.numericToc || []).forEach(t => {
+            if (!sections.some(s => s.num === t.num)) sections.push({ num: t.num, title: t.title, startLabel: '', pageRange: '', include: true, subsections: [] });
+        });
         sections.sort((a, b) => a.num - b.num);
         return {
             key: `${doc.fileName}#${i}`,
@@ -722,6 +723,16 @@ function setLeafText(sp, text, tokenMap = null) {
     let t = firstChild(run, 't');
     if (!t) { t = doc.createElementNS(A_NS, 'a:t'); run.appendChild(t); }
     t.textContent = text;
+    // 빈 글자면 문단 끝 서식(endParaRPr)이 줄 높이를 정하므로, 없으면 글자 서식을 복사 (기본 18pt로 커지는 것 방지)
+    const rPr = firstChild(run, 'rPr');
+    if (rPr && !firstChild(p, 'endParaRPr')) {
+        const end = doc.createElementNS(A_NS, 'a:endParaRPr');
+        Array.from(rPr.attributes).forEach(at => { if (at.name !== 'dirty' && at.name !== 'err') end.setAttribute(at.name, at.value); });
+        elementChildren(rPr).forEach(c => end.appendChild(c.cloneNode(true)));
+        p.appendChild(end);
+    }
+    // 빈 글자 run은 남기지 않음 (일부 뷰어가 빈 run을 기본 글자 크기로 계산)
+    if (!text && firstChild(p, 'endParaRPr')) p.removeChild(run);
 }
 
 function numText(item, style) {
@@ -1346,8 +1357,15 @@ export function fillTableSlides({ templateXml, layoutXfrms, slideSize, chapters,
             const start = j;
             while (j < seq.length && rows.length < target) {
                 const it = seq[j];
-                // 새 장은 이 장이 절반 이상 찼으면 다음 장(slide)에서 시작
-                if (it.kind === 'ch' && j > i && used + rows.length > 0.5 * T * content) { stopped = true; break; }
+                if (it.kind === 'ch' && j > i) {
+                    // 새 장은 이 쪽이 절반 이상 찼으면 다음 쪽에서 시작
+                    if (used + rows.length > 0.5 * T * content) { stopped = true; break; }
+                    // 표 아래쪽(절반 이후)에서 시작하게 되면 오른쪽 표로, 마지막 표면 다음 쪽으로
+                    if (rows.length > 0.5 * target) {
+                        if (t === T - 1) stopped = true;
+                        break;
+                    }
+                }
                 rows.push(it);
                 j++;
             }

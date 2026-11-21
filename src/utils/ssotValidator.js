@@ -2720,7 +2720,7 @@ function extractUnnumberedTocTitles(pageMap = {}, chapterTitle = '') {
 const SECTION_HEADING_REGEX = /^0?([1-9]\d?)\.\s*([^\d\s.][^\n]{1,38})$/;
 const SUBSECTION_HEADING_REGEX = /^0?([1-9]\d?)\.(\d{1,2})\.?\s+(\S[^\n]{1,38})$/;
 
-function buildSectionIndex(pageMap = {}, pageLabelMap = {}) {
+export function buildSectionIndex(pageMap = {}, pageLabelMap = {}, tocTitles = new Map()) {
     const slideNums = Object.keys(pageMap).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
     const secCount = new Map();
     const subCount = new Map();
@@ -2753,6 +2753,46 @@ function buildSectionIndex(pageMap = {}, pageLabelMap = {}) {
     };
     const secBest = bestTitle(secCount);
     const subBest = bestTitle(subCount);
+    // 한 슬라이드뿐인 절·항(예: '1. 현황분석 개요' 1장, '2.1 …' 1장)도 번호 빈자리를 채우면 채택
+    // - 절: 인식된 절 번호 사이·앞의 빈 번호이거나 목차 슬라이드에 같은 번호가 있을 때
+    // - 항: 상위 절이 인식됐고, 같은 절의 항 번호가 1부터 끊김 없이 이어질 때
+    const singlesOf = (countMap, best) => {
+        const out = new Map();
+        countMap.forEach((cnt, key) => {
+            if (cnt >= minCount) return;
+            const [num, title] = key.split('|');
+            if (best.has(num)) return;
+            if (!out.has(num)) out.set(num, []);
+            out.get(num).push({ title, cnt, key });
+        });
+        return out;
+    };
+    const secSingles = singlesOf(secCount, secBest);
+    const secMax = Math.max(0, ...Array.from(secBest.keys()).map(Number));
+    secSingles.forEach((list, num) => {
+        if (list.length !== 1) return;
+        const n = parseInt(num, 10);
+        const toc = tocTitles.get(n);
+        const tocMatch = toc && normalizeForMatch(toc) === normalizeForMatch(list[0].title);
+        if (n < secMax || tocMatch) secBest.set(num, list[0]);
+    });
+    const subSingles = singlesOf(subCount, subBest);
+    const subsByParent = new Map();
+    [...subBest.keys(), ...Array.from(subSingles.entries()).filter(([, l]) => l.length === 1).map(([k]) => k)].forEach(k => {
+        const [pn, cn] = k.split('.').map(x => parseInt(x, 10));
+        if (!secBest.has(String(pn))) return;
+        if (!subsByParent.has(pn)) subsByParent.set(pn, new Set());
+        subsByParent.get(pn).add(cn);
+    });
+    subSingles.forEach((list, num) => {
+        if (list.length !== 1) return;
+        const [pn, cn] = num.split('.').map(x => parseInt(x, 10));
+        const set = subsByParent.get(pn);
+        if (!set) return;
+        // 1..cn 이 모두 있으면(인식분 + 1장짜리) 연속된 항으로 봄
+        for (let k = 1; k <= cn; k++) if (!set.has(k)) return;
+        if (set.size >= 2) subBest.set(num, list[0]);
+    });
     const secKeys = new Set(Array.from(secBest.values()).map(v => v.key));
     const subKeys = new Set(Array.from(subBest.values()).map(v => v.key));
 
@@ -2868,7 +2908,7 @@ export async function buildDeliverableTocIndex(batchResults = []) {
         const chapterTitle = (headerChapter && headerChapter.num === chapter ? headerChapter.title : null) || knownTitles.get(chapter) || '';
 
         // 절 제목 보완: 상단 경로 > 번호 목차 > 번호 없는 목차 슬라이드
-        const sections = buildSectionIndex(content.pageMap, content.pageLabelMap);
+        const sections = buildSectionIndex(content.pageMap, content.pageLabelMap, new Map(numericToc.map(t => [t.num, t.title])));
         const tocFallback = numericToc.length > 0 ? numericToc : extractUnnumberedTocTitles(content.pageMap, chapterTitle);
         tocFallback.forEach(t => {
             const sec = sections.find(s => s.num === t.num);
