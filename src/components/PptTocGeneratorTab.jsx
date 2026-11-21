@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { saveAs } from 'file-saver';
-import { ListTree, Upload, FileDown, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { ListTree, Upload, FileDown, FileSpreadsheet, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { buildDeliverableTocIndex, formatPageLabelRanges } from '../utils/ssotValidator';
 import { extractTocFromDeliverables, analyzeTocSample, buildTocPptx } from '../utils/pptTocBuilder';
+import { buildTocWorkbook } from '../utils/tocExcelExporter';
 import tocDefaultUrl from '../assets/templates/toc_default.pptx?url';
 
 const DEFAULT_NAME = '목차_기본형(공공의료 AI ISP).pptx';
@@ -71,6 +72,7 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
     const [isAnalyzingSample, setIsAnalyzingSample] = useState(false);
     const [options, setOptions] = useState({ showPage: true, overviewTitle: '목차' });
     const [isBuilding, setIsBuilding] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
     const [warnings, setWarnings] = useState([]);
 
     const resetMsg = () => { setErrorMsg?.(null); setSuccessMsg?.(null); };
@@ -183,6 +185,33 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
             setIsBuilding(false);
         }
     };
+
+    // 목차 엑셀 내려받기 (체크 해제 항목 제외, 고친 제목 반영)
+    const exportExcel = async () => {
+        resetMsg();
+        setIsExporting(true);
+        try {
+            const { blob, counts } = await buildTocWorkbook(chapters);
+            if (!counts.chapters) { setErrorMsg?.('내보낼 장이 없습니다. 포함할 장을 체크해 주세요.'); return; }
+            const d = new Date();
+            const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+            saveAs(blob, `목차_${stamp}.xlsx`);
+            setSuccessMsg?.(`목차를 엑셀로 내려받았습니다 (${counts.chapters}개 장 · ${counts.sections}개 절 · ${counts.subsections}개 항).`);
+        } catch (err) {
+            console.error(err);
+            setErrorMsg?.(`목차 엑셀 생성 중 오류가 발생했습니다: ${err.message}`);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+    const canExport = chapters.length > 0 && !isExporting;
+    const excelBtn = (testId, compact = false) => (
+        <button type="button" data-testid={testId} disabled={!canExport} onClick={exportExcel}
+            onMouseEnter={hoverOn} onMouseLeave={hoverOff}
+            style={{ ...actionBtn(canExport, '#10b981', '#059669'), ...(compact ? { padding: '7px 12px', fontSize: '12.5px' } : {}) }}>
+            {isExporting ? <><Loader2 size={14} className="animate-spin" /> 엑셀 만드는 중…</> : <><FileSpreadsheet size={compact ? 14 : 16} /> 목차 엑셀로 내려받기</>}
+        </button>
+    );
 
     const slideAt = (i) => (i == null ? null : sampleInfo?.slides.find(s => s.index === i) || null);
     const overviewSlide = slideAt(sel.overviewIndex);
@@ -327,6 +356,7 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                         style={{ ...actionBtn(canBuild), padding: '11px 16px', fontSize: '14px', fontWeight: 800 }}>
                         {isBuilding ? <><Loader2 size={15} className="animate-spin" /> 생성 중…</> : <><FileDown size={16} /> 샘플 디자인으로 목차 PPT 생성</>}
                     </button>
+                    {excelBtn('toc-excel')}
                     <p style={muted}>
                         {chapters.length ? `포함: ${chapters.filter(c => c.include).length}개 장 · ${includedSections}개 절${usesSubsections ? ` · ${includedSubs}개 항` : ''}` : '① 목차 추출과 ② 샘플 선택을 마치면 생성할 수 있습니다.'}
                     </p>
@@ -344,7 +374,10 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
             {chapters.length > 0 && (
                 <section style={{ ...panel, padding: 0, overflow: 'hidden' }} data-testid="toc-preview">
                     <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--panel-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                        <h3 style={h3}>목차 미리보기 · 편집</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <h3 style={h3}>목차 미리보기 · 편집</h3>
+                            {excelBtn('toc-excel-preview', true)}
+                        </div>
                         <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>제목을 고치거나 체크를 해제하면 생성 결과에 반영됩니다.{sampleInfo ? (usesSubsections ? ' 샘플 깊이에 맞춰 항(1.1 …)까지 표시합니다.' : ' 샘플 깊이에 맞춰 항은 제외합니다.') : ''}</span>
                     </div>
                     <div style={{ overflowX: 'auto' }}>
