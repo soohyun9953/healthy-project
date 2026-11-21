@@ -8,6 +8,7 @@ import PptAnimationTab from './PptAnimationTab.jsx';
 import PptHwpxFusionTab from './PptHwpxFusionTab.jsx';
 import PptExcelMappingTab from './PptExcelMappingTab.jsx';
 import PptBatchEditTab from './PptBatchEditTab.jsx';
+import PptTocGeneratorTab from './PptTocGeneratorTab.jsx';
 
 export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRouteModel = 'auto' }) {
     const [activeTab, setActiveTab] = useState('batch_edit'); // 'batch_edit' as default
@@ -107,6 +108,20 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
                         PPT 목차별 분할
                     </button>
                     <button 
+                        id="tab-ppt-toc"
+                        onClick={() => { setActiveTab('ppt_toc'); setErrorMsg(null); setSuccessMsg(null); }}
+                        className="interactive"
+                        style={{
+                            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
+                            background: activeTab === 'ppt_toc' ? 'rgba(249, 115, 22, 0.12)' : 'transparent',
+                            border: '1px solid ' + (activeTab === 'ppt_toc' ? '#f97316' : 'transparent'),
+                            color: activeTab === 'ppt_toc' ? '#fb923c' : 'var(--text-secondary)',
+                            fontWeight: 600, fontSize: '14px', transition: 'all 0.2s'
+                        }}
+                    >
+                        PPT 목차 생성
+                    </button>
+                    <button 
                         id="tab-hwp-to-hwpx"
                         onClick={() => { setActiveTab('hwp_to_hwpx'); setErrorMsg(null); setSuccessMsg(null); }}
                         className="interactive"
@@ -187,6 +202,8 @@ export default function PptGenerator({ apiKey, llmProvider = 'gemini', omniRoute
                     <PptHwpxFusionTab setErrorMsg={setErrorMsg} setSuccessMsg={setSuccessMsg} />
                 ) : activeTab === 'pdf_convert' ? (
                     <PptPdfConvertTab setErrorMsg={setErrorMsg} setSuccessMsg={setSuccessMsg} />
+                ) : activeTab === 'ppt_toc' ? (
+                    <PptTocGeneratorTab setErrorMsg={setErrorMsg} setSuccessMsg={setSuccessMsg} />
                 ) : activeTab === 'ppt_split' ? (
                     <div className="animate-fade-in">
                         <PptSplitter />

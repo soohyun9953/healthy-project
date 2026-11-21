@@ -2834,7 +2834,7 @@ function detectChapterFromFileTopic(fileName = '', knownTitles = new Map()) {
 }
 
 // 검수 대상 PPTX별 장 번호, 절/항 구간, 목차 색인
-async function buildDeliverableTocIndex(batchResults = []) {
+export async function buildDeliverableTocIndex(batchResults = []) {
     const parsed = [];
     for (const res of batchResults) {
         if (!res.file || getFileExtension(res.fileName || '') !== 'pptx') continue;
