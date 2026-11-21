@@ -13,6 +13,41 @@ const h3 = { margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-pr
 const muted = { fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 };
 const chip = (ok) => ({ fontSize: '12px', fontWeight: 600, padding: '3px 9px', borderRadius: '999px', background: ok ? 'rgba(16,185,129,0.14)' : 'rgba(148,163,184,0.14)', color: ok ? '#34d399' : 'var(--text-secondary)' });
 const input = { background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)', padding: '6px 8px', fontSize: '13px', fontFamily: 'inherit' };
+// 이 프로젝트에는 btn-primary 전역 스타일이 없어 버튼 모양·커서를 직접 지정
+const actionBtn = (enabled, from = '#f97316', to = '#ea580c') => ({
+    padding: '10px 16px', fontSize: '13.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px', justifyContent: 'center',
+    borderRadius: '8px', border: 'none', fontFamily: 'inherit', transition: 'filter .15s, transform .15s',
+    cursor: enabled ? 'pointer' : 'not-allowed',
+    color: enabled ? '#fff' : 'var(--text-secondary)',
+    background: enabled ? `linear-gradient(135deg, ${from}, ${to})` : 'rgba(148,163,184,0.18)',
+    opacity: enabled ? 1 : 0.7
+});
+const hoverOn = (e) => { if (!e.currentTarget.disabled) { e.currentTarget.style.filter = 'brightness(1.1)'; e.currentTarget.style.transform = 'translateY(-1px)'; } };
+const hoverOff = (e) => { e.currentTarget.style.filter = ''; e.currentTarget.style.transform = ''; };
+const dropZone = (active) => ({
+    border: `2px dashed ${active ? '#f97316' : 'var(--panel-border)'}`, borderRadius: '10px', padding: '14px',
+    background: active ? 'rgba(249,115,22,0.10)' : 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column', gap: '8px',
+    alignItems: 'flex-start', transition: 'background .15s, border-color .15s'
+});
+const isPptx = (f) => /\.pptx$/i.test(f.name) && !f.name.startsWith('~$');
+
+// 끌어서 놓기 영역 (파일 선택 버튼과 함께 사용)
+function DropArea({ onFiles, children, testId }) {
+    const [over, setOver] = useState(false);
+    return (
+        <div
+            data-testid={testId}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; if (!over) setOver(true); }}
+            onDragEnter={(e) => { e.preventDefault(); setOver(true); }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(false); }}
+            onDrop={(e) => { e.preventDefault(); setOver(false); onFiles(Array.from(e.dataTransfer.files || [])); }}
+            style={dropZone(over)}
+        >
+            {children}
+        </div>
+    );
+}
+
 const fileBtn = { display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--panel-border)', cursor: 'pointer', fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)', background: 'rgba(255,255,255,0.04)' };
 
 // 샘플 목차 깊이 설명 (예: 2단계 · 절 › 항)
@@ -40,15 +75,20 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
 
     const resetMsg = () => { setErrorMsg?.(null); setSuccessMsg?.(null); };
 
-    const onPickDeliverables = (e) => {
-        const files = Array.from(e.target.files || []).filter(f => /\.pptx$/i.test(f.name) && !f.name.startsWith('~$'));
-        e.target.value = '';
-        if (!files.length) return;
+    const addDeliverables = (list) => {
+        const files = list.filter(isPptx);
+        if (!files.length) { setErrorMsg?.('PPTX 파일만 올릴 수 있습니다.'); return; }
+        resetMsg();
         setDeliverables(prev => {
             const names = new Set(prev.map(f => f.name));
             return [...prev, ...files.filter(f => !names.has(f.name))].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
         });
         setChapters([]);
+    };
+    const onPickDeliverables = (e) => {
+        const list = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (list.length) addDeliverables(list);
     };
 
     const extract = async () => {
@@ -108,13 +148,16 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
         else { setSampleFile(null); setSampleInfo(null); setSel({ overviewIndex: null, detailIndex: null, chapterIndex: null }); }
     };
 
-    const onPickSample = async (e) => {
-        const file = e.target.files?.[0];
-        e.target.value = '';
-        if (!file) return;
+    const applySampleFile = async (file) => {
+        if (!file || !isPptx(file)) { setErrorMsg?.('목차 샘플은 PPTX 파일이어야 합니다.'); return; }
         resetMsg();
         setSampleSource('custom');
         await loadSample(file);
+    };
+    const onPickSample = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (file) await applySampleFile(file);
     };
 
     const updateChapter = (ci, patch) => setChapters(prev => prev.map((c, i) => (i === ci ? { ...c, ...patch } : c)));
@@ -182,24 +225,29 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                 {/* ① 최종 산출물 */}
                 <section style={panel}>
                     <h3 style={h3}>① 최종 산출물 (PPTX, 여러 개)</h3>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <label style={fileBtn}>
-                            <Upload size={15} /> 파일 선택
-                            <input data-testid="toc-deliverables" type="file" accept=".pptx" multiple onChange={onPickDeliverables} style={{ display: 'none' }} />
-                        </label>
-                        {deliverables.length > 0 && (
-                            <button type="button" className="btn-outline" style={{ padding: '8px 12px', fontSize: '12.5px' }} onClick={() => { setDeliverables([]); setChapters([]); }}>
-                                <Trash2 size={13} /> 비우기
-                            </button>
-                        )}
-                    </div>
-                    {deliverables.length > 0 ? (
-                        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                            {deliverables.map(f => <li key={f.name}>{f.name}</li>)}
-                        </ul>
-                    ) : <p style={muted}>장별 산출물 PPT(예: 1장. 환경분석.pptx … 4장. 이행계획.pptx)를 올려 주세요.</p>}
-                    <button type="button" className="btn-primary" disabled={!deliverables.length || isExtracting} onClick={extract}
-                        style={{ padding: '10px 16px', fontSize: '13.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                    <DropArea testId="toc-deliverables-drop" onFiles={addDeliverables}>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <label style={{ ...fileBtn, cursor: 'pointer' }}>
+                                <Upload size={15} /> 파일 선택
+                                <input data-testid="toc-deliverables" type="file" accept=".pptx" multiple onChange={onPickDeliverables} style={{ display: 'none' }} />
+                            </label>
+                            {deliverables.length > 0 && (
+                                <button type="button" onClick={() => { setDeliverables([]); setChapters([]); }}
+                                    style={{ ...fileBtn, cursor: 'pointer', padding: '8px 12px', fontSize: '12.5px', fontFamily: 'inherit' }}>
+                                    <Trash2 size={13} /> 비우기
+                                </button>
+                            )}
+                        </div>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>또는 PPTX 파일을 여기로 끌어다 놓으세요 (여러 개 가능)</span>
+                        {deliverables.length > 0 ? (
+                            <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                {deliverables.map(f => <li key={f.name}>{f.name}</li>)}
+                            </ul>
+                        ) : <p style={muted}>장별 산출물 PPT(예: 1장. 환경분석.pptx … 4장. 이행계획.pptx)를 올려 주세요.</p>}
+                    </DropArea>
+                    <button type="button" disabled={!deliverables.length || isExtracting} onClick={extract}
+                        onMouseEnter={hoverOn} onMouseLeave={hoverOff}
+                        style={actionBtn(deliverables.length > 0 && !isExtracting)}>
                         {isExtracting ? <><Loader2 size={15} className="animate-spin" /> 장·절 구조 분석 중…</> : '목차 추출'}
                     </button>
                 </section>
@@ -210,16 +258,19 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                         {[['default', '기본형 (공공의료 AI ISP)'], ['custom', '직접 올리기']].map(([k, label]) => (
                             <button key={k} type="button" data-testid={`toc-source-${k}`} onClick={() => chooseSource(k)}
-                                style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', border: `1px solid ${sampleSource === k ? '#f97316' : 'var(--panel-border)'}`, background: sampleSource === k ? 'rgba(249,115,22,0.16)' : 'transparent', color: sampleSource === k ? '#fb923c' : 'var(--text-secondary)' }}>
+                                style={{ fontFamily: 'inherit', padding: '7px 12px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', border: `1px solid ${sampleSource === k ? '#f97316' : 'var(--panel-border)'}`, background: sampleSource === k ? 'rgba(249,115,22,0.16)' : 'transparent', color: sampleSource === k ? '#fb923c' : 'var(--text-secondary)' }}>
                                 {label}
                             </button>
                         ))}
                     </div>
                     {sampleSource === 'custom' && (
-                        <label style={fileBtn}>
-                            <Upload size={15} /> {sampleFile ? '샘플 바꾸기' : '샘플 파일 선택'}
-                            <input data-testid="toc-sample" type="file" accept=".pptx" onChange={onPickSample} style={{ display: 'none' }} />
-                        </label>
+                        <DropArea testId="toc-sample-drop" onFiles={(list) => applySampleFile(list.find(isPptx) || list[0])}>
+                            <label style={{ ...fileBtn, cursor: 'pointer' }}>
+                                <Upload size={15} /> {sampleFile ? '샘플 바꾸기' : '샘플 파일 선택'}
+                                <input data-testid="toc-sample" type="file" accept=".pptx" onChange={onPickSample} style={{ display: 'none' }} />
+                            </label>
+                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>또는 목차 샘플 PPTX를 여기로 끌어다 놓으세요</span>
+                        </DropArea>
                     )}
                     {isAnalyzingSample && <p style={muted}><Loader2 size={13} className="animate-spin" /> 샘플 디자인 분석 중…</p>}
                     {sampleFile && sampleInfo && (
@@ -271,8 +322,9 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                         <input type="checkbox" checked={options.showPage} onChange={e => setOptions(o => ({ ...o, showPage: e.target.checked }))} style={{ width: 16, height: 16 }} />
                         시작 페이지 표기 (샘플에 페이지 칸이 있을 때)
                     </label>
-                    <button type="button" className="btn-primary" disabled={!canBuild} onClick={build}
-                        style={{ padding: '11px 16px', fontSize: '14px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '8px', justifyContent: 'center', background: canBuild ? 'linear-gradient(135deg, #f97316, #ea580c)' : undefined }}>
+                    <button type="button" disabled={!canBuild} onClick={build}
+                        onMouseEnter={hoverOn} onMouseLeave={hoverOff}
+                        style={{ ...actionBtn(canBuild), padding: '11px 16px', fontSize: '14px', fontWeight: 800 }}>
                         {isBuilding ? <><Loader2 size={15} className="animate-spin" /> 생성 중…</> : <><FileDown size={16} /> 샘플 디자인으로 목차 PPT 생성</>}
                     </button>
                     <p style={muted}>
