@@ -1794,5 +1794,5 @@ export const tocInternals = {
     parseXml, serializeXml, elementChildren, firstChild, descendants,
     presentationSlides, slideSizeOf, layoutPlaceholderXfrms, collectLeaves, leafText, readXfrm, center,
     detectTemplate, detectCards, detectTables, setLeafText, setCell, rowUnits, shiftUnit, nextShapeId, pathFrom, followPath, isAncestor,
-    numText, titlePrefixOf, countLabel, fitLeader, applyRomanFont, appendShape, finalizeSlide, chapterMentionRe
+    numText, titlePrefixOf, countLabel, fitLeader, applyRomanFont, appendShape, finalizeSlide, chapterMentionRe, fillTableSlides, relsPathOf
 };

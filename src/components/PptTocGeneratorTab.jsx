@@ -181,13 +181,19 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
         try {
             if (keepMode) {
                 // 올린 디자인 그대로, 목차 글자와 시작 쪽만 점검·갱신
-                const r = await updateTocDeck({ file: sampleFile, chapters, options: { showPage: options.showPage } });
+                // 빈 상세 목차 표의 장·절·항 행 서식 견본으로 기본형을 함께 넘김
+                let fallbackFile = null;
+                try {
+                    const res = await fetch(tocDefaultUrl);
+                    if (res.ok) fallbackFile = new File([await res.arrayBuffer()], DEFAULT_NAME);
+                } catch { fallbackFile = null; }
+                const r = await updateTocDeck({ file: sampleFile, chapters, options: { showPage: options.showPage, fallbackFile } });
                 const d = new Date();
                 const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
                 saveAs(r.blob, `${sampleFile.name.replace(/\.pptx$/i, '')}_갱신_${stamp}.pptx`);
                 setWarnings(r.warnings);
                 setUpdateResult({ ...r, fileName: sampleFile.name });
-                setSuccessMsg?.(`올린 디자인을 그대로 두고 ${r.updatedSlides.length}개 슬라이드의 목차를 점검했습니다. 바뀐 곳 ${r.changes.length}건 (아래 점검 결과 참고).`);
+                setSuccessMsg?.(`올린 디자인을 그대로 두고 ${r.updatedSlides.length}개 슬라이드의 목차를 점검했습니다. 바뀐 곳 ${r.changes.length}건${r.addedSlides ? ` · 상세 목차 슬라이드 ${r.addedSlides}장 추가` : ''} (아래 점검 결과 참고).`);
                 return;
             }
             const { blob, warnings: w, slideCount, counts } = await buildTocPptx({ sampleFile, chapters, options: { ...options, ...sel } });
