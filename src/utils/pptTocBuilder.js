@@ -634,7 +634,7 @@ function classifySlide(doc, xf, slideSize) {
     if (tables) {
         const t = tables.templates;
         const rows = tables.tbls.reduce((n, x) => n + x.trs.length, 0);
-        return { kind: 'table', rowCount: rows, columns: tables.tbls.length, levels: (t.ch ? 1 : 0) + (t.sec ? 1 : 0) + (t.sub ? 1 : 0), topIsChapter: !!t.ch, mode: 'auto', hasNum: true, hasPage: tables.pageCol >= 0, hasChapterRoman: !!t.ch, hasChapterTitle: !!tables.mention };
+        return { kind: 'table', rowCount: rows, columns: tables.tbls.length, levels: (t.ch ? 1 : 0) + (t.sec ? 1 : 0) + (t.sub ? 1 : 0), topIsChapter: !!t.ch, mode: 'auto', hasNum: true, hasPage: tables.pageCol >= 0, hasChapterRoman: !!t.ch, hasChapterTitle: !!tables.mention, panel: !!tables.panel };
     }
     try { det = detectTemplate(doc, xf, slideSize); } catch (e) { det = null; console.warn('목차 샘플 인식 실패', e); }
     if (!det) return { kind: null, rowCount: 0, columns: 0, levels: 0, topIsChapter: false, mode: null, hasNum: false, hasPage: false, hasChapterRoman: false, hasChapterTitle: false };
@@ -679,12 +679,15 @@ export async function analyzeTocSample(file) {
     const byScore = (list) => [...list].sort((a, b) => b.score - a.score);
     const cards = usable.find(r => r.kind === 'cards');
     const tables = usable.filter(r => r.kind === 'table');
-    const table = tables[0] || null;
+    // 앞부분 상세 목차: 장 표시 패널이 없는 표 슬라이드 우선
+    const table = tables.find(r => !r.panel) || tables[0] || null;
     const lists = byScore(usable.filter(r => r.kind === 'list'));
     const overview = cards || lists.find(r => r.topIsChapter) || lists[0] || null;
     // 장별 세부목차: 테이블(표형)을 우선 사용 (단일 장 언급 슬라이드가 있으면 최우선, 없으면 다른 표 슬라이드, 없으면 첫 표 슬라이드, 그 다음 텍스트박스형 lists)
     const singleChapterTable = tables.find(r => r.preview && /(?:—|-)\s*[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ][.．]/.test(r.preview) && !/\//.test(r.preview));
-    const chapterTable = singleChapterTable || tables.find(r => r !== table) || table || null;
+    // 장 표시 패널이 있는 표 슬라이드(장별 세부목차 디자인)를 가장 먼저
+    const panelTable = tables.find(r => r.panel);
+    const chapterTable = panelTable || singleChapterTable || tables.find(r => r !== table) || table || null;
     const chapter = chapterTable || lists.find(r => r !== overview) || (overview && overview.kind === 'list' ? overview : null);
     const defaults = {
         overviewIndex: overview ? overview.index : null,
@@ -1395,7 +1398,9 @@ function detectTables(slideDoc, layoutXfrms, slideSize) {
     const top = Math.min(...frames.map(f => f.box.y));
     const below = leaves.filter(l => l.hasText && l.box.y > top + 1 * IN).map(l => l.box.y);
     const limitY = Math.min(slideSize.cy * 0.92, ...below);
-    const capacity = Math.max(4, Math.floor((limitY - top) / rowH));
+    // 행 종류(장·절·항)마다 높이가 다를 수 있어 가장 높은 행 기준으로 칸 수 계산 (아래 주석·바닥글 침범 방지)
+    const tallest = Math.max(rowH, ...Object.values(templates).map(tr => parseInt(tr.getAttribute('h') || '0', 10)));
+    const capacity = Math.max(4, Math.floor((limitY - top) / tallest));
     // 샘플의 장 (머리글 언급 치환용)
     let mention = null;
     const chRow = allRows.find(r => kindOf(r, 1) === 'ch');
@@ -1404,7 +1409,34 @@ function detectTables(slideDoc, layoutXfrms, slideSize) {
         const leaf = leaves.find(l => l.hasText && re.test(l.text));
         if (leaf) mention = { leaf, re };
     }
-    return { spTree, tbls, numCol, pageCol, titleCol, templates, rowH, capacity, mention, leaves };
+    // 표 옆 장 표시 패널(큰 로마숫자 + 장 제목 + 'n개 절'): 장별 세부목차 디자인
+    let panel = null;
+    const inFrame = (l) => frames.some(f => { const c = center(l.box); return c.cx >= f.box.x && c.cx <= f.box.x + f.box.w && c.cy >= f.box.y && c.cy <= f.box.y + f.box.h; });
+    const bigRoman = leaves.find(l => l.hasText && BIG_ROMAN_RE.test(l.text) && (l.fontSize || 0) >= 18 && !inFrame(l));
+    if (bigRoman) {
+        const rb = bigRoman.box;
+        const near = leaves.filter(l => l !== bigRoman && l.hasText && !inFrame(l)
+            && l.box.y >= rb.y + rb.h * 0.5 && l.box.y <= rb.y + rb.h + 1.2 * IN
+            && center(l.box).cx >= rb.x - 0.2 * IN && center(l.box).cx <= rb.x + rb.w + 0.2 * IN);
+        const count = near.find(l => COUNT_RE.test(l.text)) || null;
+        const title = near.filter(l => l !== count && !TOC_MARKER_RE.test(l.text)).sort((a, b) => a.box.y - b.box.y)[0] || null;
+        panel = { roman: bigRoman, title, count, outside: leaves.filter(l => !inFrame(l) && !frames.includes(l)) };
+    }
+    return { spTree, tbls, numCol, pageCol, titleCol, templates, rowH, capacity, mention, leaves, panel };
+}
+
+// 장 표시 패널 채우기 (좁은 제목 칸은 두 줄로 늘리고 아래 도형을 내림)
+function fillChapterPanel(panel, c) {
+    setLeafText(panel.roman.el, c.roman || String(c.num ?? ''));
+    if (panel.title) {
+        setLeafText(panel.title.el, c.title);
+        wrapSlotTitle({ chapterTitle: panel.title, outsideLeaves: panel.outside.filter(l => l !== panel.roman) }, c.title);
+    }
+    if (panel.count) {
+        const secs = (c.sections || []).filter(x => x.include !== false);
+        const subs = secs.reduce((n, x) => n + (x.subsections || []).filter(y => y.include !== false).length, 0);
+        setLeafText(panel.count.el, countLabel(secs.length, subs, /항/.test(panel.count.text)));
+    }
 }
 
 function setCell(tr, col, text) {
@@ -1529,6 +1561,12 @@ export function fillTableSlides({ templateXml, layoutXfrms, slideSize, chapters,
             const xf = readXfrm(t.frame.el);
             if (xf) xf.extEl.setAttribute('cy', String(h));
         });
+        // 장 표시 패널: 이 쪽의 (첫) 장 번호·제목·'n개 절'
+        if (det.panel) {
+            const ci0 = tables.flat().map(it => it.ci).find(ci => ci != null);
+            const c0 = chapters[ci0 ?? 0];
+            if (c0) fillChapterPanel(det.panel, c0);
+        }
         // 머리글 장 언급: 'Ⅰ. 사업 개요 / Ⅱ. 환경분석', 한 장이 여러 쪽이면 (1/2)
         const cis = [...new Set(tables.flat().map(it => it.ci))];
         const targetChapters = cis.length ? cis.map(ci => chapters[ci]).filter(Boolean) : chapters;
@@ -1796,5 +1834,5 @@ export const tocInternals = {
     parseXml, serializeXml, elementChildren, firstChild, descendants,
     presentationSlides, slideSizeOf, layoutPlaceholderXfrms, collectLeaves, leafText, readXfrm, center,
     detectTemplate, detectCards, detectTables, setLeafText, setCell, rowUnits, shiftUnit, nextShapeId, pathFrom, followPath, isAncestor,
-    numText, titlePrefixOf, countLabel, fitLeader, applyRomanFont, appendShape, finalizeSlide, chapterMentionRe, fillTableSlides, relsPathOf
+    numText, titlePrefixOf, countLabel, fitLeader, applyRomanFont, appendShape, finalizeSlide, chapterMentionRe, fillTableSlides, relsPathOf, fillChapterPanel
 };
