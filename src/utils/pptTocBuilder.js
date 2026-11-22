@@ -1484,7 +1484,8 @@ export function fillTableSlides({ templateXml, layoutXfrms, slideSize, chapters,
         if (r.next >= seq.length || r.stopped) {
             // 이 장(slide)에서 끝나는 내용은 좌·우 표에 고르게
             const total = r.tables.reduce((n, t) => n + t.length, 0);
-            for (let tg = Math.ceil(total / T); tg < content; tg++) {
+            // 한 표에 다 들어가면 왼쪽 표만 사용 (짧은 장을 좌·우로 쪼개지 않음)
+            for (let tg = Math.ceil(total / T); total > content && tg < content; tg++) {
                 const b = simulate(i, tg);
                 if (b.next === r.next) { r = b; break; }
             }
@@ -1541,8 +1542,9 @@ export function fillTableSlides({ templateXml, layoutXfrms, slideSize, chapters,
         if (det.mention) {
             const l = det.mention.leaf;
             const full = l.text;
-            const m = full.match(det.mention.re);
-            setLeafText(l.el, m ? full.slice(0, m.index) + label : label);
+            // 제목의 첫 장 표기('Ⅰ.')부터 끝까지를 새 장 목록으로 바꿈
+            const at = full.search(/[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]\s*[.．]/);
+            setLeafText(l.el, at >= 0 ? full.slice(0, at) + label : label);
         } else if (chapters.length === 1 && det.leaves) {
             // 장별 세부목차(단일 장)인데 샘플의 장 언급 텍스트를 찾지 못한 경우: 상단 제목 상자를 찾아 장명 반영
             const titleLeaf = det.leaves.find(l => l.hasText && l.box.y < slideSize.cy * 0.25 && (l.text.includes('—') || l.text.includes('-') || TOC_MARKER_RE.test(l.text) || /상세\s*목차|세부\s*목차/.test(l.text)));
