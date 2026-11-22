@@ -19,7 +19,7 @@ const {
     parseXml, serializeXml, elementChildren, firstChild, descendants,
     presentationSlides, slideSizeOf, layoutPlaceholderXfrms, collectLeaves, leafText, readXfrm,
     detectTemplate, detectCards, detectTables, setLeafText, rowUnits, shiftUnit, nextShapeId, pathFrom, followPath, isAncestor,
-    numText, titlePrefixOf, countLabel, fitLeader, finalizeSlide
+    numText, titlePrefixOf, countLabel, fitLeader, finalizeSlide, fillTableSlides, relsPathOf
 } = T;
 
 const paraText = (p) => descendants(p, 't').map(t => t.textContent || '').join('');
@@ -411,6 +411,124 @@ function fillDetailTables(entries, chapters, { showPage, logFor, warnings }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 5) 빈 상세 목차 표 (머리 행 '번호|목차|시작쪽' + 빈 행만 있는 디자인)
+//    → 슬라이드 제목의 장('상세 목차 — Ⅰ. 사업 개요')으로 채우고, 넘치면 같은 디자인 슬라이드를 바로 뒤에 추가
+// ─────────────────────────────────────────────────────────────────────────────
+const HEAD_NUM = /^\s*(번\s*호|No\.?|순\s*번)\s*$/i;
+const HEAD_TITLE = /목\s*차|제\s*목|내\s*용|항\s*목/;
+const HEAD_PAGE = /시작|쪽|페이지|page/i;
+const MENTION_ROMANS = /([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])\s*[.．]\s*([^/(（\n]+)/g;
+
+function detectBlankDetailTable(doc, layoutXfrms, slideSize) {
+    const leaves = collectLeaves(descendants(doc, 'spTree')[0], layoutXfrms);
+    const tbls = leaves.filter(l => l.el.localName === 'graphicFrame' && descendants(l.el, 'tbl').length).map(frame => {
+        const tbl = descendants(frame.el, 'tbl')[0];
+        const trs = elementChildren(tbl).filter(n => n.localName === 'tr');
+        return { frame, tbl, trs, head: trs[0] ? cellsOf(trs[0]).map(tc => leafText(tc).trim()) : [] };
+    }).filter(t => t.trs.length >= 2 && t.head.some(h => HEAD_TITLE.test(h)) && t.trs.slice(1).every(tr => cellsOf(tr).every(tc => !leafText(tc).trim())));
+    if (!tbls.length) return null;
+    tbls.sort((a, b) => a.frame.box.x - b.frame.box.x);
+    const head = tbls[0].head;
+    const numCol = head.findIndex(h => HEAD_NUM.test(h));
+    const titleCol = head.findIndex(h => HEAD_TITLE.test(h));
+    const pageCol = head.findIndex((h, i) => i !== titleCol && HEAD_PAGE.test(h));
+    if (titleCol < 0 || numCol < 0) return null;
+    const mentionLeaf = leaves.find(l => l.hasText && l.box.y < slideSize.cy * 0.2 && /[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]\s*[.．]\s*\S/.test(l.text)) || null;
+    const mentions = mentionLeaf ? [...mentionLeaf.text.matchAll(MENTION_ROMANS)].map(m => ({ roman: m[1], title: m[2].trim() })) : [];
+    return { tbls, numCol, titleCol, pageCol, ncol: head.length, mentionLeaf, mentions };
+}
+
+// 표 행 견본 찾기: 같은 파일의 채워진 상세 목차 표 → 기본형
+async function loadRowTemplates(files) {
+    for (const f of files) {
+        if (!f) continue;
+        const zip = f.zip || await JSZip.loadAsync(await f.file.arrayBuffer());
+        const slides = await presentationSlides(zip);
+        const size = await slideSizeOf(zip);
+        for (const path of slides) {
+            const doc = parseXml(await zip.file(path).async('string'));
+            const xf = await layoutPlaceholderXfrms(zip, path);
+            let det = null;
+            try { det = detectTables(doc, xf, size); } catch { det = null; }
+            if (det && det.templates.sec && det.pageCol >= 0) {
+                const ncol = cellsOf(det.templates.sec).length;
+                return { templates: det.templates, numCol: det.numCol, titleCol: det.titleCol, pageCol: det.pageCol, ncol };
+            }
+        }
+    }
+    return null;
+}
+
+// 빈 표에 장·절·항 견본 행을 넣어 '채울 수 있는' 견본 슬라이드로 만듦
+function synthesizeTemplate(doc, blank, rowTpl, mention) {
+    const fits = rowTpl && rowTpl.ncol === blank.ncol && rowTpl.numCol === blank.numCol && rowTpl.titleCol === blank.titleCol && rowTpl.pageCol === blank.pageCol;
+    const roman = mention?.roman || 'Ⅰ';
+    const title = mention?.title || '장 제목';
+    blank.tbls.forEach(t => {
+        const blankRow = t.trs[1].cloneNode(true);
+        t.trs.slice(1).forEach(tr => t.tbl.removeChild(tr));
+        const mk = (kind, num, text, page) => {
+            const src = fits && rowTpl.templates[kind] ? rowTpl.templates[kind] : blankRow;
+            const tr = doc.importNode ? doc.importNode(src, true) : src.cloneNode(true);
+            const cells = cellsOf(tr);
+            const set = (col, v) => { if (col >= 0 && cells[col]) parasOf(cells[col]).forEach((p, i) => setParaText(p, i === 0 ? v : '')); };
+            set(blank.numCol, num);
+            set(blank.titleCol, text);
+            set(blank.pageCol, page);
+            t.tbl.appendChild(tr);
+        };
+        if (!fits || rowTpl.templates.ch) mk('ch', roman, title, `${roman}-1`);
+        mk('sec', '1', '절 제목 견본', `${roman}-4`);
+        if (!fits || rowTpl.templates.sub) mk('sub', '1.1', '항 제목 견본', `${roman}-5`);
+    });
+    return { usedDesignRows: !fits };
+}
+
+// 슬라이드를 기준 슬라이드 바로 뒤에 추가 (관계·콘텐츠 형식·구역 포함)
+async function insertSlidesAfter(zip, basePath, xmls) {
+    if (!xmls.length) return [];
+    let pres = await zip.file('ppt/presentation.xml').async('string');
+    let rels = await zip.file('ppt/_rels/presentation.xml.rels').async('string');
+    let ct = await zip.file('[Content_Types].xml').async('string');
+    const baseRels = (await zip.file(relsPathOf(basePath))?.async('string')) || null;
+    const cleanRels = baseRels ? baseRels.replace(/<Relationship\b[^>]*Type="[^"]*\/(notesSlide|comments)"[^>]*\/>/g, '') : null;
+    const baseTarget = basePath.replace(/^ppt\//, '');
+    const baseRid = (rels.match(new RegExp(`<Relationship\\b[^>]*Id="([^"]+)"[^>]*Target="/?(?:ppt/)?${baseTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`)) || rels.match(new RegExp(`<Relationship\\b[^>]*Target="/?(?:ppt/)?${baseTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*Id="([^"]+)"`)) || [])[1];
+    const baseTag = baseRid ? (pres.match(new RegExp(`<p:sldId\\b[^>]*r:id="${baseRid}"[^>]*/>`)) || [])[0] : null;
+    if (!baseTag) throw new Error('상세 목차 슬라이드를 늘리는 중 원본 슬라이드 정보를 찾지 못했습니다.');
+    const baseId = (baseTag.match(/\bid="(\d+)"/) || [])[1];
+    let maxNum = Math.max(0, ...Object.keys(zip.files).map(f => (f.match(/^ppt\/slides\/slide(\d+)\.xml$/) || [])[1]).filter(Boolean).map(Number));
+    let maxRid = Math.max(0, ...[...rels.matchAll(/\bId="rId(\d+)"/g)].map(m => parseInt(m[1], 10)));
+    let maxId = Math.max(255, ...[...pres.matchAll(/<p:sldId\b[^>]*\bid="(\d+)"/g)].map(m => parseInt(m[1], 10)));
+    const added = [];
+    let newTags = '';
+    let newSecIds = '';
+    xmls.forEach(xml => {
+        const path = `ppt/slides/slide${++maxNum}.xml`;
+        zip.file(path, xml);
+        if (cleanRels) zip.file(relsPathOf(path), cleanRels);
+        const rid = `rId${++maxRid}`;
+        const id = ++maxId;
+        rels = rels.replace('</Relationships>', `<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${maxNum}.xml"/></Relationships>`);
+        ct = ct.replace('</Types>', `<Override PartName="/${path}" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/></Types>`);
+        newTags += `<p:sldId id="${id}" r:id="${rid}"/>`;
+        newSecIds += `<p14:sldId id="${id}"/>`;
+        added.push(path);
+    });
+    pres = pres.replace(baseTag, baseTag + newTags);
+    pres = pres.replace(new RegExp(`(<p14:sldId id="${baseId}"\\s*/>)`), `$1${newSecIds}`);
+    zip.file('ppt/presentation.xml', pres);
+    zip.file('ppt/_rels/presentation.xml.rels', rels);
+    zip.file('[Content_Types].xml', ct);
+    const app = zip.file('docProps/app.xml');
+    if (app) {
+        const total = (pres.match(/<p:sldId\b/g) || []).length;
+        zip.file('docProps/app.xml', (await app.async('string')).replace(/<Slides>\d+<\/Slides>/, `<Slides>${total}</Slides>`));
+    }
+    return added;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 전체: 올린 파일의 모든 슬라이드에서 목차를 찾아 내용만 갱신
 // ─────────────────────────────────────────────────────────────────────────────
 /**
@@ -421,7 +539,7 @@ function fillDetailTables(entries, chapters, { showPage, logFor, warnings }) {
  * @returns {Promise<{blob, changes:Array<{slide,area,where,field,before,after}>, warnings, updatedSlides:number[]}>}
  */
 export async function updateTocDeck({ file, chapters, options = {} }) {
-    const { showPage = true } = options;
+    const { showPage = true, fallbackFile = null } = options;
     const included = chapters.filter(c => c.include).map(c => ({
         ...c,
         sections: c.sections.filter(s => s.include).map(s => ({ ...s, subsections: (s.subsections || []).filter(x => x.include) }))
@@ -434,6 +552,7 @@ export async function updateTocDeck({ file, chapters, options = {} }) {
     const warnings = [];
     const touched = new Map(); // path → doc
     const detailEntries = [];
+    const blankEntries = [];
 
     for (let si = 0; si < slides.length; si++) {
         const path = slides[si];
@@ -462,6 +581,11 @@ export async function updateTocDeck({ file, chapters, options = {} }) {
             touched.set(path, doc);
             continue;
         }
+        const blank = detectBlankDetailTable(doc, xf, slideSize);
+        if (blank) {
+            blankEntries.push({ path, doc, blank, xf, slideNo });
+            continue;
+        }
         let det = null;
         try { det = detectTemplate(doc, xf, slideSize); } catch { det = null; }
         if (det && det.mode !== 'token' && det.chapterRoman && det.rows.length >= 2) {
@@ -471,12 +595,54 @@ export async function updateTocDeck({ file, chapters, options = {} }) {
     if (detailEntries.length) {
         fillDetailTables(detailEntries, included, { showPage, warnings, logFor: (slideNo) => makeLogger(changes, slideNo, '상세 목차(표)') });
     }
+    // 빈 상세 목차 표: 슬라이드 제목의 장으로 채우고, 다른 상세 목차 슬라이드에 없는 장은 앞 슬라이드에 이어 붙임
+    const extraSlides = [];
+    if (blankEntries.length) {
+        const rowTpl = await loadRowTemplates([{ zip }, fallbackFile ? { file: fallbackFile } : null]);
+        const romanIdx = (r) => included.findIndex(c => c.roman === r);
+        const assigned = blankEntries.map(b => b.blank.mentions.map(m => romanIdx(m.roman)).filter(i => i >= 0));
+        const covered = new Set(assigned.flat());
+        detailEntries.forEach(e => e.det.tbls.forEach(t => t.trs.forEach((tr, idx) => {
+            if (kindOfRow(tr, e.det, idx) === 'ch') covered.add(romanIdx(leafText(cellsOf(tr)[e.det.numCol] || tr).trim().replace(/[.．]$/, '')));
+        })));
+        included.forEach((c, ci) => {
+            if (covered.has(ci)) return;
+            let k = -1;
+            assigned.forEach((list, bi) => { if (list.some(x => x < ci)) k = bi; });
+            if (k < 0) k = assigned.findIndex(list => list.length === 0) >= 0 ? assigned.findIndex(list => list.length === 0) : 0;
+            assigned[k].push(ci);
+        });
+        for (let bi = 0; bi < blankEntries.length; bi++) {
+            const b = blankEntries[bi];
+            const cis = [...new Set(assigned[bi])].sort((x, y) => x - y);
+            if (!cis.length) { warnings.push(`${b.slideNo}번 슬라이드(빈 상세 목차 표): 채울 장을 정하지 못했습니다. 슬라이드 제목에 'Ⅰ. 사업 개요'처럼 장을 적어 주세요.`); continue; }
+            const chs = cis.map(ci => included[ci]);
+            const mention = b.blank.mentions.find(m => chs.some(c => c.roman === m.roman)) || { roman: chs[0].roman, title: chs[0].title };
+            const { usedDesignRows } = synthesizeTemplate(b.doc, b.blank, rowTpl, mention);
+            let r;
+            try {
+                r = fillTableSlides({ templateXml: serializeXml(b.doc), layoutXfrms: b.xf, slideSize, chapters: chs, showPage });
+            } catch (e) {
+                warnings.push(`${b.slideNo}번 슬라이드(빈 상세 목차 표)를 채우지 못했습니다: ${e.message}`);
+                continue;
+            }
+            if (!r.slides.length) continue;
+            if (usedDesignRows) warnings.push(`${b.slideNo}번 슬라이드: 장·절·항 행 서식 견본이 없어 표의 빈 행 서식으로 모두 작성했습니다.`);
+            r.warnings.forEach(w => warnings.push(`${b.slideNo}번 슬라이드: ${w}`));
+            const rows = chs.reduce((n, c) => n + 1 + c.sections.length + c.sections.reduce((m, s) => m + s.subsections.length, 0), 0);
+            changes.push({ slide: b.slideNo, area: '상세 목차(빈 표)', where: chs.map(c => c.roman).join('·'), field: '작성', before: '(빈 표)', after: `${chs.length}개 장 ${rows}행을 ${r.slides.length}장에 작성${r.slides.length > 1 ? ` (뒤에 ${r.slides.length - 1}장 추가)` : ''}` });
+            touched.set(b.path, parseXml(r.slides[0]));
+            if (r.slides.length > 1) extraSlides.push({ basePath: b.path, xmls: r.slides.slice(1) });
+        }
+    }
     if (!touched.size) throw new Error('올린 파일에서 갱신할 목차(장 열 표·장 카드·상세 목차 표·장별 목차)를 찾지 못했습니다.');
 
     const d = new Date();
     const dateText = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
     touched.forEach((doc, path) => zip.file(path, finalizeSlide(serializeXml(doc), { footer: null, dateText })));
+    for (const x of extraSlides) await insertSlidesAfter(zip, x.basePath, x.xmls.map(xml => finalizeSlide(xml, { footer: null, dateText })));
     const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
     const updatedSlides = slides.map((p, i) => (touched.has(p) ? i + 1 : null)).filter(Boolean);
-    return { blob, changes, warnings, updatedSlides };
+    const addedSlides = extraSlides.reduce((n, x) => n + x.xmls.length, 0);
+    return { blob, changes, warnings, updatedSlides, addedSlides };
 }
