@@ -4,6 +4,7 @@ import { ListTree, Upload, FileDown, FileSpreadsheet, Trash2, Loader2, AlertTria
 import { buildDeliverableTocIndex, formatPageLabelRanges } from '../utils/ssotValidator';
 import { extractTocFromDeliverables, analyzeTocSample, buildTocPptx } from '../utils/pptTocBuilder';
 import { buildTocWorkbook } from '../utils/tocExcelExporter';
+import { updateTocDeck } from '../utils/pptTocUpdater';
 import tocDefaultUrl from '../assets/templates/toc_default.pptx?url';
 
 const DEFAULT_NAME = '목차_기본형(공공의료 AI ISP).pptx';
@@ -73,6 +74,9 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
     const [options, setOptions] = useState({ showPage: true, overviewTitle: '목차' });
     const [isBuilding, setIsBuilding] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
+    // 직접 올린 디자인: keep = 디자인 유지·목차와 페이지만 갱신, generate = 이 디자인으로 새로 생성
+    const [customMode, setCustomMode] = useState('keep');
+    const [updateResult, setUpdateResult] = useState(null);
     const [warnings, setWarnings] = useState([]);
 
     const resetMsg = () => { setErrorMsg?.(null); setSuccessMsg?.(null); };
@@ -110,15 +114,16 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
         }
     };
 
-    const loadSample = async (file) => {
+    const loadSample = async (file, { quiet = false } = {}) => {
         setSampleFile(file);
         setSampleInfo(null);
+        setUpdateResult(null);
         setIsAnalyzingSample(true);
         try {
             const info = await analyzeTocSample(file);
             setSampleInfo(info);
             setSel({ ...info.defaults });
-            if (info.defaults.overviewIndex == null && info.defaults.chapterIndex == null && info.defaults.detailIndex == null) {
+            if (!quiet && info.defaults.overviewIndex == null && info.defaults.chapterIndex == null && info.defaults.detailIndex == null) {
                 setErrorMsg?.('샘플에서 목차 항목 칸(같은 모양으로 반복되는 제목 칸·목차 표·장 카드)을 찾지 못했습니다. 목차 슬라이드에 {{제목}} 표시를 넣어 다시 올려 주세요.');
             }
         } catch (err) {
@@ -154,7 +159,7 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
         if (!file || !isPptx(file)) { setErrorMsg?.('목차 샘플은 PPTX 파일이어야 합니다.'); return; }
         resetMsg();
         setSampleSource('custom');
-        await loadSample(file);
+        await loadSample(file, { quiet: true });
     };
     const onPickSample = async (e) => {
         const file = e.target.files?.[0];
@@ -167,11 +172,24 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
         ? { ...c, sections: c.sections.map((s, j) => (j === si ? { ...s, ...patch } : s)) }
         : c)));
 
+    const keepMode = sampleSource === 'custom' && customMode === 'keep';
     const build = async () => {
         resetMsg();
         setWarnings([]);
+        setUpdateResult(null);
         setIsBuilding(true);
         try {
+            if (keepMode) {
+                // 올린 디자인 그대로, 목차 글자와 시작 쪽만 점검·갱신
+                const r = await updateTocDeck({ file: sampleFile, chapters, options: { showPage: options.showPage } });
+                const d = new Date();
+                const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+                saveAs(r.blob, `${sampleFile.name.replace(/\.pptx$/i, '')}_갱신_${stamp}.pptx`);
+                setWarnings(r.warnings);
+                setUpdateResult({ ...r, fileName: sampleFile.name });
+                setSuccessMsg?.(`올린 디자인을 그대로 두고 ${r.updatedSlides.length}개 슬라이드의 목차를 점검했습니다. 바뀐 곳 ${r.changes.length}건 (아래 점검 결과 참고).`);
+                return;
+            }
             const { blob, warnings: w, slideCount, counts } = await buildTocPptx({ sampleFile, chapters, options: { ...options, ...sel } });
             const d = new Date();
             const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
@@ -225,7 +243,8 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
         : c)));
     const includedSections = chapters.filter(c => c.include).reduce((n, c) => n + c.sections.filter(s => s.include).length, 0);
     const includedSubs = chapters.filter(c => c.include).reduce((n, c) => n + c.sections.filter(s => s.include).reduce((m, s) => m + (s.subsections || []).filter(x => x.include).length, 0), 0);
-    const canBuild = chapters.length > 0 && sampleFile && (sel.overviewIndex != null || sel.detailIndex != null || sel.chapterIndex != null) && !isBuilding;
+    const canBuild = chapters.length > 0 && sampleFile && !isBuilding
+        && (keepMode || sel.overviewIndex != null || sel.detailIndex != null || sel.chapterIndex != null);
     const slideSelect = (key, label, testId, allow) => (
         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
             {label}
@@ -310,6 +329,21 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                                     <a href={tocDefaultUrl} download={DEFAULT_NAME} style={{ fontSize: '12px', color: '#fb923c' }}>기본형 내려받기(수정해 올릴 수 있음)</a>
                                 )}
                             </span>
+                            {sampleSource === 'custom' && (
+                                <div data-testid="toc-custom-mode" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    {[['keep', '디자인 유지 · 목차와 페이지만 갱신 (권장)', '올린 파일의 슬라이드·표·도형·서식은 그대로 두고, 목차 글자(장 제목·절/항 번호·제목)와 시작 쪽만 최종 산출물 기준으로 점검해 바꿉니다.'],
+                                        ['generate', '이 디자인으로 새로 생성', '올린 슬라이드를 견본으로 목차 슬라이드를 새로 만듭니다(칸 수·배치가 내용에 맞게 바뀜).']].map(([k, label, desc]) => (
+                                        <label key={k} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', cursor: 'pointer', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${customMode === k ? '#f97316' : 'var(--panel-border)'}`, background: customMode === k ? 'rgba(249,115,22,0.08)' : 'transparent' }}>
+                                            <input type="radio" name="toc-custom-mode" value={k} checked={customMode === k} onChange={() => { setCustomMode(k); setUpdateResult(null); }} style={{ marginTop: 3 }} />
+                                            <span style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{label}</span>
+                                                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{desc}</span>
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                            {!keepMode && (<>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                 <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)' }}>표지 앞부분에 넣을 목차</span>
                                 {slideSelect('overviewIndex', '전체 목차 (장 › 절)', 'toc-sel-overview', ['cards', 'list', 'table'])}
@@ -326,6 +360,7 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                                     <span style={chip(chapterSlide.hasChapterRoman)}>장 번호 칸 {chapterSlide.hasChapterRoman ? '✓' : '없음'}</span>
                                 </div>
                             )}
+                            </>)}
                         </>
                     )}
                     <p style={muted}>
@@ -337,11 +372,19 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                 {/* ③ 생성 옵션 */}
                 <section style={panel}>
                     <h3 style={h3}>③ 생성</h3>
+                    {keepMode ? (
+                        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12.5px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            <li>올린 파일 그대로: 슬라이드·표·도형·서식 변경 없음</li>
+                            <li>점검·갱신: 장 제목, 절·항 번호와 제목, 시작 쪽, 'n개 절', 머리글 장 표기</li>
+                            <li>칸이 남으면 비우고, 모자라면 경고로 알림</li>
+                        </ul>
+                    ) : (
                     <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12.5px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
                         <li>앞부분 목차: {[overviewSlide && `전체 목차(${KIND_LABEL[overviewSlide.kind]})`, detailSlide && `상세 목차(${KIND_LABEL[detailSlide.kind]})`].filter(Boolean).join(' + ') || '만들지 않음'}</li>
                         <li>장별 목차: {chapterSlide ? `장마다 ${KIND_LABEL[chapterSlide.kind]} 1장 이상` : '만들지 않음'}</li>
                     </ul>
-                    {overviewSlide?.kind === 'list' && (
+                    )}
+                    {!keepMode && overviewSlide?.kind === 'list' && (
                         <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                             전체 목차 장 제목 칸 문구
                             <input value={options.overviewTitle} onChange={e => setOptions(o => ({ ...o, overviewTitle: e.target.value }))} style={{ ...input, width: '110px' }} />
@@ -354,7 +397,9 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                     <button type="button" disabled={!canBuild} onClick={build}
                         onMouseEnter={hoverOn} onMouseLeave={hoverOff}
                         style={{ ...actionBtn(canBuild), padding: '11px 16px', fontSize: '14px', fontWeight: 800 }}>
-                        {isBuilding ? <><Loader2 size={15} className="animate-spin" /> 생성 중…</> : <><FileDown size={16} /> 샘플 디자인으로 목차 PPT 생성</>}
+                        {isBuilding
+                            ? <><Loader2 size={15} className="animate-spin" /> {keepMode ? '점검·갱신 중…' : '생성 중…'}</>
+                            : <><FileDown size={16} /> {keepMode ? '올린 디자인 그대로 목차·페이지 갱신' : '샘플 디자인으로 목차 PPT 생성'}</>}
                     </button>
                     {excelBtn('toc-excel')}
                     <p style={muted}>
@@ -369,6 +414,49 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                     )}
                 </section>
             </div>
+
+            {/* 디자인 유지 갱신 점검 결과 */}
+            {updateResult && (
+                <section style={{ ...panel, padding: 0, overflow: 'hidden' }} data-testid="toc-update-result">
+                    <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--panel-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <h3 style={h3}>점검 결과 · {updateResult.fileName}</h3>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            갱신한 슬라이드 {updateResult.updatedSlides.join(', ')}번 · 바뀐 곳 {updateResult.changes.length}건{updateResult.warnings.length ? ` · 확인 필요 ${updateResult.warnings.length}건` : ''}
+                        </span>
+                    </div>
+                    {updateResult.changes.length === 0 ? (
+                        <p style={{ ...muted, padding: '14px 18px' }}>올린 목차가 최종 산출물과 모두 같습니다. 바꾼 곳이 없습니다.</p>
+                    ) : (
+                        <div style={{ maxHeight: '420px', overflow: 'auto' }}>
+                            <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                                <thead style={{ position: 'sticky', top: 0, background: 'var(--panel-bg, #111827)' }}>
+                                    <tr style={{ textAlign: 'left', color: 'var(--text-secondary)' }}>
+                                        <th style={{ padding: '7px 12px', width: '60px' }}>슬라이드</th>
+                                        <th style={{ padding: '7px 12px', width: '120px' }}>구분</th>
+                                        <th style={{ padding: '7px 12px', width: '110px' }}>위치</th>
+                                        <th style={{ padding: '7px 12px', width: '70px' }}>항목</th>
+                                        <th style={{ padding: '7px 12px' }}>이전</th>
+                                        <th style={{ padding: '7px 12px' }}>변경</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {updateResult.changes.slice(0, 1000).map((c, i) => (
+                                        <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                            <td style={{ padding: '5px 12px', color: 'var(--text-secondary)' }}>{c.slide}</td>
+                                            <td style={{ padding: '5px 12px', color: 'var(--text-secondary)' }}>{c.area}</td>
+                                            <td style={{ padding: '5px 12px', color: 'var(--text-primary)' }}>{c.where}</td>
+                                            <td style={{ padding: '5px 12px', color: 'var(--text-secondary)' }}>{c.field}</td>
+                                            <td style={{ padding: '5px 12px', color: '#f87171', textDecoration: c.before ? 'line-through' : 'none' }}>{c.before || '(빈 칸)'}</td>
+                                            <td style={{ padding: '5px 12px', color: '#34d399' }}>{c.after || '(비움)'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {updateResult.changes.length > 1000 && <p style={{ ...muted, padding: '8px 12px' }}>처음 1,000건만 표시했습니다.</p>}
+                        </div>
+                    )}
+                </section>
+            )}
 
             {/* 목차 미리보기·편집 */}
             {chapters.length > 0 && (
