@@ -19,7 +19,7 @@ const {
     parseXml, serializeXml, elementChildren, firstChild, descendants,
     presentationSlides, slideSizeOf, layoutPlaceholderXfrms, collectLeaves, leafText, readXfrm,
     detectTemplate, detectCards, detectTables, setLeafText, rowUnits, shiftUnit, nextShapeId, pathFrom, followPath, isAncestor,
-    numText, titlePrefixOf, countLabel, fitLeader, finalizeSlide, fillTableSlides, relsPathOf
+    numText, titlePrefixOf, countLabel, fitLeader, finalizeSlide, fillTableSlides, relsPathOf, fillChapterPanel
 } = T;
 
 const paraText = (p) => descendants(p, 't').map(t => t.textContent || '').join('');
@@ -404,15 +404,35 @@ function fillDetailTables(entries, chapters, { showPage, logFor, warnings }) {
         if (left > 0 && placedAny.has(ci)) warnings.push(`${c.roman || c.num}장 상세 목차: 표 칸이 모자라 ${left}행(${chItems[ci][pointer[ci]].code}부터)을 넣지 못했습니다. 디자인 파일에 행이나 슬라이드를 늘려 주세요.`);
     });
     // 머리글 장 언급 'Ⅰ. 사업 개요 / Ⅱ. 환경분석 (1/2)'
+    // 쪽 표기 (k/n): 장이 다시 시작되는 묶음(앞부분 상세 목차 / 장별 세부목차)마다 따로 셈
     const pagesOf = {};
-    entries.forEach((e, ei) => (slideChapters.get(e) || []).forEach(ci => { (pagesOf[ci] = pagesOf[ci] || []).push(ei); }));
+    const runOf = new Map(); // `${ei}|${ci}` → 묶음 키
+    const runNo = {};
+    entries.forEach((e, ei) => {
+        const starts = new Set(startsOf(e));
+        (slideChapters.get(e) || []).forEach(ci => {
+            if (runNo[ci] == null || starts.has(ci)) runNo[ci] = (runNo[ci] ?? -1) + 1;
+            const key = `${ci}#${runNo[ci]}`;
+            runOf.set(`${ei}|${ci}`, key);
+            (pagesOf[key] = pagesOf[key] || []).push(ei);
+        });
+    });
+    // 장 표시 패널(장별 세부목차): 이 슬라이드의 첫 장으로
+    entries.forEach(e => {
+        const cis = slideChapters.get(e) || [];
+        if (!e.det.panel || !cis.length) return;
+        const c = chapters[cis[0]];
+        const before = `${e.det.panel.roman.text} ${e.det.panel.title?.text || ''}`.trim();
+        fillChapterPanel(e.det.panel, c);
+        logFor(e.slideNo)('장 패널', '장', before, `${c.roman} ${c.title}`);
+    });
     entries.forEach((e, ei) => {
         if (!e.det.mention) return;
         const cis = slideChapters.get(e) || [];
         if (!cis.length) return;
         const label = cis.map(ci => {
             const c = chapters[ci];
-            const ps = pagesOf[ci] || [];
+            const ps = pagesOf[runOf.get(`${ei}|${ci}`)] || [];
             return `${c.roman ? `${c.roman}. ` : ''}${c.title}${ps.length > 1 ? ` (${ps.indexOf(ei) + 1}/${ps.length})` : ''}`;
         }).join(' / ');
         const l = e.det.mention.leaf;
