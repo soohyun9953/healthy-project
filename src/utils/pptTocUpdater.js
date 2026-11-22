@@ -331,9 +331,22 @@ function fillDetailTables(entries, chapters, { showPage, logFor, warnings }) {
     chapters.forEach((c, ci) => { if (!placedAny.has(ci)) warnings.push(`상세 목차 표에 ${c.roman || c.num}장 자리가 없어 넣지 못했습니다. 디자인 파일에 그 장의 표 슬라이드를 추가해 주세요.`); });
     const pointer = chapters.map(() => 0);
     const slideChapters = new Map();
+    // 장 시작 행('Ⅲ | 현황분석', '(계속)' 아님)이 있는 슬라이드는 그 장을 처음부터 다시 채움
+    // (예: 앞부분 상세 목차 2~6번과 장별 세부목차 7~12번이 같은 장을 각각 담는 경우)
+    const startsOf = (e) => {
+        const out = [];
+        e.det.tbls.forEach(t => t.trs.forEach((tr, idx) => {
+            if (kindOfRow(tr, e.det, idx) !== 'ch') return;
+            if (/\(계속\)\s*$/.test(leafText(cellsOf(tr)[e.det.titleCol] || tr))) return;
+            const ci = chapters.findIndex(c => c.roman === leafText(cellsOf(tr)[e.det.numCol] || tr).trim().replace(/[.．]$/, ''));
+            if (ci >= 0) out.push(ci);
+        }));
+        return out;
+    };
     entries.forEach((e, ei) => {
         const log = logFor(e.slideNo);
         const covered = new Set();
+        startsOf(e).forEach(ci => { pointer[ci] = 0; });
         const stream = slideCis[ei].flatMap(ci => chItems[ci].slice(pointer[ci]));
         let i = 0;
         e.det.tbls.forEach(t => {
@@ -403,8 +416,9 @@ function fillDetailTables(entries, chapters, { showPage, logFor, warnings }) {
             return `${c.roman ? `${c.roman}. ` : ''}${c.title}${ps.length > 1 ? ` (${ps.indexOf(ei) + 1}/${ps.length})` : ''}`;
         }).join(' / ');
         const l = e.det.mention.leaf;
-        const m = l.text.match(e.det.mention.re);
-        const next = m ? l.text.slice(0, m.index) + label : label;
+        // 제목의 첫 장 표기('Ⅰ.')부터 끝까지를 새 장 목록으로 바꿈
+        const at = l.text.search(/[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]\s*[.．]/);
+        const next = at >= 0 ? l.text.slice(0, at) + label : label;
         logFor(e.slideNo)('머리글', '장', l.text, next);
         setLeafText(l.el, next);
     });
@@ -597,6 +611,7 @@ export async function updateTocDeck({ file, chapters, options = {} }) {
     }
     // 빈 상세 목차 표: 슬라이드 제목의 장으로 채우고, 다른 상세 목차 슬라이드에 없는 장은 앞 슬라이드에 이어 붙임
     const extraSlides = [];
+    const footerFix = new Map(); // path → 원래 바닥글
     if (blankEntries.length) {
         const rowTpl = await loadRowTemplates([{ zip }, fallbackFile ? { file: fallbackFile } : null]);
         const romanIdx = (r) => included.findIndex(c => c.roman === r);
@@ -612,35 +627,69 @@ export async function updateTocDeck({ file, chapters, options = {} }) {
             if (k < 0) k = assigned.findIndex(list => list.length === 0) >= 0 ? assigned.findIndex(list => list.length === 0) : 0;
             assigned[k].push(ci);
         });
-        for (let bi = 0; bi < blankEntries.length; bi++) {
-            const b = blankEntries[bi];
+        // 같은 장을 담은 연속 빈 슬라이드(예: Ⅳ (1/2)·(2/2))는 한 묶음으로 한 번만 작성해 차례로 나눠 넣음
+        const groups = [];
+        blankEntries.forEach((b, bi) => {
             const cis = [...new Set(assigned[bi])].sort((x, y) => x - y);
-            if (!cis.length) { warnings.push(`${b.slideNo}번 슬라이드(빈 상세 목차 표): 채울 장을 정하지 못했습니다. 슬라이드 제목에 'Ⅰ. 사업 개요'처럼 장을 적어 주세요.`); continue; }
-            const chs = cis.map(ci => included[ci]);
+            const key = cis.join(',');
+            const last = groups[groups.length - 1];
+            if (last && last.key === key && cis.length && last.lastIdx === bi - 1 && slides.indexOf(b.path) === slides.indexOf(last.items[last.items.length - 1].path) + 1) {
+                last.items.push(b);
+                last.lastIdx = bi;
+            } else groups.push({ key, cis, items: [b], lastIdx: bi });
+        });
+        const footerOf = (doc) => {
+            const sp = descendants(doc, 'sp').find(x => /^\s*목\s*차\s*[-–]/.test(leafText(x)));
+            return sp ? leafText(sp).trim() : null;
+        };
+        const nextFooter = (f, k) => {
+            if (!f) return null;
+            const m = f.match(/^(.*?)[-–](\d+)$/);
+            return m && /[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]/.test(m[1]) ? `${m[1]}-${parseInt(m[2], 10) + k}` : `${f}-${k + 1}`;
+        };
+        for (const g of groups) {
+            const b = g.items[0];
+            const nos = g.items.map(x => x.slideNo).join('·');
+            if (!g.cis.length) { warnings.push(`${nos}번 슬라이드(빈 상세 목차 표): 채울 장을 정하지 못했습니다. 슬라이드 제목에 'Ⅰ. 사업 개요'처럼 장을 적어 주세요.`); continue; }
+            const chs = g.cis.map(ci => included[ci]);
+            const footers = g.items.map(x => footerOf(x.doc));
             const mention = b.blank.mentions.find(m => chs.some(c => c.roman === m.roman)) || { roman: chs[0].roman, title: chs[0].title };
             const { usedDesignRows } = synthesizeTemplate(b.doc, b.blank, rowTpl, mention);
             let r;
             try {
                 r = fillTableSlides({ templateXml: serializeXml(b.doc), layoutXfrms: b.xf, slideSize, chapters: chs, showPage });
             } catch (e) {
-                warnings.push(`${b.slideNo}번 슬라이드(빈 상세 목차 표)를 채우지 못했습니다: ${e.message}`);
+                warnings.push(`${nos}번 슬라이드(빈 상세 목차 표)를 채우지 못했습니다: ${e.message}`);
                 continue;
             }
             if (!r.slides.length) continue;
-            if (usedDesignRows) warnings.push(`${b.slideNo}번 슬라이드: 장·절·항 행 서식 견본이 없어 표의 빈 행 서식으로 모두 작성했습니다.`);
-            r.warnings.forEach(w => warnings.push(`${b.slideNo}번 슬라이드: ${w}`));
+            if (usedDesignRows) warnings.push(`${nos}번 슬라이드: 장·절·항 행 서식 견본이 없어 표의 빈 행 서식으로 모두 작성했습니다.`);
+            r.warnings.forEach(w => warnings.push(`${nos}번 슬라이드: ${w}`));
             const rows = chs.reduce((n, c) => n + 1 + c.sections.length + c.sections.reduce((m, s) => m + s.subsections.length, 0), 0);
-            changes.push({ slide: b.slideNo, area: '상세 목차(빈 표)', where: chs.map(c => c.roman).join('·'), field: '작성', before: '(빈 표)', after: `${chs.length}개 장 ${rows}행을 ${r.slides.length}장에 작성${r.slides.length > 1 ? ` (뒤에 ${r.slides.length - 1}장 추가)` : ''}` });
-            touched.set(b.path, parseXml(r.slides[0]));
-            if (r.slides.length > 1) extraSlides.push({ basePath: b.path, xmls: r.slides.slice(1) });
+            // 묶음의 슬라이드에 차례로 넣고(바닥글은 각 슬라이드 원래 값), 남으면 뒤에 추가, 모자라면 남는 슬라이드 경고
+            g.items.forEach((x, k) => {
+                if (k < r.slides.length) {
+                    footerFix.set(x.path, footers[k]);
+                    touched.set(x.path, parseXml(r.slides[k]));
+                }
+            });
+            const extra = r.slides.slice(g.items.length);
+            if (extra.length) {
+                const lastFooter = footers[footers.length - 1];
+                extraSlides.push({ basePath: g.items[g.items.length - 1].path, xmls: extra, footers: extra.map((_, k) => nextFooter(lastFooter, k + 1)) });
+            }
+            if (r.slides.length < g.items.length) {
+                warnings.push(`${g.items.slice(r.slides.length).map(x => x.slideNo).join('·')}번 슬라이드: 내용이 적어 빈 표로 남았습니다. 필요 없으면 삭제해 주세요.`);
+            }
+            changes.push({ slide: b.slideNo, area: '상세 목차(빈 표)', where: chs.map(c => c.roman).join('·'), field: '작성', before: '(빈 표)', after: `${chs.length}개 장 ${rows}행을 ${r.slides.length}장에 작성${extra.length ? ` (뒤에 ${extra.length}장 추가)` : ''}` });
         }
     }
     if (!touched.size) throw new Error('올린 파일에서 갱신할 목차(장 열 표·장 카드·상세 목차 표·장별 목차)를 찾지 못했습니다.');
 
     const d = new Date();
     const dateText = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
-    touched.forEach((doc, path) => zip.file(path, finalizeSlide(serializeXml(doc), { footer: null, dateText })));
-    for (const x of extraSlides) await insertSlidesAfter(zip, x.basePath, x.xmls.map(xml => finalizeSlide(xml, { footer: null, dateText })));
+    touched.forEach((doc, path) => zip.file(path, finalizeSlide(serializeXml(doc), { footer: footerFix.get(path) ?? null, dateText })));
+    for (const x of extraSlides) await insertSlidesAfter(zip, x.basePath, x.xmls.map((xml, k) => finalizeSlide(xml, { footer: x.footers?.[k] ?? null, dateText })));
     const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
     const updatedSlides = slides.map((p, i) => (touched.has(p) ? i + 1 : null)).filter(Boolean);
     const addedSlides = extraSlides.reduce((n, x) => n + x.xmls.length, 0);
