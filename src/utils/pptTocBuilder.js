@@ -1787,3 +1787,12 @@ export async function buildTocPptx({ sampleFile, chapters, options = {} }) {
     const front = out.filter(o => o.section === FRONT).length;
     return { blob, warnings, slideCount: out.length, counts: { front, chapter: out.length - front } };
 }
+
+// 디자인 유지 갱신(pptTocUpdater)에서 쓰는 내부 도구
+export const tocInternals = {
+    A_NS, IN: EMU_PER_INCH, CONT_SUFFIX, NUM_RE, COMPOUND_RE, COUNT_RE, BIG_ROMAN_RE, PAGE_RE, CHAPTER_WORD_RE,
+    parseXml, serializeXml, elementChildren, firstChild, descendants,
+    presentationSlides, slideSizeOf, layoutPlaceholderXfrms, collectLeaves, leafText, readXfrm, center,
+    detectTemplate, detectCards, detectTables, setLeafText, setCell, rowUnits, shiftUnit, nextShapeId, pathFrom, followPath, isAncestor,
+    numText, titlePrefixOf, countLabel, fitLeader, applyRomanFont, appendShape, finalizeSlide, chapterMentionRe
+};
