@@ -678,10 +678,14 @@ export async function analyzeTocSample(file) {
     const usable = results.filter(r => r.kind && (r.rowCount >= 2 || (r.mode === 'token' && r.rowCount >= 1)));
     const byScore = (list) => [...list].sort((a, b) => b.score - a.score);
     const cards = usable.find(r => r.kind === 'cards');
-    const table = usable.find(r => r.kind === 'table');
+    const tables = usable.filter(r => r.kind === 'table');
+    const table = tables[0] || null;
     const lists = byScore(usable.filter(r => r.kind === 'list'));
     const overview = cards || lists.find(r => r.topIsChapter) || lists[0] || null;
-    const chapter = lists.find(r => r !== overview) || (table && table !== overview ? table : null) || (overview && overview.kind === 'list' ? overview : null);
+    // 장별 세부목차: 테이블(표형)을 우선 사용 (단일 장 언급 슬라이드가 있으면 최우선, 없으면 다른 표 슬라이드, 없으면 첫 표 슬라이드, 그 다음 텍스트박스형 lists)
+    const singleChapterTable = tables.find(r => r.preview && /(?:—|-)\s*[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ][.．]/.test(r.preview) && !/\//.test(r.preview));
+    const chapterTable = singleChapterTable || tables.find(r => r !== table) || table || null;
+    const chapter = chapterTable || lists.find(r => r !== overview) || (overview && overview.kind === 'list' ? overview : null);
     const defaults = {
         overviewIndex: overview ? overview.index : null,
         detailIndex: table ? table.index : null,
@@ -1325,7 +1329,7 @@ function detectTables(slideDoc, layoutXfrms, slideSize) {
         const leaf = leaves.find(l => l.hasText && re.test(l.text));
         if (leaf) mention = { leaf, re };
     }
-    return { spTree, tbls, numCol, pageCol, titleCol, templates, rowH, capacity, mention };
+    return { spTree, tbls, numCol, pageCol, titleCol, templates, rowH, capacity, mention, leaves };
 }
 
 function setCell(tr, col, text) {
@@ -1450,22 +1454,36 @@ export function fillTableSlides({ templateXml, layoutXfrms, slideSize, chapters,
             if (xf) xf.extEl.setAttribute('cy', String(h));
         });
         // 머리글 장 언급: 'Ⅰ. 사업 개요 / Ⅱ. 환경분석', 한 장이 여러 쪽이면 (1/2)
+        const cis = [...new Set(tables.flat().map(it => it.ci))];
+        const targetChapters = cis.length ? cis.map(ci => chapters[ci]).filter(Boolean) : chapters;
+        const label = targetChapters.map((c, idx) => {
+            const ci = cis[idx] ?? 0;
+            const ps = pagesOfCh[ci] || [];
+            const part = ps.length > 1 ? ` (${ps.indexOf(pi) + 1}/${ps.length})` : '';
+            return `${c.roman ? `${c.roman}. ` : ''}${c.title}${part}`;
+        }).join(' / ');
+
         if (det.mention) {
-            const cis = [...new Set(tables.flat().map(it => it.ci))];
-            const label = cis.map(ci => {
-                const c = chapters[ci];
-                const ps = pagesOfCh[ci] || [];
-                const part = ps.length > 1 ? ` (${ps.indexOf(pi) + 1}/${ps.length})` : '';
-                return `${c.roman ? `${c.roman}. ` : ''}${c.title}${part}`;
-            }).join(' / ');
             const l = det.mention.leaf;
             const full = l.text;
             const m = full.match(det.mention.re);
             setLeafText(l.el, m ? full.slice(0, m.index) + label : label);
+        } else if (chapters.length === 1 && det.leaves) {
+            // 장별 세부목차(단일 장)인데 샘플의 장 언급 텍스트를 찾지 못한 경우: 상단 제목 상자를 찾아 장명 반영
+            const titleLeaf = det.leaves.find(l => l.hasText && l.box.y < slideSize.cy * 0.25 && (l.text.includes('—') || l.text.includes('-') || TOC_MARKER_RE.test(l.text) || /상세\s*목차|세부\s*목차/.test(l.text)));
+            if (titleLeaf) {
+                const full = titleLeaf.text;
+                const dashIdx = full.search(/[—–-]/);
+                const prefix = dashIdx >= 0 ? full.slice(0, dashIdx + 1) + ' ' : '상세 목차 — ';
+                setLeafText(titleLeaf.el, `${prefix}${label}`);
+            }
         }
         return serializeXml(doc);
     });
-    if (pages.length > 1) warnings.push(`상세 목차 ${seq.length}행을 ${pages.length}장으로 나눴습니다.`);
+    if (pages.length > 1) {
+        const pageWarnPrefix = chapters.length === 1 ? `${chapters[0].roman ? `${chapters[0].roman}. ` : ''}${chapters[0].title} 목차` : '상세 목차';
+        warnings.push(`${pageWarnPrefix} ${seq.length}행을 ${pages.length}장으로 나눴습니다.`);
+    }
     return { slides, warnings };
 }
 
@@ -1480,7 +1498,7 @@ function finalizeSlide(xml, { footer, dateText }) {
     descendants(doc, 'sp').forEach(sp => {
         const t = leafText(sp);
         if (!t) return;
-        if (footer != null && /^\s*목\s*차\s*[-–]\s*\d+\s*$/.test(t)) setLeafText(sp, footer);
+        if (footer != null && /^\s*목\s*차\s*[-–]\s*[\dⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩA-Za-z]+([-–]\d+)?\s*$/.test(t)) setLeafText(sp, footer);
         else if (dateText && /기준/.test(t) && /\d{4}\.\s?\d{1,2}\.\s?\d{1,2}/.test(t)) {
             descendants(sp, 't').forEach(n => { n.textContent = n.textContent.replace(/\d{4}\.\s?\d{1,2}\.\s?\d{1,2}/g, dateText); });
         }

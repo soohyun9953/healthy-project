@@ -7,7 +7,7 @@ import { buildTocWorkbook } from '../utils/tocExcelExporter';
 import tocDefaultUrl from '../assets/templates/toc_default.pptx?url';
 
 const DEFAULT_NAME = '목차_기본형(공공의료 AI ISP).pptx';
-const KIND_LABEL = { cards: '카드형', table: '표형', list: '행 반복형' };
+const KIND_LABEL = { cards: '카드형', table: '표형(테이블)', list: '텍스트박스형(행반복)' };
 
 const panel = { background: 'rgba(0,0,0,0.2)', border: '1px solid var(--panel-border)', borderRadius: '12px', padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px' };
 const h3 = { margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' };
@@ -245,7 +245,7 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                 <ListTree size={20} color="#f97316" style={{ marginTop: 2 }} />
                 <p style={muted}>
-                    최종 산출물(PPTX)의 장·절·항 구조와 시작 페이지(슬라이드 하단 표기 기준)를 읽어 <strong>표지 앞부분 목차</strong>(전체 목차 + 상세 목차)와 <strong>장별 목차</strong>(장마다 1장)를 한 파일로 만듭니다.
+                    최종 산출물(PPTX)의 장·절·항 구조와 시작 페이지(슬라이드 하단 표기 기준)를 읽어 <strong>표지 앞부분 목차</strong>(전체 목차 + 상세 목차)와 <strong>장별 세부목차</strong>(장마다 1장 이상)를 표(테이블) 서식으로 한 파일에 만듭니다.
                     목차 샘플(기본형 또는 직접 올린 파일)의 디자인(마스터·서식·도형·표)을 그대로 복제해 채우고, 칸이 모자라면 같은 모양으로 늘리며 넘치면 '(계속)'으로 이어 갑니다.
                 </p>
             </div>
@@ -314,8 +314,8 @@ export default function PptTocGeneratorTab({ setErrorMsg, setSuccessMsg }) {
                                 <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)' }}>표지 앞부분에 넣을 목차</span>
                                 {slideSelect('overviewIndex', '전체 목차 (장 › 절)', 'toc-sel-overview', ['cards', 'list', 'table'])}
                                 {slideSelect('detailIndex', '상세 목차 (장 › 절 › 항, 장 순서대로 이어서)', 'toc-sel-detail', ['table', 'list'])}
-                                <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>장마다 넣을 목차</span>
-                                {slideSelect('chapterIndex', '장별 목차 (장 표지 다음에 넣는 절 › 항 목차)', 'toc-sel-chapter', ['list', 'table'])}
+                                <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>장마다 넣을 목차 (장별 세부목차)</span>
+                                {slideSelect('chapterIndex', '장별 목차 (장 표지 다음에 넣는 절 › 항 세부목차, 표형 테이블 권장)', 'toc-sel-chapter', ['table', 'list'])}
                             </div>
                             {chapterSlide && (
                                 <div data-testid="toc-sample-detect" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
