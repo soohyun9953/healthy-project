@@ -1072,7 +1072,7 @@ function isAncestor(a, b) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3-2) 카드형 전체 목차: 장마다 카드(머리: 로마숫자·장 제목·'n개 절', 몸통: 절 행)를 나란히
+// 3-2) 카드형 전체 목차 샘플 인식: 장마다 카드(머리: 로마숫자·장 제목·'n개 절', 몸통: 절 행)
 // ─────────────────────────────────────────────────────────────────────────────
 function detectCards(slideDoc, layoutXfrms) {
     const spTree = descendants(slideDoc, 'spTree')[0];
@@ -1119,34 +1119,54 @@ function detectCards(slideDoc, layoutXfrms) {
 
 const median = (arr) => { const v = [...arr].sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
 
-// 떼어 낸 도형을 슬라이드 절대 좌표로 복제해 spTree에 붙임
-function cloneAbs(leaf, spTree, nextId, box) {
-    const c = leaf.el.cloneNode(true);
-    descendants(c, 'cNvPr').forEach(n => n.setAttribute('id', String(nextId())));
-    const xf = readXfrm(c);
-    if (xf) {
-        xf.offEl.setAttribute('x', String(Math.round(box.x)));
-        xf.offEl.setAttribute('y', String(Math.round(box.y)));
-        xf.extEl.setAttribute('cx', String(Math.max(0, Math.round(box.w))));
-        xf.extEl.setAttribute('cy', String(Math.max(0, Math.round(box.h))));
+// ─────────────────────────────────────────────────────────────────────────────
+// 3-2b) 카드형 전체 목차 → 표로 작성: 장마다 같은 폭의 열(번호 칸 + 제목 칸), 장 사이 간격 열
+//       색·글꼴은 샘플 카드(머리 상자·몸통 상자·번호 원·구분선·글상자 서식)에서 가져옴
+// ─────────────────────────────────────────────────────────────────────────────
+const solidOf = (el) => {
+    const spPr = elementChildren(el).find(n => n.localName === 'spPr');
+    if (!spPr) return null;
+    const sf = elementChildren(spPr).find(n => n.localName === 'solidFill');
+    const c = sf && descendants(sf, 'srgbClr')[0];
+    return c ? c.getAttribute('val') : null;
+};
+const lineOf = (el) => {
+    const spPr = elementChildren(el).find(n => n.localName === 'spPr');
+    const ln = spPr && elementChildren(spPr).find(n => n.localName === 'ln');
+    if (!ln || firstChild(ln, 'noFill')) return null;
+    const c = descendants(ln, 'srgbClr')[0];
+    if (!c) return null;
+    const dash = descendants(ln, 'prstDash')[0]?.getAttribute('val') || 'solid';
+    return { color: c.getAttribute('val'), w: parseInt(ln.getAttribute('w') || '9525', 10), dash };
+};
+const rPrXml = (leaf) => {
+    const r = leaf && descendants(leaf.el, 'rPr')[0];
+    return r ? new XMLSerializer().serializeToString(r).replace(/\sxmlns(:\w+)?="[^"]*"/g, '') : '<a:rPr/>';
+};
+const xmlEsc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// rPr 문자열의 글자 크기·색 바꾸기
+const tuneRPr = (xml, { scale = 1, color = null } = {}) => {
+    let out = xml.replace(/\ssz="(\d+)"/, (m, v) => ` sz="${Math.max(600, Math.round((parseInt(v, 10) * scale) / 50) * 50)}"`);
+    if (color) {
+        out = out.replace(/<a:solidFill>[\s\S]*?<\/a:solidFill>/, `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>`);
+        if (!/<a:solidFill>/.test(out)) out = out.replace(/<a:rPr([^>]*?)\/>/, `<a:rPr$1><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:rPr>`).replace(/<a:rPr([^>]*)>(?!<a:solidFill)/, `<a:rPr$1><a:solidFill><a:srgbClr val="${color}"/></a:solidFill>`);
     }
-    appendShape(spTree, c);
-    return c;
-}
+    return out;
+};
+const szOf = (xml) => { const m = xml.match(/\ssz="(\d+)"/); return m ? parseInt(m[1], 10) / 100 : 10; };
+const para = (rPr, text, algn = 'l') => `<a:p><a:pPr algn="${algn}"/>${text ? `<a:r>${rPr}<a:t>${xmlEsc(text)}</a:t></a:r>` : ''}<a:endParaRPr${(rPr.match(/^<a:rPr([^>]*?)\/?>/) || ['', ''])[1].replace(/\/$/, '')}/></a:p>`;
+const lnXml = (tag, ln) => (ln
+    ? `<a:${tag} w="${ln.w}" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:srgbClr val="${ln.color}"/></a:solidFill><a:prstDash val="${ln.dash}"/></a:${tag}>`
+    : `<a:${tag} w="6350"><a:noFill/></a:${tag}>`);
+const cellXml = ({ paras, fillColor = null, borders = {}, mar = {}, anchor = 't', span = 0, hMerge = false }) => {
+    const m = { l: 45720, r: 36576, t: 45720, b: 27432, ...mar };
+    return `<a:tc${span > 1 ? ` gridSpan="${span}"` : ''}${hMerge ? ' hMerge="1"' : ''}><a:txBody><a:bodyPr/><a:lstStyle/>${paras || '<a:p><a:endParaRPr sz="800"/></a:p>'}</a:txBody>`
+        + `<a:tcPr marL="${m.l}" marR="${m.r}" marT="${m.t}" marB="${m.b}" anchor="${anchor}">`
+        + `${lnXml('lnL', borders.l)}${lnXml('lnR', borders.r)}${lnXml('lnT', borders.t)}${lnXml('lnB', borders.b)}`
+        + `${fillColor ? `<a:solidFill><a:srgbClr val="${fillColor}"/></a:solidFill>` : '<a:noFill/>'}</a:tcPr></a:tc>`;
+};
 
-// 텍스트가 상자 폭에 들어가도록 글자 크기 줄이기 (최소 minScale)
-function fitFont(el, text, pt, widthEmu, minScale = 0.7) {
-    if (!pt) return 1;
-    const ins = leafInsets(el);
-    const avail = (widthEmu - ins.l - ins.r) / IN;
-    const need = textWidthIn(text, pt, isBoldLeaf(el));
-    if (need <= avail) return 1;
-    const f = Math.max(minScale, avail / need);
-    scaleFonts(el, f);
-    return f;
-}
-
-export function fillCardSlides({ templateXml, layoutXfrms, slideSize, chapters, showPage = true }) {
+export function fillCardTableSlides({ templateXml, layoutXfrms, slideSize, chapters, showPage = true }) {
     const probe = detectCards(parseXml(templateXml), layoutXfrms, slideSize);
     if (!probe) throw new Error('카드형 전체 목차 샘플에서 장 카드를 찾지 못했습니다.');
     const warnings = [];
@@ -1161,113 +1181,168 @@ export function fillCardSlides({ templateXml, layoutXfrms, slideSize, chapters, 
         const doc = parseXml(templateXml);
         const det = detectCards(doc, layoutXfrms, slideSize);
         const { cards, spTree } = det;
-        let idSeq = nextShapeId(doc);
-        const nextId = () => idSeq++;
-        // 견본 카드: 가장 흔한 제목 글자 크기를 쓰는 첫 카드 (특정 장만 줄인 글꼴은 피함)
+        // 견본 카드: 가장 흔한 제목 글자 크기를 쓰는 첫 카드
         const fontOf = (c) => c.rows[0]?.title.fontSize || 0;
         const freq = {};
         cards.forEach(c => { freq[fontOf(c)] = (freq[fontOf(c)] || 0) + 1; });
         const modeFont = Number(Object.keys(freq).sort((a, b) => freq[b] - freq[a])[0]);
         const tc = cards.find(c => c.rows.length && fontOf(c) === modeFont) || cards.find(c => c.rows.length);
-        const tplW = tc.x1 - tc.x0;
         const singleH = Math.min(...tc.rows.map(r => r.title.box.h));
         const tr = tc.rows.find(r => r.title.box.h <= singleH * 1.2) || tc.rows[0];
-        const pitches = [];
-        cards.forEach(c => c.rows.forEach((r, i) => { if (i > 0 && c.rows[i - 1].title.box.h <= singleH * 1.2 && fontOf(c) === modeFont) pitches.push(r.top - c.rows[i - 1].top); }));
-        const pitch = median(pitches) || singleH * 2.2;
-        const rowBottom = Math.max(...tr.leaves.filter(l => !tr.seps.includes(l)).map(l => l.box.y + l.box.h)) - tr.top;
-        const padTop = tc.rows[0].top - tc.body.box.y;
+        const pitch = median(tc.rows.slice(1).map((r, i) => r.top - tc.rows[i].top)) || singleH * 2.2;
 
-        // 카드 폭: 절 제목 분량에 비례 (0.7~1.6배 범위), 전체 폭은 샘플 카드 영역
+        // 서식
+        const headFill = solidOf(tc.header.el) || '224F77';
+        const bodyFill = solidOf(tc.body.el);
+        const bodyLine = lineOf(tc.body.el) || { color: '7F8FA9', w: 9525, dash: 'solid' };
+        const sepLeaf = tr.seps[0];
+        const sep = (sepLeaf && lineOf(sepLeaf.el)) || { color: 'D9D9D9', w: 6350, dash: 'sysDot' };
+        const oval = tr.leaves.find(l => !l.hasText && l.el.localName === 'sp' && solidOf(l.el));
+        const numColor = (oval && solidOf(oval.el)) || '0072BA';
+        const rp = {
+            roman: rPrXml(tc.roman), word: rPrXml(tc.word), title: rPrXml(tc.title), count: rPrXml(tc.count),
+            num: rPrXml(tr.num), rowTitle: rPrXml(tr.title), page: rPrXml(tr.page)
+        };
+
+        // 배치: 샘플 카드 영역 전체 폭을 장 수로 똑같이 나눔
         const X0 = Math.min(...cards.map(c => c.x0));
         const X1 = Math.max(...cards.map(c => c.x1));
         const gap = median(cards.slice(1).map((c, i) => c.x0 - cards[i].x1).filter(g => g >= 0)) ?? 0.1 * IN;
         const n = chs.length;
-        const avail = X1 - X0 - gap * (n - 1);
-        const titlePt = tr.title.fontSize || 9.5;
-        const weights = chs.map(c => Math.sqrt(Math.max(1, c.sections.reduce((sum, s) => sum + textWidthIn(s.title, titlePt), 0))));
-        const even = avail / n;
-        let widths = weights.map(w => (w / weights.reduce((a, b) => a + b, 0)) * avail);
-        widths = widths.map(w => Math.min(even * 1.6, Math.max(even * 0.7, w)));
-        const sumW = widths.reduce((a, b) => a + b, 0);
-        widths = widths.map(w => (w / sumW) * avail);
-        const maxW = tplW * 2.4;
-        widths = widths.map(w => Math.min(w, maxW));
-        const used = widths.reduce((a, b) => a + b, 0) + gap * (n - 1);
-        let x = X0 + Math.max(0, (X1 - X0 - used) / 2);
+        const colW = Math.floor((X1 - X0 - gap * (n - 1)) / n);
+        const numW = Math.round(Math.min(colW * 0.25, Math.max(0.26 * IN, (tr.title.box.x - tc.x0) * 0.85)));
+        const titleW = colW - numW;
+        const headH = tc.header.box.h;
+        const bodyH = tc.body.box.h * 0.97; // 뷰어별 줄 높이 차이 여유
 
-        // 샘플 카드 모두 제거
-        const removeLeaf = (l) => { const u = rowUnits({ leaves: [l] })[0]; u.parentNode?.removeChild(u); };
-        cards.forEach(c => c.members.forEach(removeLeaf));
+        // 행 높이 추정 (두 줄 제목 반영), 몸통 높이에 맞게 글자 축소
+        const M = Math.max(...chs.map(c => c.sections.filter(s => s.include !== false).length), 1);
+        const secsOf = (c) => c.sections.filter(s => s.include !== false);
+        const insL = 45720;
+        const insR = 36576;
+        const lineIn = (pt) => (pt * 1.3) / 72;
+        const titlePt = szOf(rp.rowTitle);
+        const pagePt = szOf(rp.page);
+        const rowNeed = (s) => Array.from({ length: M }, (_, r) => Math.max(...chs.map(c => {
+            const sec = secsOf(c)[r];
+            if (!sec) return 0;
+            const lines = Math.min(3, Math.max(1, Math.ceil(textWidthIn(sec.title, titlePt * s, true) / ((titleW - insL - insR) / IN) - 0.02)));
+            return lines * lineIn(titlePt * s) + (showPage ? lineIn(pagePt * s) : 0) + 0.09;
+        })) * IN);
+        let s = 1;
+        let need = rowNeed(1);
+        while (need.reduce((a, b) => a + b, 0) > bodyH && s > 0.66) { s -= 0.04; need = rowNeed(s); }
+        if (s < 0.99) warnings.push(`절이 많은 장이 있어 표 글자를 ${Math.round((1 - s) * 100)}% 줄였습니다.`);
+        if (need.reduce((a, b) => a + b, 0) > bodyH) warnings.push('절이 많아 표가 아래 영역을 조금 넘을 수 있습니다. 일부 절을 빼거나 샘플 카드 높이를 늘려 주세요.');
+        // 최소 행 높이(샘플 행 간격)는 전체가 몸통 높이를 넘지 않는 범위로
+        const sumWith = (f) => need.reduce((a, h) => a + Math.max(h, f), 0);
+        let floor = Math.min(pitch, bodyH / M);
+        while (floor > 0 && sumWith(floor) > bodyH) floor -= 0.01 * IN;
+        const rowH = need.map(h => Math.round(Math.max(h, floor, 0)));
+        const used = rowH.reduce((a, b) => a + b, 0);
+        const fillerH = Math.max(0, Math.round(tc.body.box.h - used - 45720));
 
-        const stretchOf = (l) => (l.box.w > tplW * 0.5 ? 1 : 0);
-        chs.forEach((ch, ci) => {
-            const w = widths[ci];
-            const dx = x - tc.x0;
-            const dW = w - tplW;
-            const place = (l, dy = 0, extraH = 0, s = 1) => cloneAbs(l, spTree, nextId, {
-                x: l.box.x + dx,
-                y: l.box.y + dy,
-                w: stretchOf(l) ? l.box.w + dW : l.box.w * s,
-                h: l.box.h * s + extraH
-            });
-            // 머리·몸통 상자, 장 슬롯
-            const fixed = tc.members.filter(l => !tc.rows.some(r => r.leaves.includes(l)) && !tc.rows.some(r => r.num === l));
-            fixed.forEach(l => {
-                const el = place(l);
-                if (l === tc.roman) setLeafText(el, ch.roman || String(ch.num ?? ''));
-                else if (l === tc.title) { setLeafText(el, ch.title); fitFont(el, ch.title, l.fontSize, l.box.w + (stretchOf(l) ? dW : 0)); }
-                else if (l === tc.count) {
-                    const secs = ch.sections.filter(sx => sx.include !== false);
-                    const subs = secs.reduce((m, sx) => m + (sx.subsections || []).filter(x2 => x2.include !== false).length, 0);
-                    setLeafText(el, countLabel(secs.length, subs, withSub));
-                }
-            });
+        // 표 열: [번호, 제목] × 장, 사이에 간격 열
+        const grid = [];
+        chs.forEach((c, i) => { grid.push(numW, titleW); if (i < n - 1) grid.push(Math.round(gap)); });
+        const spacer = (bodyRow) => cellXml({ borders: bodyRow ? { l: bodyLine, r: bodyLine } : {}, mar: { l: 0, r: 0, t: 0, b: 0 } });
 
-            // 절 행: 두 줄 제목은 줄 높이만큼 늘리고, 몸통에 다 들어가지 않으면 행 전체를 축소
-            const secs = ch.sections.filter(sx => sx.include !== false);
-            const titleBoxW = tr.title.box.w + (stretchOf(tr.title) ? dW : 0);
-            const insT = leafInsets(tr.title.el);
-            const linesOf = (t, s) => Math.min(3, Math.max(1, Math.ceil(textWidthIn(t, titlePt * s, isBoldLeaf(tr.title.el)) / ((titleBoxW - insT.l - insT.r) / IN) - 0.02)));
-            const limit = tc.body.box.y + tc.body.box.h - padTop * 0.6;
-            const layout = (s) => {
-                let y = tc.rows[0].top;
-                const out = [];
-                secs.forEach((sec, i) => {
-                    const lines = linesOf(sec.title, s);
-                    out.push({ y, lines });
-                    if (i < secs.length - 1) y += (pitch + (lines - 1) * singleH) * s;
-                });
-                const last = out[out.length - 1];
-                const bottom = last ? last.y + (rowBottom + (last.lines - 1) * singleH) * s : 0;
-                return { out, fits: bottom <= limit };
-            };
-            let s = 1;
-            let lay = layout(1);
-            while (!lay.fits && s > 0.66) { s -= 0.04; lay = layout(s); }
-            if (s < 0.99) warnings.push(`${ch.roman || ''} ${ch.title}: 절이 많아 카드 안 글자·간격을 ${Math.round((1 - s) * 100)}% 줄였습니다.`);
-            if (!lay.fits) warnings.push(`${ch.roman || ''} ${ch.title}: 카드 높이를 넘습니다. 일부 절을 빼거나 샘플 카드를 키워 주세요.`);
-
-            secs.forEach((sec, i) => {
-                const { y, lines } = lay.out[i];
-                const extra = (lines - 1) * singleH * s;
-                tr.leaves.forEach(l => {
-                    if (i === secs.length - 1 && tr.seps.includes(l)) return; // 마지막 행 구분선 생략
-                    const rel = l.box.y - tr.top;
-                    const below = l !== tr.title && l.box.y >= tr.title.box.y + tr.title.box.h * 0.5;
-                    const dy = y - tr.top + rel * (s - 1) + (below ? extra : 0);
-                    const el = place(l, dy, l === tr.title ? extra : 0, s);
-                    scaleFonts(el, s);
-                    if (l === tr.num) setLeafText(el, String(sec.num ?? i + 1));
-                    else if (l === tr.title) setLeafText(el, sec.title);
-                    else if (l === tr.page) setLeafText(el, showPage ? (sec.startLabel || '') : '');
-                });
-            });
-            x += w + gap;
+        // 머리 행
+        let headCells = '';
+        chs.forEach((c, i) => {
+            const secs = secsOf(c);
+            const subs = secs.reduce((m, sx) => m + (sx.subsections || []).filter(x => x.include !== false).length, 0);
+            const titleScale = Math.min(1, ((colW - 2 * 0.12 * IN) / IN) / Math.max(0.01, textWidthIn(c.title, szOf(rp.title), true)));
+            const paras = (tc.word ? para(rp.word, tc.word.text.trim(), 'r') : '')
+                + para(rp.roman, c.roman || String(c.num ?? ''), 'l')
+                + para(tuneRPr(rp.title, { scale: Math.max(0.7, titleScale) }), c.title, 'l')
+                + (tc.count ? para(rp.count, countLabel(secs.length, subs, withSub), 'l') : '');
+            headCells += cellXml({ paras, fillColor: headFill, span: 2, mar: { l: Math.round(0.12 * IN), r: Math.round(0.1 * IN), t: Math.round(0.06 * IN), b: Math.round(0.06 * IN) }, anchor: 't' });
+            headCells += cellXml({ hMerge: true, fillColor: headFill });
+            if (i < n - 1) headCells += spacer(false);
         });
+        let rowsXml = `<a:tr h="${Math.round(headH)}">${headCells}</a:tr>`;
+
+        // 절 행
+        for (let r = 0; r < M; r++) {
+            let cells = '';
+            chs.forEach((c, i) => {
+                const secs = secsOf(c);
+                const sec = secs[r];
+                const lastOfChapter = r === secs.length - 1;
+                const bottom = sec && !lastOfChapter ? sep : null;
+                const numPara = sec ? para(tuneRPr(rp.num, { scale: s, color: numColor }), String(sec.num ?? r + 1), 'ctr') : '';
+                const titleParas = sec
+                    ? para(tuneRPr(rp.rowTitle, { scale: s }), sec.title, 'l') + (showPage ? para(tuneRPr(rp.page, { scale: s }), sec.startLabel || '', 'l') : '')
+                    : '';
+                cells += cellXml({ paras: numPara, fillColor: bodyFill, borders: { l: bodyLine, b: bottom }, mar: { l: 0, r: 0 } });
+                cells += cellXml({ paras: titleParas, fillColor: bodyFill, borders: { r: bodyLine, b: bottom } });
+                if (i < n - 1) cells += spacer(true);
+            });
+            rowsXml += `<a:tr h="${rowH[r]}">${cells}</a:tr>`;
+        }
+        // 카드 아래 끝까지 채우는 빈 행 (몸통 테두리 마감)
+        let fillCells = '';
+        chs.forEach((c, i) => {
+            fillCells += cellXml({ fillColor: bodyFill, borders: { l: bodyLine, b: bodyLine }, mar: { t: 0, b: 0 } });
+            fillCells += cellXml({ fillColor: bodyFill, borders: { r: bodyLine, b: bodyLine }, mar: { t: 0, b: 0 } });
+            if (i < n - 1) fillCells += spacer(true);
+        });
+        rowsXml += `<a:tr h="${Math.max(fillerH, 45720)}">${fillCells}</a:tr>`;
+
+        const totalW = grid.reduce((a, b) => a + b, 0);
+        const totalH = headH + used + Math.max(fillerH, 45720);
+        const frameXml = `<p:graphicFrame xmlns:p="${P_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">`
+            + `<p:nvGraphicFramePr><p:cNvPr id="${nextShapeId(doc)}" name="전체 목차 표"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>`
+            + `<p:xfrm><a:off x="${Math.round(X0)}" y="${Math.round(tc.y0)}"/><a:ext cx="${Math.round(totalW)}" cy="${Math.round(totalH)}"/></p:xfrm>`
+            + `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr/>`
+            + `<a:tblGrid>${grid.map(w => `<a:gridCol w="${w}"/>`).join('')}</a:tblGrid>${rowsXml}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+
+        // 샘플 카드 지우고 표 넣기
+        cards.forEach(c => c.members.forEach(l => { const u = rowUnits({ leaves: [l] })[0]; u.parentNode?.removeChild(u); }));
+        const frame = parseXml(frameXml).documentElement;
+        appendShape(spTree, doc.importNode ? doc.importNode(frame, true) : frame);
         return serializeXml(doc);
     });
     return { slides, warnings };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 장 표시 로마숫자(Ⅰ~Ⅹ) 글꼴: 생성 슬라이드의 모든 글자에서 로마숫자만 따로 떼어 지정 글꼴 적용
+// ─────────────────────────────────────────────────────────────────────────────
+export const ROMAN_FONT = 'KoPub바탕체 Bold';
+const ROMAN_SPLIT = /([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+)/;
+const RPR_TAIL = ['sym', 'hlinkClick', 'hlinkMouseOver', 'rtl', 'extLst'];
+function setRunFont(run, face) {
+    const d = run.ownerDocument;
+    let rPr = firstChild(run, 'rPr');
+    if (!rPr) { rPr = d.createElementNS(A_NS, 'a:rPr'); run.insertBefore(rPr, run.firstChild); }
+    ['latin', 'ea', 'cs'].forEach(tag => {
+        let el = firstChild(rPr, tag);
+        if (!el) {
+            el = d.createElementNS(A_NS, `a:${tag}`);
+            const before = elementChildren(rPr).find(c => RPR_TAIL.includes(c.localName)
+                || (tag === 'latin' && ['ea', 'cs'].includes(c.localName)) || (tag === 'ea' && c.localName === 'cs'));
+            if (before) rPr.insertBefore(el, before); else rPr.appendChild(el);
+        }
+        el.setAttribute('typeface', face);
+        ['panose', 'pitchFamily', 'charset'].forEach(a => el.removeAttribute(a));
+    });
+}
+function applyRomanFont(doc, face = ROMAN_FONT) {
+    descendants(doc, 'r').filter(r => r.namespaceURI === A_NS).forEach(run => {
+        const tEl = firstChild(run, 't');
+        const text = tEl?.textContent || '';
+        if (!/[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]/.test(text)) return;
+        const parts = text.split(ROMAN_SPLIT).filter(Boolean);
+        parts.forEach(part => {
+            const c = run.cloneNode(true);
+            firstChild(c, 't').textContent = part;
+            if (/^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+$/.test(part)) setRunFont(c, face);
+            run.parentNode.insertBefore(c, run);
+        });
+        run.parentNode.removeChild(run);
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1485,6 +1560,7 @@ function finalizeSlide(xml, { footer, dateText }) {
             descendants(sp, 't').forEach(n => { n.textContent = n.textContent.replace(/\d{4}\.\s?\d{1,2}\.\s?\d{1,2}/g, dateText); });
         }
     });
+    applyRomanFont(doc);
     return serializeXml(doc);
 }
 
@@ -1551,7 +1627,7 @@ export async function buildTocPptx({ sampleFile, chapters, options = {} }) {
     if (overviewIndex != null) {
         const tpl = await loadTpl(overviewIndex);
         if (tpl.kind === 'cards') {
-            push('전체 목차', tpl, FRONT, fillCardSlides({ ...tpl, slideSize, chapters: included, showPage }), frontFooter);
+            push('전체 목차', tpl, FRONT, fillCardTableSlides({ ...tpl, slideSize, chapters: included, showPage }), frontFooter);
         } else if (tpl.kind === 'list') {
             push('전체 목차', tpl, FRONT, fillTemplateSlides({ ...tpl, slideSize, items: listItems(tpl, 'overview'), chapter: { roman: '', title: overviewTitle, num: null }, showPage }), frontFooter);
         } else if (tpl.kind === 'table') {
