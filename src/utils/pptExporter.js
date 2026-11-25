@@ -1778,24 +1778,29 @@ export async function processPptBatch(pptFile, options) {
                     ancestorSp = ancestorSp.parentNode;
                 }
 
-                // 현재 <a:t>가 속한 문단(<a:p>)의 첫 번째 텍스트 런인지 여부 확인
+                // 현재 <a:t>가 속한 문단(<a:p>)의 첫 번째 텍스트 런 여부 및 문단 전체 텍스트 확인
                 let isFirstTextInPara = true;
+                let fullParaText = text;
                 let ancestorP = el.parentNode;
                 while (ancestorP) {
                     const pTag = ancestorP.localName || (ancestorP.tagName ? ancestorP.tagName.split(':').pop() : '');
                     if (pTag === 'p') {
                         const pTEls = ancestorP.getElementsByTagNameNS('*', 't');
+                        let seenSelf = false;
+                        fullParaText = '';
                         for (let pti = 0; pti < pTEls.length; pti++) {
-                            if (pTEls[pti] === el) break;
-                            if ((pTEls[pti].textContent || '').trim().length > 0) {
+                            const curT = pTEls[pti].textContent || '';
+                            fullParaText += curT;
+                            if (pTEls[pti] === el) seenSelf = true;
+                            else if (!seenSelf && curT.trim().length > 0) {
                                 isFirstTextInPara = false;
-                                break;
                             }
                         }
                         break;
                     }
                     ancestorP = ancestorP.parentNode;
                 }
+                const isStandaloneDashPara = /^\s*[-–—]+\s*$/.test(fullParaText);
                 
                 // [신규] 특수문자 일괄 정제
                 if (applySpecialCharClean) {
@@ -1808,27 +1813,27 @@ export async function processPptBatch(pptFile, options) {
                         text = text.split('\xa0').join(' ');
                         text = text.split('\u00a0').join(' ');
                     }
-                    // 슬라이드 번호/날짜/바닥글 플레이스홀더 및 '장 - 번호' 상자에는 글머리표 치환 미적용 (형식 보존)
-                    if (unifyBullets && !isPageNumPlaceholder) {
+                    // 슬라이드 번호/날짜/바닥글 플레이스홀더, '장 - 번호' 상자, 단독 '-' 문단에는 글머리표 치환 미적용
+                    if (unifyBullets && !isPageNumPlaceholder && !isStandaloneDashPara) {
                         const bulletCount = text.split('·').length - 1;
                         if (bulletCount > 0) {
                             totalSpecialCharsCleaned += bulletCount;
                         }
                         text = text.split('·').join('•');
                         
-                        if (isFirstTextInPara) {
-                            const hyphenMatches1 = text.match(/^-(\s+)?/) ? 1 : 0;
+                        if (isFirstTextInPara && !/^\s*[-–—]+\s*$/.test(text)) {
+                            const hyphenMatches1 = text.match(/^-(?=\s*\S)(\s+)?/) ? 1 : 0;
                             if (hyphenMatches1 > 0) {
                                 totalSpecialCharsCleaned += hyphenMatches1;
                             }
-                            text = text.replace(/^-(\s+)?/, '• ');
+                            text = text.replace(/^-(?=\s*\S)(\s+)?/, '• ');
                         }
-                        // 뒤에 숫자가 바로 오는 연결 부호(' - 196' 등)는 글머리표로 오인 치환하지 않음
-                        const hyphenMatches2 = (text.match(/\s+-(?!\s*\d)(\s+)?/g) || []).length;
+                        // 뒤에 숫자가 바로 오거나('-') 단독 기호로 끝나는 경우는 글머리표로 오인 치환하지 않음
+                        const hyphenMatches2 = (text.match(/\s+-(?!\s*\d)(?=\s*\S)(\s+)?/g) || []).length;
                         if (hyphenMatches2 > 0) {
                             totalSpecialCharsCleaned += hyphenMatches2;
                         }
-                        text = text.replace(/\s+-(?!\s*\d)(\s+)?/g, ' • ');
+                        text = text.replace(/\s+-(?!\s*\d)(?=\s*\S)(\s+)?/g, ' • ');
                     }
                 }
                 
