@@ -1734,7 +1734,7 @@ export async function processPptBatch(pptFile, options) {
                 let text = el.textContent;
                 let originalText = text;
 
-                // 슬라이드 번호·날짜·바닥글 플레이스홀더 여부 확인 (형식 보존용)
+                // 슬라이드 번호·날짜·바닥글 플레이스홀더 및 '장 - 번호' 형식 상자 여부 확인 (형식 보존용)
                 let isPageNumPlaceholder = false;
                 let ancestorSp = el.parentNode;
                 while (ancestorSp) {
@@ -1748,9 +1748,53 @@ export async function processPptBatch(pptFile, options) {
                                 break;
                             }
                         }
+                        if (!isPageNumPlaceholder) {
+                            const fldEls = ancestorSp.getElementsByTagNameNS('*', 'fld');
+                            for (let fi = 0; fi < fldEls.length; fi++) {
+                                const fType = (fldEls[fi].getAttribute('type') || '').toLowerCase();
+                                if (fType.includes('slidenum')) {
+                                    isPageNumPlaceholder = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!isPageNumPlaceholder) {
+                            const spTEls = ancestorSp.getElementsByTagNameNS('*', 't');
+                            let fullSpText = '';
+                            for (let ti = 0; ti < spTEls.length; ti++) {
+                                fullSpText += (spTEls[ti].textContent || '');
+                            }
+                            const trimmedSpText = fullSpText.trim();
+                            if (
+                                /^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩIVX]+\s*[-–·•]\s*\d*$/.test(trimmedSpText) ||
+                                /^\d+\s*[-–]\s*\d+$/.test(trimmedSpText) ||
+                                /^목\s*차\s*[-–]\s*[\dⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩA-Za-z-]+$/.test(trimmedSpText)
+                            ) {
+                                isPageNumPlaceholder = true;
+                            }
+                        }
                         break;
                     }
                     ancestorSp = ancestorSp.parentNode;
+                }
+
+                // 현재 <a:t>가 속한 문단(<a:p>)의 첫 번째 텍스트 런인지 여부 확인
+                let isFirstTextInPara = true;
+                let ancestorP = el.parentNode;
+                while (ancestorP) {
+                    const pTag = ancestorP.localName || (ancestorP.tagName ? ancestorP.tagName.split(':').pop() : '');
+                    if (pTag === 'p') {
+                        const pTEls = ancestorP.getElementsByTagNameNS('*', 't');
+                        for (let pti = 0; pti < pTEls.length; pti++) {
+                            if (pTEls[pti] === el) break;
+                            if ((pTEls[pti].textContent || '').trim().length > 0) {
+                                isFirstTextInPara = false;
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                    ancestorP = ancestorP.parentNode;
                 }
                 
                 // [신규] 특수문자 일괄 정제
@@ -1764,7 +1808,7 @@ export async function processPptBatch(pptFile, options) {
                         text = text.split('\xa0').join(' ');
                         text = text.split('\u00a0').join(' ');
                     }
-                    // 슬라이드 번호/날짜/바닥글 플레이스홀더에는 글머리표 치환 미적용 (형식 보존)
+                    // 슬라이드 번호/날짜/바닥글 플레이스홀더 및 '장 - 번호' 상자에는 글머리표 치환 미적용 (형식 보존)
                     if (unifyBullets && !isPageNumPlaceholder) {
                         const bulletCount = text.split('·').length - 1;
                         if (bulletCount > 0) {
@@ -1772,13 +1816,19 @@ export async function processPptBatch(pptFile, options) {
                         }
                         text = text.split('·').join('•');
                         
-                        const hyphenMatches1 = text.match(/^-(\s+)?/) ? 1 : 0;
-                        const hyphenMatches2 = (text.match(/\s+-(\s+)?/g) || []).length;
-                        if (hyphenMatches1 > 0 || hyphenMatches2 > 0) {
-                            totalSpecialCharsCleaned += (hyphenMatches1 + hyphenMatches2);
+                        if (isFirstTextInPara) {
+                            const hyphenMatches1 = text.match(/^-(\s+)?/) ? 1 : 0;
+                            if (hyphenMatches1 > 0) {
+                                totalSpecialCharsCleaned += hyphenMatches1;
+                            }
+                            text = text.replace(/^-(\s+)?/, '• ');
                         }
-                        text = text.replace(/^-(\s+)?/, '• ');
-                        text = text.replace(/\s+-(\s+)?/g, ' • ');
+                        // 뒤에 숫자가 바로 오는 연결 부호(' - 196' 등)는 글머리표로 오인 치환하지 않음
+                        const hyphenMatches2 = (text.match(/\s+-(?!\s*\d)(\s+)?/g) || []).length;
+                        if (hyphenMatches2 > 0) {
+                            totalSpecialCharsCleaned += hyphenMatches2;
+                        }
+                        text = text.replace(/\s+-(?!\s*\d)(\s+)?/g, ' • ');
                     }
                 }
                 
