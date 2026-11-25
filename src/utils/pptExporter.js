@@ -1733,6 +1733,25 @@ export async function processPptBatch(pptFile, options) {
             if (localName === 't' && (replaceRules.length > 0 || applySpecialCharClean)) {
                 let text = el.textContent;
                 let originalText = text;
+
+                // 슬라이드 번호·날짜·바닥글 플레이스홀더 여부 확인 (형식 보존용)
+                let isPageNumPlaceholder = false;
+                let ancestorSp = el.parentNode;
+                while (ancestorSp) {
+                    const aTag = ancestorSp.localName || (ancestorSp.tagName ? ancestorSp.tagName.split(':').pop() : '');
+                    if (aTag === 'sp') {
+                        const phEls2 = ancestorSp.getElementsByTagNameNS('*', 'ph');
+                        for (let pi = 0; pi < phEls2.length; pi++) {
+                            const phType2 = phEls2[pi].getAttribute('type');
+                            if (phType2 === 'sldNum' || phType2 === 'dt' || phType2 === 'ftr') {
+                                isPageNumPlaceholder = true;
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                    ancestorSp = ancestorSp.parentNode;
+                }
                 
                 // [신규] 특수문자 일괄 정제
                 if (applySpecialCharClean) {
@@ -1745,7 +1764,8 @@ export async function processPptBatch(pptFile, options) {
                         text = text.split('\xa0').join(' ');
                         text = text.split('\u00a0').join(' ');
                     }
-                    if (unifyBullets) {
+                    // 슬라이드 번호/날짜/바닥글 플레이스홀더에는 글머리표 치환 미적용 (형식 보존)
+                    if (unifyBullets && !isPageNumPlaceholder) {
                         const bulletCount = text.split('·').length - 1;
                         if (bulletCount > 0) {
                             totalSpecialCharsCleaned += bulletCount;

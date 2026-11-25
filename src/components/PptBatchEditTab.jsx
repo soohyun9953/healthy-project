@@ -2021,6 +2021,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                     <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>줄간격 선택:</span>
                                     {[
                                         { val: '1.0', label: '1.0줄 (기본값)' },
+                                        { val: '1.1', label: '1.1줄' },
                                         { val: '1.2', label: '1.2줄' },
                                         { val: '1.5', label: '1.5줄' }
                                     ].map((item) => (
