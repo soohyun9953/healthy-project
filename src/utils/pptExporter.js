@@ -2727,33 +2727,55 @@ export async function processPptBatch(pptFile, options) {
                         const type = ph.getAttribute('type') || 'body';
                         const idx = ph.getAttribute('idx') || '0';
                         const key = `${type}_${idx}`;
-                        const layoutPh = phDict[key] || phDict[`${type}_0`] || (type === 'title' ? Object.values(phDict).find(p => p.type === 'title') : null);
+                        // 정확한 type+idx 매칭 우선, title에 한해서만 type 단일 폴백 허용 (엉뚱한 body_0 좌표 덮어쓰기 방지)
+                        const layoutPh = phDict[key] || (type === 'title' ? Object.values(phDict).find(p => p.type === 'title') : null);
 
                         if (layoutPh) {
-                            // 1) 위치 및 크기 (<a:xfrm>) 복원
+                            // 1) 위치 및 크기 (<a:xfrm>) 복원 (유효한 off/ext가 있고 슬라이드 상단 밖으로 밀리지 않을 때만 적용)
                             if (layoutPh.xfrm) {
-                                let spPr = sp.getElementsByTagNameNS('*', 'spPr')[0];
-                                if (!spPr) {
-                                    spPr = xmlDoc.createElementNS('http://schemas.openxmlformats.org/presentationml/2006/main', 'p:spPr');
-                                    sp.appendChild(spPr);
+                                const lOff = layoutPh.xfrm.getElementsByTagNameNS('*', 'off')[0];
+                                const lExt = layoutPh.xfrm.getElementsByTagNameNS('*', 'ext')[0];
+                                const lY = lOff ? parseInt(lOff.getAttribute('y') || '-1', 10) : -1;
+                                const lCx = lExt ? parseInt(lExt.getAttribute('cx') || '0', 10) : 0;
+                                const lCy = lExt ? parseInt(lExt.getAttribute('cy') || '0', 10) : 0;
+
+                                if (lOff && lExt && lCx > 0 && lCy > 0 && lY >= 0) {
+                                    let spPr = sp.getElementsByTagNameNS('*', 'spPr')[0];
+                                    if (!spPr) {
+                                        spPr = xmlDoc.createElementNS('http://schemas.openxmlformats.org/presentationml/2006/main', 'p:spPr');
+                                        sp.appendChild(spPr);
+                                    }
+                                    const sXfrm = spPr.getElementsByTagNameNS('*', 'xfrm')[0];
+                                    const sOff = sXfrm ? sXfrm.getElementsByTagNameNS('*', 'off')[0] : null;
+                                    const sY = sOff ? parseInt(sOff.getAttribute('y') || '-1', 10) : -1;
+
+                                    // 상단 헤더가 레이아웃 좌표로 인해 슬라이드 최상단 경계(0.2cm 이하)나 기존보다 크게 위로 밀려 잘리는 현상 방지
+                                    const wouldClipTop = (sY >= 80000 && lY < 80000) || (sY >= 0 && sY < 1600000 && lY < sY - 120000);
+                                    if (!wouldClipTop) {
+                                        if (sXfrm) {
+                                            spPr.replaceChild(layoutPh.xfrm.cloneNode(true), sXfrm);
+                                        } else {
+                                            spPr.insertBefore(layoutPh.xfrm.cloneNode(true), spPr.firstChild);
+                                        }
+                                        fileChanged = true;
+                                        hasChanges = true;
+                                    }
                                 }
-                                const sXfrm = spPr.getElementsByTagNameNS('*', 'xfrm')[0];
-                                if (sXfrm) {
-                                    spPr.replaceChild(layoutPh.xfrm.cloneNode(true), sXfrm);
-                                } else {
-                                    spPr.insertBefore(layoutPh.xfrm.cloneNode(true), spPr.firstChild);
-                                }
-                                fileChanged = true;
-                                hasChanges = true;
                             }
 
                             // 2) 바디 서식 (<a:bodyPr>) 복원 및 상단 목차 텍스트 맞춤 중간(anchor="ctr") 적용
                             const txBody = sp.getElementsByTagNameNS('*', 'txBody')[0];
                             if (txBody) {
+                                const spPrForY = sp.getElementsByTagNameNS('*', 'spPr')[0];
+                                const curXfrm = spPrForY ? spPrForY.getElementsByTagNameNS('*', 'xfrm')[0] : null;
+                                const curOff = curXfrm ? curXfrm.getElementsByTagNameNS('*', 'off')[0] : null;
+                                const curY = curOff ? parseInt(curOff.getAttribute('y') || '9999999', 10) : 9999999;
+                                const isHeaderPh = curY < 1600000 || ['title', 'ctrTitle', 'subTitle', 'hdr'].includes(type) || ['10', '11', '12', '13'].includes(idx);
+
                                 let sBodyPr = txBody.getElementsByTagNameNS('*', 'bodyPr')[0];
                                 if (layoutPh.bodyPr) {
                                     const clonedBodyPr = layoutPh.bodyPr.cloneNode(true);
-                                    if (topHeaderMiddleAlign) {
+                                    if (topHeaderMiddleAlign && isHeaderPh) {
                                         clonedBodyPr.setAttribute('anchor', 'ctr');
                                     }
                                     if (sBodyPr) {
@@ -2763,7 +2785,7 @@ export async function processPptBatch(pptFile, options) {
                                     }
                                     fileChanged = true;
                                     hasChanges = true;
-                                } else if (sBodyPr && topHeaderMiddleAlign) {
+                                } else if (sBodyPr && topHeaderMiddleAlign && isHeaderPh) {
                                     if (sBodyPr.getAttribute('anchor') !== 'ctr') {
                                         sBodyPr.setAttribute('anchor', 'ctr');
                                         fileChanged = true;
