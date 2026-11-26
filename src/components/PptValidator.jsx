@@ -1897,39 +1897,46 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
             const num_regex = /^\s*([0-9]+(\.[0-9]+)*)[\s\.]/;
             const year_regex = /^\s*(19|20)\d{2}\b/;
 
-            // 상단 영역에 위치한 도형들(y<1600000 또는 제목 도형) 수집
+            // 상단 영역에 위치한 도형들(y<1300000 또는 제목 도형) 수집
             const topHeaderShapes = shapes.filter(s => {
               if (!s.text || !s.text.trim()) return false;
+              const trimmed = s.text.trim();
               // 규칙 6: 3레벨 이후("<"로 시작)는 3레벨 넘버링 검증 대상에서 제외
-              if (s.text.trim().startsWith('<')) return false;
+              if (trimmed.startsWith('<')) return false;
               // 연도 표기(예: 2026 가트너...) 제외
-              if (year_regex.test(s.text.trim())) return false;
+              if (year_regex.test(trimmed)) return false;
               // 본문 긴 요약문(거버닝 메시지) 제외
-              if (s.text.trim().length > 60) return false;
+              if (trimmed.length > 60) return false;
+              // 파이프('|')로 구분된 본문 항목/과제 배너(예: "8. ... | 과제 9. ...") 제외
+              if (trimmed.includes('|')) return false;
 
               if (s.isTitleShape) return true;
-              if (s.y !== null && s.y < 1600000) return true;
+              if (s.y !== null && s.y < 1300000) return true;
               return false;
             });
 
+            let level1FromRight = false;
             topHeaderShapes.forEach(s => {
               const txt = s.text.trim();
               const hasRoman = roman_regex.test(txt);
               const numM = txt.match(num_regex);
+              const isRightArea = s.x !== null && s.x >= 5500000;
 
-              // 1레벨 판별: 우측 영역(x>=5500000) 또는 로마자 장 제목 또는 'N. 장제목' 형식
-              if (hasRoman) {
+              // 1레벨 판별: 우측 영역(x>=5500000)의 장 번호 또는 로마자 장 제목 (좌측/중앙 본문 'N. 항목'이 우측 대주제를 덮어쓰지 않도록 보호)
+              if (hasRoman && (isRightArea || !level1FromRight)) {
                 level1Text = txt;
+                if (isRightArea) level1FromRight = true;
               } else if (numM) {
                 const parts = numM[1].split('.');
-                if (parts.length === 1 && (s.x === null || s.x >= 5500000 || /^\s*[0-9]\.\s+[^\d\s]/.test(txt))) {
-                  // 1레벨 (예: 2. 내·외부 환경분석)
+                if (parts.length === 1 && isRightArea) {
+                  // 1레벨 (예: 우측 상단 7. 기대효과 분석)
                   level1Text = txt;
+                  level1FromRight = true;
                 } else if (parts.length === 2) {
-                  // 2레벨 (예: 2.2. 정책환경 분석)
+                  // 2레벨 (예: 7.2 정량적 기대효과)
                   level2Text = txt;
                 } else if (parts.length >= 3) {
-                  // 3레벨 (예: 2.2.4 AI 기본의료 전략)
+                  // 3레벨 (예: 7.2.3 항목별 정량적 기대효과 산출)
                   level3Text = txt;
                 }
               } else if (s.isTitleShape || s.shapeName.includes('제목') || s.shapeName.toLowerCase().includes('title')) {
