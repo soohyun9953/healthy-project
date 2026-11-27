@@ -278,6 +278,39 @@ const find_pii_matches = (text) => {
   return found;
 };
 
+// ── 폰트 통일성: 도형에서 실제 글자에 적용되는 폰트 수집 ─────────────────
+// run(a:r, a:fld)의 a:rPr 에 지정된 ea(한글) 폰트, 없으면 latin 폰트를 쓰고, run 에 없으면
+// 도형 lstStyle 의 해당 문단 수준(lvlNpPr) 기본 폰트를 쓴다. 테마 폰트(+mn-ea 등)는 제외.
+const collect_applied_fonts = (shapeNode) => {
+  const fonts = new Set();
+  const kids = (el) => Array.from(el?.childNodes || []).filter(n => n.nodeType === 1);
+  const child = (el, name) => kids(el).find(n => n.nodeName === name || n.localName === name.split(':').pop()) || null;
+  const face = (rPr, tag) => {
+    const el = rPr ? child(rPr, tag) : null;
+    const tf = el ? el.getAttribute('typeface') : null;
+    return tf && !tf.startsWith('+') ? tf : null;
+  };
+  const txBodies = Array.from(shapeNode.getElementsByTagName('p:txBody')).concat(Array.from(shapeNode.getElementsByTagName('a:txBody')));
+  txBodies.forEach(txBody => {
+    const lstStyle = child(txBody, 'a:lstStyle');
+    kids(txBody).filter(n => n.localName === 'p').forEach(p => {
+      const pPr = child(p, 'a:pPr');
+      const lvl = parseInt(pPr?.getAttribute('lvl') || '0', 10) || 0;
+      const lvlDef = lstStyle ? child(child(lstStyle, `a:lvl${lvl + 1}pPr`), 'a:defRPr') : null;
+      kids(p).filter(n => n.localName === 'r' || n.localName === 'fld').forEach(run => {
+        const text = Array.from(run.getElementsByTagName('a:t')).map(t => t.textContent || '').join('');
+        if (!text.trim()) return;
+        const rPr = child(run, 'a:rPr');
+        const ea = face(rPr, 'a:ea') || face(lvlDef, 'a:ea');
+        const latin = face(rPr, 'a:latin') || face(lvlDef, 'a:latin');
+        const tf = ea || latin;
+        if (tf) fonts.add(tf);
+      });
+    });
+  });
+  return fonts;
+};
+
 // ── 괄호 짝 불일치 검출 헬퍼 ─────────────────────────
 // 한 문단/문장 내에서 "(" 와 ")" 개수가 다른 경우, 스택 기반으로 정확히
 // 어느 괄호가 짝을 이루지 못했는지 위치와 주변 문맥을 찾아 반환한다.
@@ -1511,19 +1544,9 @@ export default function PptValidator({ apiKey, llmProvider = 'gemini', omniRoute
 
                 // 3-0-2. 폰트 통일성 검사용 사용 폰트 수집 (문서 전체 분석 후 소수 폰트 판별)
                 if (checkFontConsistency) {
-                  const fontTypefaces = new Set();
-                  const eaNodes = node.getElementsByTagName('a:ea');
-                  for (let fi = 0; fi < eaNodes.length; fi++) {
-                    const tf = eaNodes[fi].getAttribute('typeface');
-                    if (tf && !tf.startsWith('+')) fontTypefaces.add(tf);
-                  }
-                  if (fontTypefaces.size === 0) {
-                    const latinNodes = node.getElementsByTagName('a:latin');
-                    for (let fi = 0; fi < latinNodes.length; fi++) {
-                      const tf = latinNodes[fi].getAttribute('typeface');
-                      if (tf && !tf.startsWith('+')) fontTypefaces.add(tf);
-                    }
-                  }
+                  // 실제 글자가 있는 run에 적용되는 폰트만 수집 (run 서식 → 문단 수준별 목록 기본값 순)
+                  // 쓰이지 않는 목록 수준 기본값(lstStyle lvl2~9)이나 문단 끝 서식(endParaRPr)의 폰트는 제외
+                  const fontTypefaces = collect_applied_fonts(node);
                   fontTypefaces.forEach(typeface => {
                     fileFontUsages.push({ slideNum, shapeName: shapeName || '(이름 없음)', typeface, text: textContent.slice(0, 40) });
                   });
