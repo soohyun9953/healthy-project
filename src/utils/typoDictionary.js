@@ -27,7 +27,6 @@ export const TYPO_DICTIONARY = {
   
   // 외래어 표기법 오류
   '아키텍쳐': { correction: '아키텍처', desc: '외래어 표기법에 의하면 아키텍처(Architecture)가 표준입니다.', type: '외래어 표기' },
-  '컨텐츠': { correction: '콘텐츠', desc: '콘텐츠(Contents)가 표준 외래어 표기법입니다.', type: '외래어 표기' },
   '컴퍼넌트': { correction: '컴포넌트', desc: '컴포넌트(Component)가 올바른 외래어 표기입니다.', type: '외래어 표기' },
   '데이타베이스': { correction: '데이터베이스', desc: '데이터베이스(Database)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
   '라이센스': { correction: '라이선스', desc: '라이선스(License)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
@@ -48,7 +47,6 @@ export const TYPO_DICTIONARY = {
   '컨퍼런스': { correction: '콘퍼런스', desc: '콘퍼런스(Conference)가 올바른 표준 외래어 표기입니다.', type: '외래어 표기' },
   
   // 비즈니스/용어 혼동 및 순화어
-  '임계치': { correction: '임계값', desc: '순화어 권고 사항에 의하면 임계값을 사용하는 것을 권장합니다.', type: '순화어/비즈니스' },
   '가이도라인': { correction: '가이드라인', desc: '가이드라인(Guideline)의 오타 표기입니다.', type: '순화어/비즈니스' },
   '프로잭트': { correction: '프로젝트', desc: '프로젝트(Project)의 오타 표기입니다.', type: '순화어/비즈니스' },
   '프로젝터': { correction: '프로젝트', desc: '문맥상 프로젝트(Project)의 오타 표기일 수 있습니다.', type: '순화어/비즈니스' },
