@@ -50,6 +50,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
     const [bulletLineSpacingVal, setBulletLineSpacingVal] = useState('1.2'); // 줄간격 배율 (기본 1.0, 1.2, 1.5)
     const [add_title_page_numbers, set_add_title_page_numbers] = useState(false); // 옵션 G: 동일 제목 일련번호 자동 추가
     const [add_space_before_parenthesis, set_add_space_before_parenthesis] = useState(true); // 옵션 G 하위 옵션: 제목 뒤 괄호 앞 공백 추가
+    const [fix_title_numbering, set_fix_title_numbering] = useState(true); // 옵션 G 하위 옵션 2: 상단 넘버링 분석 및 오류 자동 수정
     const [textColorRules, setTextColorRules] = useState(() => {
         try {
             return localStorage.getItem('ppt_textcolor_rules') || '';
@@ -300,6 +301,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             applyDesignChecked,
             applySpecialCharClean,
             add_space_before_parenthesis,
+            fix_title_numbering,
             textColorRules,
             preventWordWrap,
             clearAltText,
@@ -356,10 +358,18 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                 changes.push(`첫 행 헤더 스타일 적용 0개(대상 표 없음)`);
             }
         }
-        // 7. 제목 괄호 공백 추가
+        // 7. 제목 괄호 공백 추가 및 넘버링 오류 수정 / 일련번호 추가
         if (add_space_before_parenthesis) {
             const count = modifiedBlob.totalTitleSpacesAdded || 0;
             changes.push(`제목 괄호 공백 추가 ${count}개`);
+        }
+        if (add_title_page_numbers && fix_title_numbering) {
+            const numFixed = modifiedBlob.totalNumberingFixed || 0;
+            changes.push(`상단 넘버링 오류 자동 교정 ${numFixed}건`);
+        }
+        if (add_title_page_numbers) {
+            const pgUpdated = modifiedBlob.totalTitlePageNumsUpdated || 0;
+            changes.push(`동일 제목 일련번호 반영 ${pgUpdated}장`);
         }
         // 8. 글자 색상 변경
         if (textColorRules && textColorRules.trim()) {
@@ -426,6 +436,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                                   (modifiedBlob.totalReplacedTextDesigns || 0) > 0 ||
                                   (modifiedBlob.totalHeaderRowsApplied || 0) > 0 ||
                                   (add_space_before_parenthesis && (modifiedBlob.totalTitleSpacesAdded || 0) > 0) ||
+                                  (add_title_page_numbers && ((modifiedBlob.totalNumberingFixed || 0) > 0 || (modifiedBlob.totalTitlePageNumsUpdated || 0) > 0)) ||
                                   ((textColorRules && textColorRules.trim()) && (modifiedBlob.totalTextColorReplaced || 0) > 0) ||
                                   (preventWordWrap && (modifiedBlob.totalWordWrapPrevented || 0) > 0) ||
                                   clearAltText ||
@@ -551,6 +562,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             clean_vertical_tab: clean_vertical_tab,
             add_title_page_numbers: add_title_page_numbers,
             add_space_before_parenthesis: add_space_before_parenthesis,
+            fix_title_numbering: add_title_page_numbers && fix_title_numbering,
             textColorRulesStr: textColorRules,
             preventWordWrap: preventWordWrap,
             clearAltText: clearAltText,
@@ -580,6 +592,7 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
             applyDesignChecked,
             applySpecialCharClean,
             add_space_before_parenthesis,
+            fix_title_numbering,
             textColorRules,
             preventWordWrap,
             clearAltText,
@@ -1721,6 +1734,34 @@ export default function PptBatchEditTab({ setErrorMsg, setSuccessMsg }) {
                         </label>
                         <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
                             (예: "2.1 예시 제목(1/2)" ➜ <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold' }}>"2.1 예시 제목 (1/2)"</span>로 자동 스페이스 보정)
+                        </div>
+
+                        <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            color: 'var(--text-primary)',
+                            fontWeight: 600,
+                            marginTop: '4px'
+                        }}>
+                            <input
+                                id="checkbox-fix-title-numbering"
+                                type="checkbox"
+                                checked={fix_title_numbering}
+                                onChange={(e) => set_fix_title_numbering(e.target.checked)}
+                                style={{
+                                    width: '16px',
+                                    height: '16px',
+                                    cursor: 'pointer',
+                                    accentColor: '#a855f7'
+                                }}
+                            />
+                            상단 넘버링 분석 및 오류 자동 수정 (장·절·항 순차성 단절 및 기존 (1/N) 오표기 교정)
+                        </label>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', paddingLeft: '24px' }}>
+                            1레벨(대주제) ➜ 2레벨(중분류) ➜ 3레벨(소분류) 계층 번호 불일치/순차성 단절 및 어긋난 <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold' }}>(1/N)</span> 번호를 자동으로 교정합니다.
                         </div>
                     </div>
                 </div>

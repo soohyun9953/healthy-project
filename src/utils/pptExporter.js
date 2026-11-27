@@ -1120,6 +1120,7 @@ export async function processPptBatch(pptFile, options) {
         clean_vertical_tab = false,
         add_title_page_numbers = false,
         add_space_before_parenthesis = false,
+        fix_title_numbering = false,
         textColorRulesStr = '',
         preventWordWrap = false,
         clearAltText = false,
@@ -1136,7 +1137,7 @@ export async function processPptBatch(pptFile, options) {
         bulletLineSpacingVal = '1.0'
     } = options;
 
-    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && !applyBulletSpacing && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
+    if (replaceRules.length === 0 && fontRules.length === 0 && !applyDesign && fontSizeRules.length === 0 && !roundFontSizes && !optimizeTableFont && !applyTableDesign && !applySpecialCharClean && !add_title_page_numbers && !add_space_before_parenthesis && !fix_title_numbering && (!textColorRulesStr || !textColorRulesStr.trim()) && !preventWordWrap && !clearAltText && !fixLangErrFlags && !clearSpeakerNotes && !applyFormatReset && !applyBulletSpacing && (customFirstSlideNum === null || customFirstSlideNum === undefined)) {
         throw new Error('적용할 변경 사항이 없습니다.');
     }
 
@@ -1303,6 +1304,8 @@ export async function processPptBatch(pptFile, options) {
     let totalFormatResetCount = 0;
     let totalBulletSpacingNormalized = 0;
     let totalEmptyParasRemoved = 0;
+    let totalNumberingFixed = 0;
+    let totalTitlePageNumsUpdated = 0;
 
     // 💡 [1단계: 모든 슬라이드 제목 괄호 앞 공백 전수 보정]
     // add_title_page_numbers 실행 여부나 동일 제목 반복 여부와 무관하게,
@@ -1375,19 +1378,218 @@ export async function processPptBatch(pptFile, options) {
         });
     }
 
-    // 💡 [2단계: 동일 제목 슬라이드 일련번호 자동 추가] (선택 시에만 실행)
+    // 💡 [1.5단계: 상단 넘버링(1·2·3레벨) 분석 및 넘버링 오류 자동 수정]
+    if (fix_title_numbering) {
+        const slide_files = allFiles
+            .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml') && !k.includes('_rels'))
+            .sort((a, b) => extractSlideNum(a) - extractSlideNum(b));
+
+        const romanMap = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10 };
+        const unicodeRomanMap = { 'Ⅰ': 1, 'Ⅱ': 2, 'Ⅲ': 3, 'Ⅳ': 4, 'Ⅴ': 5, 'Ⅵ': 6, 'Ⅶ': 7, 'Ⅷ': 8, 'Ⅸ': 9, 'Ⅹ': 10 };
+        const romanRegex = /^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X|Ⅰ|Ⅱ|Ⅲ|Ⅳ|Ⅴ|Ⅵ|Ⅶ|Ⅷ|Ⅸ|Ⅹ)[\.\s]/i;
+        const numRegex = /^\s*(\d+(?:\.\d+)*)([\.\s]*)(.*)$/;
+        const yearRegex = /^\s*(19|20)\d{2}\b/;
+        const stripPageSuffix = (t) => String(t || '').replace(/\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/, '').trim();
+
+        const replaceFirstRunText = (nodes, newText) => {
+            if (!nodes || nodes.length === 0) return;
+            nodes[0].textContent = newText;
+            for (let ni = 1; ni < nodes.length; ni++) {
+                nodes[ni].textContent = '';
+            }
+        };
+
+        let lastL1Num = null;
+        let lastL2Major = null;
+        let lastL2Sub = null;
+        let lastL2Title = '';
+        let lastL3Major = null;
+        let lastL3Minor = null;
+        let lastL3Sub = null;
+        let lastL3Title = '';
+
+        slide_files.forEach(slide_path => {
+            const slide_xml_str = zip.file(slide_path).asText();
+            const xml_doc = parser.parseFromString(slide_xml_str, 'application/xml');
+            let slideModified = false;
+
+            const shapes = Array.from(xml_doc.getElementsByTagNameNS('*', 'sp'));
+            const headerCandidates = [];
+
+            shapes.forEach(sp => {
+                const txBody = sp.getElementsByTagNameNS('*', 'txBody')[0];
+                if (!txBody) return;
+                const tNodes = Array.from(txBody.getElementsByTagNameNS('*', 't'));
+                if (tNodes.length === 0) return;
+                const txt = tNodes.map(n => n.textContent || '').join('').trim();
+                if (!txt || txt.startsWith('<') || yearRegex.test(txt) || txt.length > 60 || txt.includes('|')) return;
+
+                const cNvPr = sp.getElementsByTagNameNS('*', 'cNvPr')[0];
+                const ph = sp.getElementsByTagNameNS('*', 'ph')[0];
+                const spName = cNvPr ? (cNvPr.getAttribute('name') || '').toLowerCase() : '';
+                const phType = ph ? ph.getAttribute('type') : '';
+                const isTitleShape = ['title', 'ctrTitle', 'subTitle'].includes(phType) ||
+                    spName.includes('title') || spName.includes('header') || spName.includes('제목') || spName.includes('헤더');
+
+                const off = sp.getElementsByTagNameNS('*', 'off')[0];
+                const x = off && off.getAttribute('x') ? parseInt(off.getAttribute('x'), 10) : null;
+                const y = off && off.getAttribute('y') ? parseInt(off.getAttribute('y'), 10) : null;
+
+                if (isTitleShape || (y !== null && y < 1300000)) {
+                    headerCandidates.push({ txt, tNodes, x, y, isTitleShape });
+                }
+            });
+
+            let level1Num = null;
+            let level1FromRight = false;
+            let level2Info = null;
+            let level3Info = null;
+
+            headerCandidates.forEach(cand => {
+                const { txt, tNodes, x, isTitleShape } = cand;
+                const isRight = x !== null && x >= 5500000;
+                const rM = txt.match(romanRegex);
+                const nM = txt.match(numRegex);
+
+                if (rM && (isRight || !level1FromRight)) {
+                    const key = rM[1].toUpperCase();
+                    level1Num = romanMap[key] || unicodeRomanMap[rM[1]] || null;
+                    if (isRight) level1FromRight = true;
+                } else if (nM) {
+                    const parts = nM[1].split('.').map(n => parseInt(n, 10));
+                    if (parts.length === 1 && isRight) {
+                        level1Num = parts[0];
+                        level1FromRight = true;
+                    } else if (parts.length === 2) {
+                        level2Info = { txt, tNodes, parts, sep: nM[2] || ' ', rest: nM[3] || '' };
+                    } else if (parts.length >= 3) {
+                        level3Info = { txt, tNodes, parts, sep: nM[2] || ' ', rest: nM[3] || '' };
+                    }
+                } else if (isTitleShape && !level3Info) {
+                    // 번호 없는 제목은 넘버링 수정 대상은 아니지만 추적용으로 유지
+                }
+            });
+
+            if (level1Num !== null) {
+                lastL1Num = level1Num;
+            }
+            const activeL1 = level1Num ?? lastL1Num;
+
+            // 2레벨 (A.B) 분석 및 보정
+            let activeL2Major = null;
+            let activeL2Sub = null;
+            if (level2Info) {
+                const { txt, tNodes, parts, sep, rest } = level2Info;
+                const baseL2Title = stripPageSuffix(rest);
+                const origMajor = parts[0];
+                const origSub = parts[1];
+
+                let expMajor = activeL1 !== null ? activeL1 : origMajor;
+                let expSub = origSub;
+
+                if (lastL2Major !== null && lastL2Sub !== null) {
+                    if (baseL2Title && baseL2Title === lastL2Title && expMajor === lastL2Major) {
+                        // 동일 중분류 제목 연속 시 직전 교정된 번호 유지
+                        expSub = lastL2Sub;
+                    } else if (expMajor === lastL2Major) {
+                        if (origSub !== lastL2Sub && origSub !== lastL2Sub + 1) {
+                            expSub = lastL2Sub + 1;
+                        } else if (origSub === lastL2Sub && baseL2Title && baseL2Title !== lastL2Title) {
+                            expSub = lastL2Sub + 1;
+                        }
+                    } else {
+                        // 새로운 장으로 넘어감
+                        if (origSub !== 1) expSub = 1;
+                    }
+                }
+
+                if (origMajor !== expMajor || origSub !== expSub) {
+                    const normalizedSep = sep || ' ';
+                    const fixedTxt = `${expMajor}.${expSub}${normalizedSep}${rest}`.trim();
+                    if (fixedTxt !== txt) {
+                        replaceFirstRunText(tNodes, fixedTxt);
+                        totalNumberingFixed++;
+                        slideModified = true;
+                    }
+                }
+
+                activeL2Major = expMajor;
+                activeL2Sub = expSub;
+                lastL2Major = expMajor;
+                lastL2Sub = expSub;
+                lastL2Title = baseL2Title;
+            }
+
+            // 3레벨 (A.B.C) 분석 및 보정
+            if (level3Info) {
+                const { txt, tNodes, parts, sep, rest } = level3Info;
+                const suffixMatch = txt.match(/(\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*)$/);
+                const existingSuffix = suffixMatch ? suffixMatch[1] : '';
+                const baseL3Title = stripPageSuffix(rest);
+                const origMajor = parts[0];
+                const origMinor = parts[1];
+                const origSub = parts[2];
+
+                let expMajor = activeL2Major !== null ? activeL2Major : (activeL1 !== null ? activeL1 : origMajor);
+                let expMinor = activeL2Sub !== null ? activeL2Sub : origMinor;
+                let expSub = origSub;
+
+                if (lastL3Major !== null && lastL3Minor !== null && lastL3Sub !== null) {
+                    if (baseL3Title && baseL3Title === lastL3Title && expMajor === lastL3Major && expMinor === lastL3Minor) {
+                        // 동일 소분류 제목 연속 시 직전 교정된 번호 유지
+                        expSub = lastL3Sub;
+                    } else if (expMajor === lastL3Major && expMinor === lastL3Minor) {
+                        if (origSub !== lastL3Sub && origSub !== lastL3Sub + 1) {
+                            expSub = lastL3Sub + 1;
+                        } else if (origSub === lastL3Sub && baseL3Title && baseL3Title !== lastL3Title) {
+                            expSub = lastL3Sub + 1;
+                        }
+                    } else {
+                        // 새로운 2레벨로 넘어감
+                        if (origSub !== 1) expSub = 1;
+                    }
+                } else if (origSub !== 1 && activeL2Sub !== null) {
+                    // 첫 3레벨이 1이 아닌 번호로 시작한 경우
+                    expSub = 1;
+                }
+
+                if (origMajor !== expMajor || origMinor !== expMinor || origSub !== expSub) {
+                    const normalizedSep = sep || ' ';
+                    const fixedCore = `${expMajor}.${expMinor}.${expSub}${normalizedSep}${baseL3Title}`.trim();
+                    const fixedTxt = existingSuffix ? `${fixedCore}${existingSuffix}` : fixedCore;
+                    if (fixedTxt !== txt) {
+                        replaceFirstRunText(tNodes, fixedTxt);
+                        totalNumberingFixed++;
+                        slideModified = true;
+                    }
+                }
+
+                lastL3Major = expMajor;
+                lastL3Minor = expMinor;
+                lastL3Sub = expSub;
+                lastL3Title = baseL3Title;
+            }
+
+            if (slideModified) {
+                zip.file(slide_path, serializer.serializeToString(xml_doc));
+                hasChanges = true;
+            }
+        });
+    }
+
+    // 💡 [2단계: 동일 제목 슬라이드 일련번호 자동 추가 및 기존 (k/N) 오표기 재정렬] (선택 시에만 실행)
     if (add_title_page_numbers) {
         const slide_files = allFiles
             .filter(k => k.startsWith('ppt/slides/slide') && k.endsWith('.xml') && !k.includes('_rels'))
             .sort((a, b) => extractSlideNum(a) - extractSlideNum(b));
             
-        const slide_titles = []; // [{ slidePath, xmlDoc, titleText, titleNodes }]
+        const slide_titles = []; // [{ slidePath, xmlDoc, titleText, baseTitle, titleNodes }]
         
         slide_files.forEach(slide_path => {
             const slide_xml_str = zip.file(slide_path).asText();
             const xml_doc = parser.parseFromString(slide_xml_str, 'application/xml');
             
-            // 제목 Shape 추출 (1단계 공백 보정이 완료된 최신 텍스트 반영)
+            // 제목 Shape 추출 (1·1.5단계 보정이 완료된 최신 텍스트 반영)
             let title_text = "";
             let title_nodes = [];
             
@@ -1428,26 +1630,29 @@ export async function processPptBatch(pptFile, options) {
                 }
             }
             
+            // 기존에 붙어있던 (k/N) 일련번호 제거한 순수 기본 제목 추출
+            const baseTitle = title_text.replace(/\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/, '').trim();
             slide_titles.push({
                 slidePath: slide_path,
                 xmlDoc: xml_doc,
                 titleText: title_text,
+                baseTitle: baseTitle,
                 titleNodes: title_nodes
             });
         });
         
-        // 연속 반복 제목 구간(Run) 분석
+        // 연속 반복 기본 제목 구간(Run) 분석
         let current_title = "";
         let run_start_idx = -1;
         let run_count = 0;
         const title_runs = [];
         
         for (let i = 0; i < slide_titles.length; i++) {
-            const t = slide_titles[i].titleText;
+            const t = slide_titles[i].baseTitle;
             if (t !== "" && t === current_title) {
                 run_count++;
             } else {
-                if (run_count >= 2) {
+                if (run_count >= 1) {
                     title_runs.push({
                         start_idx: run_start_idx,
                         end_idx: i - 1,
@@ -1460,7 +1665,7 @@ export async function processPptBatch(pptFile, options) {
                 run_count = t !== "" ? 1 : 0;
             }
         }
-        if (run_count >= 2) {
+        if (run_count >= 1) {
             title_runs.push({
                 start_idx: run_start_idx,
                 end_idx: slide_titles.length - 1,
@@ -1469,7 +1674,7 @@ export async function processPptBatch(pptFile, options) {
             });
         }
         
-        // 분석 결과에 맞춰 일련번호 주입 및 저장
+        // 분석 결과에 맞춰 일련번호 주입(2장 이상) 또는 불필요한 (1/N) 정리(1장) 및 저장
         title_runs.forEach(run => {
             for (let idx = 0; idx < run.count; idx++) {
                 const slide_idx = run.start_idx + idx;
@@ -1477,20 +1682,20 @@ export async function processPptBatch(pptFile, options) {
                 const t_nodes = slide_info.titleNodes;
                 
                 if (t_nodes.length > 0) {
-                    const final_title = run.title_text;
+                    const expectedText = run.count >= 2
+                        ? `${run.title_text} (${idx + 1}/${run.count})`
+                        : run.title_text;
 
-                    // 첫 번째 t 노드에 전체 텍스트 + 일련번호 결합 주입
-                    t_nodes[0].textContent = `${final_title} (${idx + 1}/${run.count})`;
-                    
-                    // 나머지 t 노드들은 중복 표출 방지를 위해 깨끗이 비움
-                    for (let n_idx = 1; n_idx < t_nodes.length; n_idx++) {
-                        t_nodes[n_idx].textContent = "";
+                    if (expectedText !== slide_info.titleText) {
+                        t_nodes[0].textContent = expectedText;
+                        for (let n_idx = 1; n_idx < t_nodes.length; n_idx++) {
+                            t_nodes[n_idx].textContent = "";
+                        }
+                        totalTitlePageNumsUpdated++;
+                        const updated_xml = serializer.serializeToString(slide_info.xmlDoc);
+                        zip.file(slide_info.slidePath, updated_xml);
+                        hasChanges = true;
                     }
-                    
-                    // 변경된 슬라이드 XML을 zip 아카이브에 직렬화 갱신
-                    const updated_xml = serializer.serializeToString(slide_info.xmlDoc);
-                    zip.file(slide_info.slidePath, updated_xml);
-                    hasChanges = true;
                 }
             }
         });
@@ -2997,6 +3202,8 @@ export async function processPptBatch(pptFile, options) {
     blob.totalFormatResetCount = totalFormatResetCount;
     blob.totalBulletSpacingNormalized = totalBulletSpacingNormalized;
     blob.totalEmptyParasRemoved = totalEmptyParasRemoved;
+    blob.totalNumberingFixed = totalNumberingFixed;
+    blob.totalTitlePageNumsUpdated = totalTitlePageNumsUpdated;
     blob.parseErrorFiles = parseErrorFiles;
 
     return blob;
