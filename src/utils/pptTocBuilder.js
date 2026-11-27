@@ -134,7 +134,13 @@ export async function extractTocFromDeliverables(files, buildDeliverableTocIndex
             const lo = Math.max(prevEnd, lastToc);
             const range = nums.filter(n => n > lo && (nextPage == null || n < nextPage) && !isTocSlide(n));
             const want = normTitle(t.title);
+            // 앞 절 쪽수에 묻혀 있을 수도 있으므로(제목 줄이 인식되지 않은 경우) 앞 절 시작부터도 찾아봄
+            const prevStart = prevPages.length ? Math.min(...prevPages) : -Infinity;
+            const wide = nums.filter(n => n > Math.max(prevStart, lastToc) && (nextPage == null || n < nextPage) && !isTocSlide(n));
+            const headRe = new RegExp(`^\\s*0?${t.num}\\s*[.)]\\s*[^\\d\\s.]`);
             const hit = range.find(n => (pageMap[n] || []).some(q => normTitle(q).includes(want)))
+                ?? wide.find(n => (pageMap[n] || []).some(q => normTitle(q).includes(want)))
+                ?? wide.find(n => (pageMap[n] || []).some(q => headRe.test(String(q))))
                 ?? (nextPage != null ? range[0] : undefined);
             sections.push({ num: t.num, title: t.title, startLabel: hit != null ? (labels[hit] || String(hit)) : '', pageRange: '', include: true, subsections: [] });
         });
