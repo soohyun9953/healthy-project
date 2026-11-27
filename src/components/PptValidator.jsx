@@ -279,8 +279,8 @@ const find_pii_matches = (text) => {
 };
 
 // ── 폰트 통일성: 도형에서 실제 글자에 적용되는 폰트 수집 ─────────────────
-// run(a:r, a:fld)의 a:rPr 에 지정된 ea(한글) 폰트, 없으면 latin 폰트를 쓰고, run 에 없으면
-// 도형 lstStyle 의 해당 문단 수준(lvlNpPr) 기본 폰트를 쓴다. 테마 폰트(+mn-ea 등)는 제외.
+// run(a:r, a:fld)의 글자에 한글 등 동아시아 문자가 있으면 ea 폰트, 숫자·영문만 있으면 latin 폰트를 쓴다
+// (PowerPoint 표시 방식과 같음). run 에 없으면 도형 lstStyle 의 해당 문단 수준(lvlNpPr) 기본 폰트. 테마 폰트(+mn-ea 등) 제외.
 const collect_applied_fonts = (shapeNode) => {
   const fonts = new Set();
   const kids = (el) => Array.from(el?.childNodes || []).filter(n => n.nodeType === 1);
@@ -303,7 +303,9 @@ const collect_applied_fonts = (shapeNode) => {
         const rPr = child(run, 'a:rPr');
         const ea = face(rPr, 'a:ea') || face(lvlDef, 'a:ea');
         const latin = face(rPr, 'a:latin') || face(lvlDef, 'a:latin');
-        const tf = ea || latin;
+        // 글자 종류에 따라 실제로 쓰이는 폰트: 한글·한자·전각·로마숫자(Ⅰ~Ⅹ) → ea, 숫자·영문만 있으면 → latin
+        const hasEastAsian = /[\u1100-\u11ff\u2150-\u218f\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/.test(text);
+        const tf = hasEastAsian ? (ea || latin) : (latin || ea);
         if (tf) fonts.add(tf);
       });
     });
