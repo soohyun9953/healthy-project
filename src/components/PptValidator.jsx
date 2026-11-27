@@ -286,42 +286,32 @@ const find_pii_matches = (text) => {
 const find_paren_mismatches = (text) => {
   if (!text.includes('(') && !text.includes(')')) return [];
 
-  const unmatched = [];
-  const stack = [];
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '(') {
-      stack.push(i);
-    } else if (ch === ')') {
-      const before = text.slice(0, i);
-      // 예시 표기 판정: "예)", "예시)", "에시)", "ex)", "Ex)"
-      const isExample = /(?:^|[^(\w가-힣])(예|예시|에시|ex|Ex)\s*$/i.test(before) || /^(?:예|예시|에시|ex|Ex)\s*$/i.test(before.trim());
-      // 단독 숫자 글머리 판정: "1)", "2)", "1.1)" 등
-      const isSingleNumber = (/(?:^|[^\d.(])(\d+(?:\.\d+)*)\s*$/.test(before) || /^\d+(?:\.\d+)*\s*$/.test(before.trim())) && !/\(\s*\d+(?:\.\d+)*\s*$/.test(before);
+  // 단독 글머리/예시 기호로 볼 수 있는 ")" : 문단 시작·공백·쉼표 뒤의 "1)", "1.1)", "가)", "나)", "예)", "예시)", "ex)"
+  const isBulletClose = (i) => /(?:^|[\s,·:;])(?:\d+(?:\.\d+)*|[가나다라마바사아자차카타파하]|예|예시|에시|ex)\s*$/i.test(text.slice(0, i));
 
-      // 만약 스택에 여는 괄호가 있고 그 괄호가 바로 이 예시나 숫자를 감싸고 있다면 -> (예시), (1) 정상 쌍이므로 stack.pop()으로 매칭
-      let isEnclosed = false;
-      if (stack.length > 0) {
-        const lastOpen = stack[stack.length - 1];
-        const inner = text.slice(lastOpen + 1, i).trim();
-        if (/^(?:예|예시|에시|ex|Ex|\d+(?:\.\d+)*)$/i.test(inner)) {
-          isEnclosed = true;
-        }
-      }
-
-      if ((isExample || isSingleNumber) && !isEnclosed) {
-        // 단독 글머리/예시 기호이므로 짝 불일치 오류에서 제외
-        continue;
-      }
-
-      if (stack.length > 0) {
-        stack.pop();
-      } else {
-        unmatched.push({ index: i, char: ')' });
+  // 1차: 모든 괄호를 그대로 짝지음 → "(1/6)", "(페이지 3)", "(1~3)" 같은 정상 괄호가 오검출되지 않음
+  // 2차: 글머리 기호 ")"를 짝 검사에서 빼고 다시 짝지음 → "1) 항목", "(참고: 1) 가, 2) 나)" 처리
+  // 두 결과 중 짝 없는 괄호가 적은 쪽을 채택
+  const match = (skipBullets) => {
+    const out = [];
+    const st = [];
+    const skipped = [];
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '(') st.push(i);
+      else if (ch === ')') {
+        if (skipBullets && isBulletClose(i)) { skipped.push(i); continue; }
+        if (st.length > 0) st.pop();
+        else out.push({ index: i, char: ')' });
       }
     }
-  }
-  stack.forEach(idx => unmatched.push({ index: idx, char: '(' }));
+    // 남은 여는 괄호는 그 뒤에 건너뛴 글머리 ")" 중 마지막 것으로 닫음 (예: "(참고: 1) 가, 2) 나)")
+    while (st.length && skipped.length && skipped[skipped.length - 1] > st[st.length - 1]) { st.pop(); skipped.pop(); }
+    st.forEach(idx => out.push({ index: idx, char: '(' }));
+    return out;
+  };
+  const plain = match(false);
+  const unmatched = plain.length === 0 ? plain : [plain, match(true)].sort((x, y) => x.length - y.length)[0];
   unmatched.sort((a, b) => a.index - b.index);
 
   return unmatched.map(({ index, char }) => {
