@@ -2724,6 +2724,7 @@ export function buildSectionIndex(pageMap = {}, pageLabelMap = {}, tocTitles = n
     const slideNums = Object.keys(pageMap).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
     const secCount = new Map();
     const subCount = new Map();
+    const keySlides = new Map(); // 'num|title' → 나온 슬라이드 번호들
     const perSlide = slideNums.map(n => {
         const secs = new Set();
         const subs = new Set();
@@ -2734,8 +2735,11 @@ export function buildSectionIndex(pageMap = {}, pageLabelMap = {}, tocTitles = n
             m = p.match(SECTION_HEADING_REGEX);
             if (m) secs.add(`${parseInt(m[1], 10)}|${m[2].trim()}`);
         });
-        secs.forEach(k => secCount.set(k, (secCount.get(k) || 0) + 1));
-        subs.forEach(k => subCount.set(k, (subCount.get(k) || 0) + 1));
+        // 슬라이드 위치는 목차 슬라이드(절 제목이 3개 이상 나열)를 빼고 기록
+        const isToc = secs.size >= 3 || subs.size >= 4;
+        const at = (k) => { if (isToc) return; if (!keySlides.has(k)) keySlides.set(k, []); keySlides.get(k).push(n); };
+        secs.forEach(k => { secCount.set(k, (secCount.get(k) || 0) + 1); at(k); });
+        subs.forEach(k => { subCount.set(k, (subCount.get(k) || 0) + 1); at(k); });
         return { n, secs, subs };
     });
 
@@ -2753,9 +2757,10 @@ export function buildSectionIndex(pageMap = {}, pageLabelMap = {}, tocTitles = n
     };
     const secBest = bestTitle(secCount);
     const subBest = bestTitle(subCount);
-    // 한 슬라이드뿐인 절·항(예: '1. 현황분석 개요' 1장, '2.1 …' 1장)도 번호 빈자리를 채우면 채택
+    // 한 슬라이드뿐인 절·항(예: '1. 현황분석 개요' 1장, '2.1 …' 1장)도 슬라이드 순서가 맞으면 채택
     // - 절: 인식된 절 번호 사이·앞의 빈 번호이거나 목차 슬라이드에 같은 번호가 있을 때
-    // - 항: 상위 절이 인식됐고, 같은 절의 항 번호가 1부터 끊김 없이 이어질 때
+    // - 항: 상위 절 구간 안에 있고, 앞·뒤 번호 항 사이의 슬라이드이며, 이웃 번호(n-1 또는 n+1) 항이 있을 때
+    // 같은 번호에 제목 후보가 여럿이면(본문 번호 목록 등) 목차 제목 → 슬라이드 순서로 하나를 고름
     const singlesOf = (countMap, best) => {
         const out = new Map();
         countMap.forEach((cnt, key) => {
@@ -2763,36 +2768,61 @@ export function buildSectionIndex(pageMap = {}, pageLabelMap = {}, tocTitles = n
             const [num, title] = key.split('|');
             if (best.has(num)) return;
             if (!out.has(num)) out.set(num, []);
-            out.get(num).push({ title, cnt, key });
+            out.get(num).push({ title, cnt, key, slide: Math.min(...(keySlides.get(key) || [Infinity])) });
         });
         return out;
     };
+    const firstSlide = (v) => Math.min(...(keySlides.get(v.key) || [Infinity]));
     const secSingles = singlesOf(secCount, secBest);
     const secMax = Math.max(0, ...Array.from(secBest.keys()).map(Number));
-    secSingles.forEach((list, num) => {
-        if (list.length !== 1) return;
+    Array.from(secSingles.entries()).sort((x, y) => Number(x[0]) - Number(y[0])).forEach(([num, list]) => {
         const n = parseInt(num, 10);
         const toc = tocTitles.get(n);
-        const tocMatch = toc && normalizeForMatch(toc) === normalizeForMatch(list[0].title);
-        if (n < secMax || tocMatch) secBest.set(num, list[0]);
+        const tocHits = toc ? list.filter(c => normalizeForMatch(c.title) === normalizeForMatch(toc)) : [];
+        // 앞·뒤 번호 절의 첫 슬라이드 사이에 있는 후보만
+        const known = Array.from(secBest.entries()).map(([k, v]) => ({ n: Number(k), s: firstSlide(v) }));
+        const lower = known.filter(k => k.n < n).sort((a, b) => b.n - a.n)[0];
+        const upper = known.filter(k => k.n > n).sort((a, b) => a.n - b.n)[0];
+        const ordered = list.filter(c => (!lower || c.slide >= lower.s) && (!upper || c.slide <= upper.s));
+        const pick = tocHits.length === 1 ? tocHits[0] : (ordered.length === 1 ? ordered[0] : (list.length === 1 ? list[0] : null));
+        if (!pick) return;
+        const tocMatch = toc && normalizeForMatch(toc) === normalizeForMatch(pick.title);
+        if (n < secMax || tocMatch) secBest.set(num, pick);
     });
+    const secStart = new Map(Array.from(secBest.entries()).map(([k, v]) => [Number(k), firstSlide(v)]));
     const subSingles = singlesOf(subCount, subBest);
-    const subsByParent = new Map();
-    [...subBest.keys(), ...Array.from(subSingles.entries()).filter(([, l]) => l.length === 1).map(([k]) => k)].forEach(k => {
-        const [pn, cn] = k.split('.').map(x => parseInt(x, 10));
-        if (!secBest.has(String(pn))) return;
-        if (!subsByParent.has(pn)) subsByParent.set(pn, new Set());
-        subsByParent.get(pn).add(cn);
-    });
-    subSingles.forEach((list, num) => {
-        if (list.length !== 1) return;
+    const knownSub = new Map(); // parent → Map(child → firstSlide)
+    subBest.forEach((v, num) => {
         const [pn, cn] = num.split('.').map(x => parseInt(x, 10));
-        const set = subsByParent.get(pn);
-        if (!set) return;
-        // 1..cn 이 모두 있으면(인식분 + 1장짜리) 연속된 항으로 봄
-        for (let k = 1; k <= cn; k++) if (!set.has(k)) return;
-        if (set.size >= 2) subBest.set(num, list[0]);
+        if (!knownSub.has(pn)) knownSub.set(pn, new Map());
+        knownSub.get(pn).set(cn, firstSlide(v));
     });
+    const pending = Array.from(subSingles.entries())
+        .map(([num, list]) => { const [pn, cn] = num.split('.').map(x => parseInt(x, 10)); return { num, pn, cn, list }; })
+        .filter(x => secBest.has(String(x.pn)))
+        .sort((a, b) => a.pn - b.pn || a.cn - b.cn);
+    // 이웃 번호가 생기면 그 다음 번호도 채택될 수 있으므로 더 바뀌지 않을 때까지 반복
+    for (let changed = true; changed;) {
+        changed = false;
+        pending.forEach(x => {
+            if (subBest.has(x.num)) return;
+            const sibs = knownSub.get(x.pn) || new Map();
+            const hasNeighbor = sibs.has(x.cn - 1) || sibs.has(x.cn + 1) || (x.cn === 1 && sibs.size > 0);
+            if (!hasNeighbor) return;
+            const pStart = secStart.get(x.pn) ?? -Infinity;
+            const nextSec = Array.from(secStart.entries()).filter(([k]) => k > x.pn).sort((a, b) => a[0] - b[0])[0];
+            const pEnd = nextSec ? nextSec[1] : Infinity;
+            const lowerS = Math.max(-Infinity, ...Array.from(sibs.entries()).filter(([c]) => c < x.cn).map(([, sl]) => sl));
+            const upperS = Math.min(Infinity, ...Array.from(sibs.entries()).filter(([c]) => c > x.cn).map(([, sl]) => sl));
+            const ok = x.list.filter(c => c.slide >= pStart && c.slide < pEnd && c.slide >= lowerS && c.slide <= upperS)
+                .sort((a, b) => a.slide - b.slide);
+            if (!ok.length) return;
+            subBest.set(x.num, ok[0]);
+            if (!knownSub.has(x.pn)) knownSub.set(x.pn, new Map());
+            knownSub.get(x.pn).set(x.cn, ok[0].slide);
+            changed = true;
+        });
+    }
     const secKeys = new Set(Array.from(secBest.values()).map(v => v.key));
     const subKeys = new Set(Array.from(subBest.values()).map(v => v.key));
 
