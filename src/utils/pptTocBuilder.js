@@ -115,17 +115,27 @@ export async function extractTocFromDeliverables(files, buildDeliverableTocIndex
         const firstPageOf = (sec) => (doc.sections || []).find(x => x.num === sec.num)?.pages?.[0];
         (doc.numericToc || []).forEach(t => {
             if (sections.some(s => s.num === t.num) || t.num > maxNum) return;
-            // 시작 쪽: 다음 절 시작 전 슬라이드 중 이 제목이 나오는 첫 슬라이드 (여러 절이 나열된 목차 슬라이드는 제외)
+            // 시작 쪽: 앞 절 끝·목차 슬라이드 다음부터 다음 절 시작 전까지 중
+            //   ① 이 제목이 나오는 첫 슬라이드, 없으면 ② 그 구간의 첫 슬라이드 (1장짜리 '개요' 절)
+            // 목차 슬라이드 = '목차/CONTENTS' 표시가 있거나 'N. 제목' 줄이 3개 이상인 슬라이드
+            // (개요 슬라이드는 Framework 그림에 다른 절 이름이 여럿 나와도 목차로 보지 않음)
             const next = sections.filter(s => s.num > t.num).sort((x, y) => x.num - y.num)[0];
             const nextPage = next ? firstPageOf(next) : null;
+            const prevPages = (doc.sections || []).filter(x => x.num < t.num).flatMap(x => x.pages || []);
+            const prevEnd = prevPages.length ? Math.max(...prevPages) : -Infinity;
             const pageMap = doc.content?.pageMap || {};
+            const nums = Object.keys(pageMap).map(Number).sort((x, y) => x - y);
+            const isTocSlide = (n) => {
+                const ps = (pageMap[n] || []).map(q => String(q).trim());
+                if (ps.some(q => /^(목\s*차|CONTENTS?)$/i.test(q))) return true;
+                return new Set(ps.map(q => (q.match(/^0?(\d{1,2})\.\s*[^\d\s.]/) || [])[1]).filter(Boolean)).size >= 3;
+            };
+            const lastToc = nums.filter(n => (nextPage == null || n < nextPage) && isTocSlide(n)).pop() ?? -Infinity;
+            const lo = Math.max(prevEnd, lastToc);
+            const range = nums.filter(n => n > lo && (nextPage == null || n < nextPage) && !isTocSlide(n));
             const want = normTitle(t.title);
-            const hit = Object.keys(pageMap).map(Number).sort((x, y) => x - y).find(n => {
-                if (nextPage != null && n >= nextPage) return false;
-                const ps = (pageMap[n] || []).map(normTitle);
-                const listed = sections.filter(s => ps.some(q => q.includes(normTitle(s.title)))).length;
-                return listed < 2 && ps.some(q => q.includes(want));
-            });
+            const hit = range.find(n => (pageMap[n] || []).some(q => normTitle(q).includes(want)))
+                ?? (nextPage != null ? range[0] : undefined);
             sections.push({ num: t.num, title: t.title, startLabel: hit != null ? (labels[hit] || String(hit)) : '', pageRange: '', include: true, subsections: [] });
         });
         sections.sort((a, b) => a.num - b.num);
